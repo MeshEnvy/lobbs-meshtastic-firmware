@@ -1,4 +1,5 @@
 #pragma once
+#if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "LoBBSDal.h"
 #include "LoBBSVersion.h"
@@ -21,3 +22,5 @@ class LoBBSModule : public SinglePortModule
 };
 
 extern LoBBSModule *lobbsModule;
+
+#endif

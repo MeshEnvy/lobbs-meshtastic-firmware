@@ -1,3 +1,5 @@
+#if !MESHTASTIC_EXCLUDE_LOBBS
+
 #include "LoBBSModule.h"
 #include "LoBBSDal.h"
 #include "MeshService.h"
@@ -718,3 +720,5 @@ void LoBBSModule::sendReply(NodeNum to, const std::string &msg) {
 }
 
 LoBBSModule *lobbsModule;
+
+#endif
