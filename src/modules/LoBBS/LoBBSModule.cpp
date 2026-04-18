@@ -2,6 +2,7 @@
 
 #include "LoBBSModule.h"
 #include "LoBBSDal.h"
+#include "MeshModule.h"
 #include "MeshService.h"
 #include "configuration.h"
 #include "gps/RTC.h"
@@ -220,17 +221,17 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
           snprintf(replyBuffer, sizeof(replyBuffer), "Mail sent to %d users",
                    successCount);
         }
-        sendReply(mp.from, replyBuffer);
+        sendReply(mp, replyBuffer);
       } else if (successCount > 0 && failCount > 0) {
         snprintf(replyBuffer, sizeof(replyBuffer),
                  "Mail sent to %d users. Failed: %s", successCount,
                  failedUsers.c_str());
-        sendReply(mp.from, replyBuffer);
+        sendReply(mp, replyBuffer);
       } else {
         snprintf(replyBuffer, sizeof(replyBuffer),
                  "Failed to send mail. Users not found: %s",
                  failedUsers.c_str());
-        sendReply(mp.from, replyBuffer);
+        sendReply(mp, replyBuffer);
       }
 
       return ProcessMessage::CONTINUE;
@@ -241,7 +242,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
   char *cmdName = strtok(msgBuffer, " ");
   LOG_DEBUG("Token: %s", cmdName ? cmdName : "");
   if (!cmdName) {
-    sendReply(mp.from, LOBBS_HEADER "/hi <user> <pass> - Login or create account\n");
+    sendReply(mp, LOBBS_HEADER "/hi <user> <pass> - Login or create account\n");
     return ProcessMessage::CONTINUE;
   }
 
@@ -251,7 +252,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     // Get username
     char *username = strtok(NULL, " ");
     if (!username) {
-      sendReply(mp.from, "Usage: /hi <username> <password>");
+      sendReply(mp, "Usage: /hi <username> <password>");
       return ProcessMessage::CONTINUE;
     }
 
@@ -260,7 +261,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     if (usernameLen == 0 || usernameLen > LOBBS_MAX_USERNAME_LEN ||
         !dal->isValidUsername(username)) {
       sendReply(
-          mp.from,
+          mp,
           "Username not found or is invalid. Username must be 1-" LOBBS_XSTR(
               LOBBS_MAX_USERNAME_LEN) " characters and contain only letters, "
                                       "numbers, and common special "
@@ -271,14 +272,14 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     // Get password (rest of the string)
     char *password = strtok(NULL, "");
     if (!password) {
-      sendReply(mp.from, "Usage: /hi <username> <password>");
+      sendReply(mp, "Usage: /hi <username> <password>");
       return ProcessMessage::CONTINUE;
     }
 
     // Validate password is at least 5 characters long
     if (strlen(password) < 5 || strlen(password) > 50 ||
         !dal->isValidPassword(password)) {
-      sendReply(mp.from, "Password incorrect or invalid. Password must be "
+      sendReply(mp, "Password incorrect or invalid. Password must be "
                          "between 5 and 50 characters long and contain "
                          "only letters, numbers, and common "
                          "special characters.");
@@ -302,14 +303,14 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
         if (dal->loginUser(username, mp.from)) {
           snprintf(replyBuffer, sizeof(replyBuffer), "Welcome back %s!",
                    username);
-          sendReply(mp.from, replyBuffer);
+          sendReply(mp, replyBuffer);
         } else {
-          sendReply(mp.from, "Error creating session");
+          sendReply(mp, "Error creating session");
         }
       } else {
         LOG_WARN("Invalid password for user %s from node 0x%0x", username,
                  mp.from);
-        sendReply(mp.from, "Invalid password");
+        sendReply(mp, "Invalid password");
       }
     } else {
       // New user - create account
@@ -317,9 +318,9 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
 
       if (dal->createUser(username, password, mp.from)) {
         snprintf(replyBuffer, sizeof(replyBuffer), "Welcome %s!", username);
-        sendReply(mp.from, replyBuffer);
+        sendReply(mp, replyBuffer);
       } else {
-        sendReply(mp.from, "Error creating account");
+        sendReply(mp, "Error creating account");
       }
     }
 
@@ -330,7 +331,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     const char *helpMsg =
         LOBBS_HEADER "/hi <user> <pass> - Login or create account\n";
     LOG_DEBUG("Help message: %s", helpMsg);
-    sendReply(mp.from, helpMsg);
+    sendReply(mp, helpMsg);
     return ProcessMessage::CONTINUE;
   }
 
@@ -344,7 +345,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     LOG_INFO("Processing /bye command from node=0x%0x", mp.from);
 
     dal->logoutUser(mp.from);
-    sendReply(mp.from, "Goodbye!");
+    sendReply(mp, "Goodbye!");
 
     return ProcessMessage::CONTINUE;
   }
@@ -356,7 +357,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
 
     // Parse optional filter argument
     if (filterStr && !dal->isValidUsername(filterStr)) {
-      sendReply(mp.from, "Filter must contain only letters, numbers, and "
+      sendReply(mp, "Filter must contain only letters, numbers, and "
                          "common special characters.");
       return ProcessMessage::CONTINUE;
     }
@@ -383,7 +384,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
       } else {
         reply += "No users found";
       }
-      sendReply(mp.from, reply.c_str());
+      sendReply(mp, reply.c_str());
     } else {
       LOG_DEBUG("# users: %d", users.size());
       // Build user directory message
@@ -397,7 +398,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
       }
       LOG_DEBUG("User list message: %s", userListMsg.c_str());
 
-      sendReply(mp.from, userListMsg.c_str());
+      sendReply(mp, userListMsg.c_str());
 
       // Free allocated records
       LoDb::freeRecords(users);
@@ -420,7 +421,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
 
     if (arg1) {
       if (!isdigit(static_cast<unsigned char>(*arg1))) {
-        sendReply(mp.from, "Invalid mail command");
+        sendReply(mp, "Invalid mail command");
         return ProcessMessage::CONTINUE;
       }
 
@@ -447,7 +448,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     if (isReadCommand && readMessageId > 0) {
       // Read specific message
       if (readMessageId > (int)mailMessages.size()) {
-        sendReply(mp.from, "Invalid message number");
+        sendReply(mp, "Invalid message number");
         freeMailMessages(mailMessages);
         return ProcessMessage::CONTINUE;
       }
@@ -472,7 +473,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
       reply += ")\n";
       reply += mail->message;
 
-      sendReply(mp.from, reply.c_str());
+      sendReply(mp, reply.c_str());
 
       // Mark as read
       dal->markMailAsRead(mail->uuid);
@@ -483,7 +484,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
 
     // List mail (default action)
     if (mailMessages.empty()) {
-      sendReply(mp.from, "No mail");
+      sendReply(mp, "No mail");
       return ProcessMessage::CONTINUE;
     }
 
@@ -526,7 +527,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
       mailList += entryBuffer;
     }
 
-    sendReply(mp.from, mailList.c_str());
+    sendReply(mp, mailList.c_str());
 
     freeMailMessages(mailMessages);
 
@@ -584,20 +585,20 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
         msgStart++;
 
       if (msgStart >= payloadEnd || *msgStart == '\0') {
-        sendReply(mp.from, "News message cannot be empty");
+        sendReply(mp, "News message cannot be empty");
         return ProcessMessage::CONTINUE;
       }
 
       if (!isalpha((unsigned char)*msgStart)) {
-        sendReply(mp.from, "News must start with a letter");
+        sendReply(mp, "News must start with a letter");
         return ProcessMessage::CONTINUE;
       }
 
       std::string newsMessage(msgStart, payloadEnd - msgStart);
       if (dal->postNews(existingUser.uuid, newsMessage.c_str())) {
-        sendReply(mp.from, "News posted");
+        sendReply(mp, "News posted");
       } else {
-        sendReply(mp.from, "Failed to post news");
+        sendReply(mp, "Failed to post news");
       }
       return ProcessMessage::CONTINUE;
     }
@@ -609,7 +610,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
 
     if (isReadCommand && readNewsId > 0) {
       if (readNewsId > (int)newsItems.size()) {
-        sendReply(mp.from, "Invalid news number");
+        sendReply(mp, "Invalid news number");
         freeNewsEntries(newsItems);
         return ProcessMessage::CONTINUE;
       }
@@ -632,7 +633,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
       reply += ")\n";
       reply += news->message;
 
-      sendReply(mp.from, reply.c_str());
+      sendReply(mp, reply.c_str());
 
       dal->markNewsAsRead(news->uuid, existingUser.uuid);
 
@@ -641,7 +642,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     }
 
     if (newsItems.empty()) {
-      sendReply(mp.from, "No news");
+      sendReply(mp, "No news");
       return ProcessMessage::CONTINUE;
     }
 
@@ -678,7 +679,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
       newsList += entryBuffer;
     }
 
-    sendReply(mp.from, newsList.c_str());
+    sendReply(mp, newsList.c_str());
 
     freeNewsEntries(newsItems);
 
@@ -693,11 +694,12 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
                    "/news [<n>|<n>-] - List/read news\n"
                    "/news <msg> - Post news";
   LOG_DEBUG("Help message: %s", helpMsg.c_str());
-  sendReply(mp.from, helpMsg);
+  sendReply(mp, helpMsg);
   return ProcessMessage::CONTINUE;
 }
 
-void LoBBSModule::sendReply(NodeNum to, const std::string &msg) {
+void LoBBSModule::sendReply(const meshtastic_MeshPacket &req,
+                            const std::string &msg) {
   meshtastic_MeshPacket *reply = allocDataPacket();
   static constexpr char truncMarker[] = "[...]";
   static constexpr size_t truncMarkerLen = sizeof(truncMarker) - 1;
@@ -714,9 +716,12 @@ void LoBBSModule::sendReply(NodeNum to, const std::string &msg) {
   } else {
     memcpy(reply->decoded.payload.bytes, msg.c_str(), payloadSize);
   }
-  reply->to = to;
+  LOG_DEBUG("LoBBS sendReply: before setReplyTo to=0x%x ch=%u", req.to, (unsigned)req.channel);
+  setReplyTo(reply, req);
   reply->decoded.want_response = false;
+  LOG_DEBUG("LoBBS sendReply: before sendToMesh id=0x%x", reply->id);
   service->sendToMesh(reply);
+  LOG_DEBUG("LoBBS sendReply: after sendToMesh");
 }
 
 LoBBSModule *lobbsModule;
