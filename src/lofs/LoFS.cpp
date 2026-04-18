@@ -149,10 +149,18 @@ File LoFS::open(const char *filepath, uint8_t mode)
         if (strippedPath) {
             free(strippedPath);
         }
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
         return File();
+#else
+        return File(FSCom);
+#endif
     }
 
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
     File result;
+#else
+    File result(FSCom);
+#endif
 
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
     if (fsType == FSType::SD) {
@@ -197,10 +205,18 @@ File LoFS::open(const char *filepath, const char *mode)
         if (strippedPath) {
             free(strippedPath);
         }
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
         return File();
+#else
+        return File(FSCom);
+#endif
     }
 
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
     File result;
+#else
+    File result(FSCom);
+#endif
 
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
     if (fsType == FSType::SD) {
@@ -361,7 +377,11 @@ bool LoFS::rename(const char *oldfilepath, const char *newfilepath)
         concurrency::LockGuard g(spiLock);
 
         // Open source file
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
         File srcFile;
+#else
+        File srcFile(FSCom);
+#endif
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
         if (oldType == FSType::SD) {
             srcFile = SD.open(oldStripped, FILE_READ);
@@ -398,7 +418,11 @@ bool LoFS::rename(const char *oldfilepath, const char *newfilepath)
         }
 
         // Open/create destination file
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
         File dstFile;
+#else
+        File dstFile(FSCom);
+#endif
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
         if (newType == FSType::SD) {
             dstFile = SD.open(newStripped, FILE_WRITE);
@@ -586,7 +610,11 @@ uint64_t LoFS::totalBytes(const char *filepath)
     {
         // Internal filesystem
         concurrency::LockGuard g(spiLock);
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
         result = FSCom.totalBytes();
+#else
+        result = 0; // InternalFileSystem on nRF52/STM32 does not expose totalBytes
+#endif
     }
 
     free(strippedPath);
@@ -616,7 +644,11 @@ uint64_t LoFS::usedBytes(const char *filepath)
     {
         // Internal filesystem
         concurrency::LockGuard g(spiLock);
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
         result = FSCom.usedBytes();
+#else
+        result = 0; // InternalFileSystem on nRF52/STM32 does not expose usedBytes
+#endif
     }
 
     free(strippedPath);
