@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package lodb;
+
+// Optional diagnostics record type shipped with LoDB (nanopb bindings in-tree).
+message DiagnosticsTest {
+  uint32 id = 1;
+  string value = 2;
+  uint32 timestamp = 3;
+  bool active = 4;
+}
