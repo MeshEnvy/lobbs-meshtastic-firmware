@@ -1,4 +1,5 @@
 #pragma once
+#if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "lobbs.pb.h"
 #include <lodb/LoDB.h>
@@ -44,3 +45,5 @@ class LoBBSDal
     LoDb *db;
     uint32_t hostNodeId;
 };
+
+#endif

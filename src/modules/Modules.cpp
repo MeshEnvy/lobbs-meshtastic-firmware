@@ -39,7 +39,9 @@
 #endif
 #include "modules/RoutingModule.h"
 #include "modules/TextMessageModule.h"
+#if !MESHTASTIC_EXCLUDE_LOBBS
 #include "modules/LoBBS/LoBBSModule.h"
+#endif
 #if !MESHTASTIC_EXCLUDE_TRACEROUTE
 #include "modules/TraceRouteModule.h"
 #endif
@@ -136,7 +138,9 @@ void setupModules()
 #if !MESHTASTIC_EXCLUDE_TEXTMESSAGE
     textMessageModule = new TextMessageModule();
 #endif
+#if !MESHTASTIC_EXCLUDE_LOBBS
     lobbsModule = new LoBBSModule();
+#endif
 #if !MESHTASTIC_EXCLUDE_TRACEROUTE
     traceRouteModule = new TraceRouteModule();
 #endif

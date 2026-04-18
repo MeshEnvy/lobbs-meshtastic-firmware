@@ -1,3 +1,5 @@
+#if !MESHTASTIC_EXCLUDE_LOBBS
+
 #include "LoBBSDal.h"
 #include "configuration.h"
 #include "gps/RTC.h"
@@ -364,3 +366,5 @@ std::vector<LoBBSNewsEntry> LoBBSDal::getNewsForUser(uint64_t userUuid, uint32_t
               offset, limit);
     return result;
 }
+
+#endif
