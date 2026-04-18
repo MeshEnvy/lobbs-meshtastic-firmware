@@ -1,6 +1,6 @@
 # LoBBS - Firmware-based BBS for Meshtastic
 
-**A 100% Meshtastic BBS. No sidear, no Python, just mesh**
+**A 100% Meshtastic BBS. No sidecar, no Python, just mesh**
 
 ------
 
@@ -38,7 +38,7 @@ LoBBS replies inline with human-readable summaries. Unread content is flagged wi
 
 ## License
 
-LoBBS is distributed under the MIT license. 
+LoBBS is distributed under the GPLv3 license. 
 
 ## Disclaimer
 
