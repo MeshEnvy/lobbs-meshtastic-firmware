@@ -1,10 +1,26 @@
 #include <lodb/LoDB.h>
 #include <Arduino.h>
+#if __has_include("configuration.h")
+#include "configuration.h"
+#undef LODB_LOG_DEBUG
+#define LODB_LOG_DEBUG(...) LOG_DEBUG(__VA_ARGS__)
+#undef LODB_LOG_INFO
+#define LODB_LOG_INFO(...) LOG_INFO(__VA_ARGS__)
+#undef LODB_LOG_WARN
+#define LODB_LOG_WARN(...) LOG_WARN(__VA_ARGS__)
+#undef LODB_LOG_ERROR
+#define LODB_LOG_ERROR(...) LOG_ERROR(__VA_ARGS__)
+#endif
 #include <SHA256.h>
 #include <algorithm>
 #include <cstring>
+#include <memory>
+#include <new>
 #include <pb_decode.h>
 #include <pb_encode.h>
+
+static_assert(LODB_FILE_IO_BUFFER_SIZE <= LODB_MAX_RECORD_FILE_BYTES,
+              "encode buffer cannot exceed max on-disk record (get would reject writes)");
 
 __attribute__((weak)) uint32_t lodb_now_ms(void)
 {
@@ -139,8 +155,12 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const void *rec
         }
     }
 
-    uint8_t buffer[2048];
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    std::unique_ptr<uint8_t[]> buffer(new (std::nothrow) uint8_t[LODB_FILE_IO_BUFFER_SIZE]);
+    if (!buffer) {
+        LODB_LOG_ERROR("LoDB insert: buffer alloc failed");
+        return LODB_ERR_IO;
+    }
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer.get(), LODB_FILE_IO_BUFFER_SIZE);
 
     if (!pb_encode(&stream, table->pb_descriptor, record)) {
         LODB_LOG_ERROR("Failed to encode protobuf for insert");
@@ -156,7 +176,7 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const void *rec
         return LODB_ERR_IO;
     }
 
-    size_t written = file.write(buffer, encoded_size);
+    size_t written = file.write(buffer.get(), encoded_size);
     if (written != encoded_size) {
         LODB_LOG_ERROR("Failed to write file, wrote %u of %u bytes", (unsigned)written, (unsigned)encoded_size);
         file.close();
@@ -189,7 +209,6 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
     snprintf(file_path, sizeof(file_path), "%s/%s.pr", table->table_path, uuid_hex);
     LODB_LOG_DEBUG("file_path: %s", file_path);
 
-    uint8_t buffer[2048];
     size_t file_size = 0;
 
     auto file = LoFS::open(file_path, FILE_O_READ);
@@ -198,17 +217,36 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
         return LODB_ERR_NOT_FOUND;
     }
 
-    file_size = file.read(buffer, sizeof(buffer));
+    size_t total_size = file.size();
+    if (total_size > LODB_MAX_RECORD_FILE_BYTES) {
+        LODB_LOG_ERROR("Record file too large: %s (%u > %u)", file_path, (unsigned)total_size,
+                       (unsigned)LODB_MAX_RECORD_FILE_BYTES);
+        file.close();
+        return LODB_ERR_IO;
+    }
+
+    std::unique_ptr<uint8_t[]> buffer(new (std::nothrow) uint8_t[total_size]);
+    if (!buffer) {
+        LODB_LOG_ERROR("LoDB get: buffer alloc failed (%u bytes)", (unsigned)total_size);
+        file.close();
+        return LODB_ERR_IO;
+    }
+
+    file_size = file.read(buffer.get(), total_size);
     file.close();
 
     if (file_size == 0) {
         LODB_LOG_ERROR("Record file is empty: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
         return LODB_ERR_IO;
     }
+    if (file_size != total_size) {
+        LODB_LOG_ERROR("Record read short: %s (%u of %u)", file_path, (unsigned)file_size, (unsigned)total_size);
+        return LODB_ERR_IO;
+    }
 
     LODB_LOG_DEBUG("Read record file: %s (%u bytes)", file_path, (unsigned)file_size);
 
-    pb_istream_t stream = pb_istream_from_buffer(buffer, file_size);
+    pb_istream_t stream = pb_istream_from_buffer(buffer.get(), file_size);
     memset(record_out, 0, table->record_size);
 
     if (!pb_decode(&stream, table->pb_descriptor, record_out)) {
@@ -246,8 +284,12 @@ LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const void *rec
         file.close();
     }
 
-    uint8_t buffer[2048];
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    std::unique_ptr<uint8_t[]> buffer(new (std::nothrow) uint8_t[LODB_FILE_IO_BUFFER_SIZE]);
+    if (!buffer) {
+        LODB_LOG_ERROR("LoDB update: buffer alloc failed");
+        return LODB_ERR_IO;
+    }
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer.get(), LODB_FILE_IO_BUFFER_SIZE);
 
     if (!pb_encode(&stream, table->pb_descriptor, record)) {
         LODB_LOG_ERROR("Failed to encode updated record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
@@ -263,7 +305,7 @@ LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const void *rec
         return LODB_ERR_IO;
     }
 
-    size_t written = file.write(buffer, encoded_size);
+    size_t written = file.write(buffer.get(), encoded_size);
     if (written != encoded_size) {
         LODB_LOG_ERROR("Failed to write updated file");
         file.close();

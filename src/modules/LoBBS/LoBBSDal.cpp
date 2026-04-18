@@ -100,7 +100,9 @@ bool LoBBSDal::loadUserByNodeId(uint32_t nodeId, meshtastic_LoBBSUser *user)
     LOG_DEBUG("sessionUuid: " LODB_UUID_FMT, LODB_UUID_ARGS(sessionUuid));
 
     meshtastic_LoBBSSession session = meshtastic_LoBBSSession_init_zero;
+    LOG_DEBUG("LoBBS DAL: before db->get(sessions)");
     LoDbError err = db->get("sessions", sessionUuid, &session);
+    LOG_DEBUG("LoBBS DAL: after db->get(sessions) err=%d", (int)err);
     if (err != LODB_OK) {
         LOG_DEBUG("No session found for node 0x%08x", nodeId);
         return false;

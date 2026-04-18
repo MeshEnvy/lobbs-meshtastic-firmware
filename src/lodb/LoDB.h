@@ -21,6 +21,21 @@
 #define LODB_VERSION "1.4.0"
 #endif
 
+/**
+ * Max encoded record size (single knob): insert/update encode buffer and get() read cap.
+ * Override this alone to keep read/write symmetric; override the others only if you need
+ * an asymmetric setup.
+ */
+#ifndef LODB_MAX_RECORD_BYTES
+#define LODB_MAX_RECORD_BYTES 8192
+#endif
+#ifndef LODB_FILE_IO_BUFFER_SIZE
+#define LODB_FILE_IO_BUFFER_SIZE LODB_MAX_RECORD_BYTES
+#endif
+#ifndef LODB_MAX_RECORD_FILE_BYTES
+#define LODB_MAX_RECORD_FILE_BYTES LODB_MAX_RECORD_BYTES
+#endif
+
 #ifndef LODB_LOG_DEBUG
 #define LODB_LOG_DEBUG(...) ((void)0)
 #endif

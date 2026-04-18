@@ -18,7 +18,7 @@ class LoBBSModule : public SinglePortModule
 
   private:
     LoBBSDal *dal;
-    void sendReply(NodeNum to, const std::string &msg);
+    void sendReply(const meshtastic_MeshPacket &req, const std::string &msg);
 };
 
 extern LoBBSModule *lobbsModule;
