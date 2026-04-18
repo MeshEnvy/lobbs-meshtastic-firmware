@@ -50,6 +50,7 @@
 #endif
 #include "modules/RoutingModule.h"
 #include "modules/TextMessageModule.h"
+#include "modules/LoBBS/LoBBSModule.h"
 #if !MESHTASTIC_EXCLUDE_TRACEROUTE
 #include "modules/TraceRouteModule.h"
 #endif
@@ -134,6 +135,7 @@ void setupModules()
 #if !MESHTASTIC_EXCLUDE_TEXTMESSAGE
     textMessageModule = new TextMessageModule();
 #endif
+    lobbsModule = new LoBBSModule();
 #if !MESHTASTIC_EXCLUDE_TRACEROUTE
     traceRouteModule = new TraceRouteModule();
 #endif
