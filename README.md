@@ -1,3 +1,51 @@
+# LoBBS - Firmware-based BBS for Meshtastic
+
+**A 100% Meshtastic BBS. No sidear, no Python, just mesh**
+
+------
+
+### Watch the Walkthrough
+
+[![LoBBS Walkthrough](https://img.youtube.com/vi/FwtDY1QBXpQ/0.jpg)](https://www.youtube.com/watch?v=FwtDY1QBXpQ)
+
+-------
+
+This repository is Meshtastic firmware with LoBBS integrated in the tree. Flash it like any other Meshtastic build for your board: you get mesh networking and a full bulletin board right on the device. User accounts, private mail, news, and administration over the mesh, with no sidecar services or host computer.
+
+## Features
+
+- **User directory** with username registration and secure password storage
+- **Private mail inbox** with paging, read receipts, and inline `@mention` delivery
+- **News feed** with threaded announcements and per-user read tracking
+- Session-aware command parser with **contextual help**
+- Backed by [LoDB](https://github.com/MeshEnvy/lodb) for on-device storage so the entire BBS persists across reboots
+
+## Installation
+
+We use **meshforge.org** to make it super easy to get up and running with LoBBS. Just go to [https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware](https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware) to get started.
+
+
+## Using LoBBS
+
+- **Joining the BBS** — Send a direct message to your node containing `/hi <username> <password>`. The command logs you in if the account exists or creates a new account if it does not.
+- **Logging out** — Use `/bye` to terminate the current session and clear the binding between your node ID and account.
+- **Mail** — `/mail` lists the 10 most recent messages, `/mail 3` reads message 3, and `/mail 5-` starts the listing at item 5. Mention another user in any authenticated message using `@username` to deliver instant mail.
+- **News** — `/news` mirrors the mail workflow for public announcements. Append a message after the command (for example `/news Hello mesh!`) to post a new item.
+- **User discovery** — `/users` returns the directory. Supply an optional filter string (e.g. `/users mesh`) to narrow the results.
+
+LoBBS replies inline with human-readable summaries. Unread content is flagged with an asterisk in list views, and relative timestamps (for example, `2h ago`) provide context for each entry.
+
+
+## License
+
+LoBBS is distributed under the MIT license. 
+
+## Disclaimer
+
+LoBBS and MeshForge are independent projects not endorsed by or affiliated with the Meshtastic organization.
+
+---
+
 <div align="center" markdown="1">
 
 <img src=".github/meshtastic_logo.png" alt="Meshtastic Logo" width="80"/>
