@@ -24,10 +24,14 @@ This repository is Meshtastic firmware with LoBBS integrated in the tree. Flash 
 
 We use **meshforge.org** to make it super easy to get up and running with LoBBS. Just go to [https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware](https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware) to get started.
 
+## Versions
+
+- **Meshtastic base** — `[VERSION]` in `version.properties` (same as upstream: `APP_VERSION` in the phone app, e.g. `2.7.26.<git sha>`).
+- **LoBBS** — `[LOBBS]` in `version.properties`; help text shows `LoBBS v` plus the short semver (e.g. `2.0.0`). Product history: [CHANGELOG.md](CHANGELOG.md). Bump LoBBS build with `python bin/bump_lobbs_version.py` (Meshtastic build: `bin/bump_version.py`).
 
 ## Using LoBBS
 
-- **Joining the BBS** — Send a direct message to your node containing `/hi <username> <password>`. The command logs you in if the account exists or creates a new account if it does not.
+- **Joining the BBS** — Send a direct message to your node containing `/login <username> <password>`. The command logs you in if the account exists or creates a new account if it does not. Use `/help` or `/hi` for the command list.
 - **Logging out** — Use `/bye` to terminate the current session and clear the binding between your node ID and account.
 - **Mail** — `/mail` lists the 10 most recent messages, `/mail 3` reads message 3, and `/mail 5-` starts the listing at item 5. Mention another user in any authenticated message using `@username` to deliver instant mail.
 - **News** — `/news` mirrors the mail workflow for public announcements. Append a message after the command (for example `/news Hello mesh!`) to post a new item.

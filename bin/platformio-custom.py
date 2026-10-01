@@ -201,7 +201,10 @@ Import("projenv")
 
 prefsLoc = projenv["PROJECT_DIR"] + "/version.properties"
 verObj = readProps(prefsLoc)
-print(f"Using meshtastic platformio-custom.py, firmware version {verObj['long']} on {env.get('PIOENV')}")
+lobbs_ver = verObj.get("lobbs_long", "unset")
+print(
+    f"Using meshtastic platformio-custom.py, firmware version {verObj['long']}, LoBBS {lobbs_ver} on {env.get('PIOENV')}"
+)
 
 # get repository owner if git is installed
 try:
@@ -246,6 +249,14 @@ flags = [
         "-DAPP_REPO=" + repo_owner,
         "-DBUILD_EPOCH=" + str(build_epoch),
     ] + pref_flags
+
+if verObj.get("lobbs_short", "unset") != "unset":
+    flags.extend(
+        [
+            "-DLOBBS_VERSION=" + env.StringifyMacro(verObj["lobbs_long"]),
+            "-DLOBBS_VERSION_SHORT=" + env.StringifyMacro(verObj["lobbs_short"]),
+        ]
+    )
 
 print("Using flags:")
 for flag in flags:

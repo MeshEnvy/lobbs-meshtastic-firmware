@@ -106,6 +106,24 @@ static void freeNewsEntries(std::vector<LoBBSNewsEntry> &newsItems) {
   newsItems.clear();
 }
 
+static const char *lobbsGuestHelpMessage()
+{
+    return LOBBS_HEADER "/help - This screen\n"
+                        "/login <user> <pass> - Login or create account\n";
+}
+
+static std::string lobbsFullHelpMessage()
+{
+    return std::string(LOBBS_HEADER) + "/help - This screen\n"
+           "/login <user> <pass> - Login or create account\n"
+           "/bye - Logout\n"
+           "/users [filter] - List users (optional filter)\n"
+           "/mail [<n>|<n>-] - List/read mail\n"
+           "@user <msg> - Send mail\n"
+           "/news [<n>|<n>-] - List/read news\n"
+           "/news <msg> - Post news";
+}
+
 LoBBSModule::LoBBSModule()
     : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP) {
   // Create data access layer with host node ID as salt
@@ -135,6 +153,10 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
 
   // Copy payload to mutable buffer and null terminate (there is no null
   // terminator in the payload)
+  if (mp.decoded.payload.size == 0) {
+    return ProcessMessage::CONTINUE;
+  }
+
   memcpy(msgBuffer, mp.decoded.payload.bytes, mp.decoded.payload.size);
   msgBuffer[mp.decoded.payload.size] = '\0';
 
@@ -238,21 +260,34 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     }
   }
 
-  // Tokenize for command processing (this modifies msgBuffer)
-  char *cmdName = strtok(msgBuffer, " ");
-  LOG_DEBUG("Token: %s", cmdName ? cmdName : "");
-  if (!cmdName) {
-    sendReply(mp, LOBBS_HEADER "/hi <user> <pass> - Login or create account\n");
+  // Slash commands only when '/' is the first character (not "/login" in help text)
+  if (msgBuffer[0] != '/') {
     return ProcessMessage::CONTINUE;
   }
 
-  if (strcasecmp(cmdName, "/hi") == 0) {
-    LOG_DEBUG("Processing /hi command from node=0x%0x", mp.from);
+  // Tokenize for command processing (this modifies msgBuffer)
+  char *cmdName = strtok(msgBuffer, " ");
+  LOG_DEBUG("Token: %s", cmdName ? cmdName : "");
+  if (!cmdName || cmdName[0] != '/' || cmdName[1] == '\0') {
+    return ProcessMessage::CONTINUE;
+  }
+
+  if (strcasecmp(cmdName, "/help") == 0 || strcasecmp(cmdName, "/hi") == 0) {
+    if (isAuthenticated) {
+      sendReply(mp, lobbsFullHelpMessage());
+    } else {
+      sendReply(mp, lobbsGuestHelpMessage());
+    }
+    return ProcessMessage::CONTINUE;
+  }
+
+  if (strcasecmp(cmdName, "/login") == 0) {
+    LOG_DEBUG("Processing /login command from node=0x%0x", mp.from);
 
     // Get username
     char *username = strtok(NULL, " ");
     if (!username) {
-      sendReply(mp, "Usage: /hi <username> <password>");
+      sendReply(mp, "Usage: /login <username> <password>");
       return ProcessMessage::CONTINUE;
     }
 
@@ -272,7 +307,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     // Get password (rest of the string)
     char *password = strtok(NULL, "");
     if (!password) {
-      sendReply(mp, "Usage: /hi <username> <password>");
+      sendReply(mp, "Usage: /login <username> <password>");
       return ProcessMessage::CONTINUE;
     }
 
@@ -286,7 +321,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
       return ProcessMessage::CONTINUE;
     }
 
-    LOG_DEBUG("Processing /hi command: username=%s from node=0x%0x", username,
+    LOG_DEBUG("Processing /login command: username=%s from node=0x%0x", username,
               mp.from);
 
     // Try to load existing user
@@ -328,10 +363,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
   }
 
   if (!isAuthenticated) {
-    const char *helpMsg =
-        LOBBS_HEADER "/hi <user> <pass> - Login or create account\n";
-    LOG_DEBUG("Help message: %s", helpMsg);
-    sendReply(mp, helpMsg);
+    sendReply(mp, lobbsGuestHelpMessage());
     return ProcessMessage::CONTINUE;
   }
 
@@ -686,15 +718,7 @@ ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
     return ProcessMessage::CONTINUE;
   }
 
-  std::string helpMsg =
-      LOBBS_HEADER "/bye - Logout\n"
-                   "/users [filter] - List users (optional filter)\n"
-                   "/mail [<n>|<n>-] - List/read mail\n"
-                   "@user <msg> - Send mail\n"
-                   "/news [<n>|<n>-] - List/read news\n"
-                   "/news <msg> - Post news";
-  LOG_DEBUG("Help message: %s", helpMsg.c_str());
-  sendReply(mp, helpMsg);
+  sendReply(mp, lobbsFullHelpMessage());
   return ProcessMessage::CONTINUE;
 }
 
