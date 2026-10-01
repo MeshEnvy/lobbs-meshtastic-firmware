@@ -38,6 +38,15 @@ class LoBBSDal
     std::vector<LoBBSNewsEntry> getNewsForUser(uint64_t userUuid, uint32_t offset, uint32_t limit);
     bool isNewsReadByUser(uint64_t newsUuid, uint64_t userUuid);
     bool markNewsAsRead(uint64_t newsUuid, uint64_t userUuid);
+    std::vector<void *> getAllMailForUser(uint64_t userUuid);
+    std::vector<LoBBSNewsEntry> getAllNewsForUser(uint64_t userUuid);
+    bool deleteMailUuid(uint64_t mailUuid);
+    bool deleteMailInboxIndex(uint64_t inboxOwnerUuid, uint32_t oneBasedIndex);
+    bool deleteNewsListIndex(uint64_t readerUuid, uint32_t oneBasedIndex);
+    bool deleteNewsUuid(uint64_t newsUuid);
+    bool setUserAdminByUsername(const char *username, bool isAdmin);
+    uint32_t countAdminUsers();
+    bool kickUserByUsername(const char *username);
     LoDb *getDb() { return db; }
 
   private:

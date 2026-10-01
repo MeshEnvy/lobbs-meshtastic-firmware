@@ -31,13 +31,14 @@ We use **meshforge.org** to make it super easy to get up and running with LoBBS.
 
 ## Using LoBBS
 
-- **Joining the BBS** — Send a direct message to your node containing `/login <username> <password>`. The command logs you in if the account exists or creates a new account if it does not. Use `/help` or `/hi` for the command list.
-- **Logging out** — Use `/bye` to terminate the current session and clear the binding between your node ID and account.
-- **Mail** — `/mail` lists the 10 most recent messages, `/mail 3` reads message 3, and `/mail 5-` starts the listing at item 5. Mention another user in any authenticated message using `@username` to deliver instant mail.
-- **News** — `/news` mirrors the mail workflow for public announcements. Append a message after the command (for example `/news Hello mesh!`) to post a new item.
-- **User discovery** — `/users` returns the directory. Supply an optional filter string (e.g. `/users mesh`) to narrow the results.
+- **Joining the BBS** — DM `/login <username> <password>` to create an account or sign in. `/help` or `/hi` lists topics; add a topic and verb (e.g. `/help mail send`) for usage lines.
+- **Logging out** — `/bye` ends the session for your node.
+- **Mail** — `/mail send <user> <msg>`, `/mail list`, `/mail read <n>`, `/mail del <n>`. Admins may pass another username before `<n>` on list, read, and del.
+- **News** — `/news list`, `/news read <n>`, `/news post <msg>`, `/news del <n>` (author or admin for del).
+- **Users** — `/user list [filter]`. Admins: `/user kick`, `promote`, and `demote` with a username.
+- **Long lists** — `/p` or `/p <n>` for the next page of the last list (up to 10 pages per result).
 
-LoBBS replies inline with human-readable summaries. Unread content is flagged with an asterisk in list views, and relative timestamps (for example, `2h ago`) provide context for each entry.
+LoBBS replies are capped at 200 bytes per message. Unread items show `*` in lists; timestamps use relative forms like `2h ago`.
 
 
 ## License

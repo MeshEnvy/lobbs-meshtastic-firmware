@@ -369,4 +369,101 @@ std::vector<LoBBSNewsEntry> LoBBSDal::getNewsForUser(uint64_t userUuid, uint32_t
     return result;
 }
 
+std::vector<void *> LoBBSDal::getAllMailForUser(uint64_t userUuid)
+{
+    return getMailForUser(userUuid, 0, 0x7fffffff);
+}
+
+std::vector<LoBBSNewsEntry> LoBBSDal::getAllNewsForUser(uint64_t userUuid)
+{
+    return getNewsForUser(userUuid, 0, 0x7fffffff);
+}
+
+bool LoBBSDal::deleteMailUuid(uint64_t mailUuid)
+{
+    LoDbError err = db->deleteRecord("mail", mailUuid);
+    return err == LODB_OK;
+}
+
+bool LoBBSDal::deleteMailInboxIndex(uint64_t inboxOwnerUuid, uint32_t oneBasedIndex)
+{
+    if (oneBasedIndex == 0)
+        return false;
+    auto mail = getAllMailForUser(inboxOwnerUuid);
+    if (oneBasedIndex > mail.size()) {
+        LoDb::freeRecords(mail);
+        return false;
+    }
+    const meshtastic_LoBBSMail *m = (const meshtastic_LoBBSMail *)mail[oneBasedIndex - 1];
+    uint64_t uuid = m->uuid;
+    LoDb::freeRecords(mail);
+    return deleteMailUuid(uuid);
+}
+
+bool LoBBSDal::deleteNewsUuid(uint64_t newsUuid)
+{
+    LoDbError err = db->deleteRecord("news", newsUuid);
+    return err == LODB_OK;
+}
+
+bool LoBBSDal::deleteNewsListIndex(uint64_t readerUuid, uint32_t oneBasedIndex)
+{
+    if (oneBasedIndex == 0)
+        return false;
+    auto newsItems = getAllNewsForUser(readerUuid);
+    if (oneBasedIndex > newsItems.size()) {
+        for (auto &entry : newsItems) {
+            delete[] (uint8_t *)entry.news;
+        }
+        return false;
+    }
+    uint64_t uuid = newsItems[oneBasedIndex - 1].news->uuid;
+    for (auto &entry : newsItems) {
+        delete[] (uint8_t *)entry.news;
+    }
+    newsItems.clear();
+    return deleteNewsUuid(uuid);
+}
+
+bool LoBBSDal::setUserAdminByUsername(const char *username, bool isAdmin)
+{
+    meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
+    if (!loadUserByUsername(username, &user))
+        return false;
+    user.is_admin = isAdmin;
+    db->deleteRecord("users", user.uuid);
+    return db->insert("users", user.uuid, &user) == LODB_OK;
+}
+
+uint32_t LoBBSDal::countAdminUsers()
+{
+    return (uint32_t)db->count("users", [](const void *rec) -> bool {
+        const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
+        return u->is_admin;
+    });
+}
+
+bool LoBBSDal::kickUserByUsername(const char *username)
+{
+    meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
+    if (!loadUserByUsername(username, &user))
+        return false;
+    uint64_t userUuid = user.uuid;
+
+    auto sessions = db->select(
+        "sessions",
+        [userUuid](const void *rec) -> bool {
+            const meshtastic_LoBBSSession *s = (const meshtastic_LoBBSSession *)rec;
+            return s->user_uuid == userUuid;
+        },
+        nullptr);
+
+    for (auto *rec : sessions) {
+        const meshtastic_LoBBSSession *s = (const meshtastic_LoBBSSession *)rec;
+        db->deleteRecord("sessions", (lodb_uuid_t)s->node_id);
+    }
+    LoDb::freeRecords(sessions);
+    return true;
+}
+
 #endif
