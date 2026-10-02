@@ -1,7 +1,7 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "../LoBBSHistory.h"
+#include "../../LoBBSHistory.h"
 
 void lobbsUsersPush(LobbsHistory *h);
 

@@ -1,7 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "LoBBSHistory.h"
-#include "apps/Root.h"
+#include "apps/Root/Root.h"
 #include "LoBBSModule.h"
 #include "LoBBSPaging.h"
 #include <cctype>

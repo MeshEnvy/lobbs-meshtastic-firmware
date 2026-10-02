@@ -1,16 +1,33 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "Mail.h"
-#include "AppUtil.h"
-#include "../LoBBSModule.h"
-#include <cstdlib>
+#include "MailDal.h"
+#include "../Auth/AuthDal.h"
+#include "../AppUtil.h"
+#include "../../LoBBSModule.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
+static MailDal mailOf(LobbsHistory *h)
+{
+    return MailDal(*h->ctx->db);
+}
+
+void lobbsMailItemStatus(LobbsHistory *h, char *buf, size_t cap)
+{
+    if (!buf || cap == 0)
+        return;
+    buf[0] = '\0';
+    if (!h->ctx || !h->ctx->db || !h->ctx->user)
+        return;
+    lobbsAppStatusCount(buf, cap, mailOf(h).countUnreadMail(h->ctx->user->uuid));
+}
+
 static void drawMailRead(LobbsHistory *h, const LobbsFrame *self)
 {
-    auto mailMessages = h->ctx->dal->getAllMailForUser(self->arg0);
+    auto mailMessages = mailOf(h).getAllMailForUser(self->arg0);
     uint32_t idx = self->arg1;
     if (idx == 0 || idx > mailMessages.size()) {
         LoDb::freeRecords(mailMessages);
@@ -19,7 +36,7 @@ static void drawMailRead(LobbsHistory *h, const LobbsFrame *self)
     }
     const meshtastic_LoBBSMail *mail = (const meshtastic_LoBBSMail *)mailMessages[idx - 1];
     meshtastic_LoBBSUser sender = meshtastic_LoBBSUser_init_zero;
-    lobbsAppLoadUser(h->ctx->dal, mail->from_user_uuid, &sender);
+    lobbsAppLoadUser(h->ctx->db, mail->from_user_uuid, &sender);
     char name[32];
     char body[120];
     char when[32];
@@ -34,7 +51,7 @@ static void drawMailRead(LobbsHistory *h, const LobbsFrame *self)
     snprintf(reply, sizeof(reply), "From: @%s (%s)\n%s%s", name, when, body, LOBBS_HIST_NAV);
     lobbsHistoryReply(h, reply);
     if (own)
-        h->ctx->dal->markMailAsRead(mailUuid);
+        mailOf(h).markMailAsRead(mailUuid);
     LoDb::freeRecords(mailMessages);
 }
 
@@ -51,7 +68,7 @@ static void openMailIndex(LobbsHistory *h, const LobbsFrame *self, uint32_t numb
 
 static void drawInbox(LobbsHistory *h, const LobbsFrame *self)
 {
-    auto mailMessages = h->ctx->dal->getAllMailForUser(self->arg0);
+    auto mailMessages = mailOf(h).getAllMailForUser(self->arg0);
     if (mailMessages.empty()) {
         LoDb::freeRecords(mailMessages);
         lobbsHistoryReply(h, "No mail");
@@ -61,7 +78,7 @@ static void drawInbox(LobbsHistory *h, const LobbsFrame *self)
     for (size_t i = 0; i < mailMessages.size(); i++) {
         const meshtastic_LoBBSMail *mail = (const meshtastic_LoBBSMail *)mailMessages[i];
         meshtastic_LoBBSUser sender = meshtastic_LoBBSUser_init_zero;
-        lobbsAppLoadUser(h->ctx->dal, mail->from_user_uuid, &sender);
+        lobbsAppLoadUser(h->ctx->db, mail->from_user_uuid, &sender);
         char name[32];
         char when[32];
         char trunc[50];
@@ -114,7 +131,7 @@ static void mailInbox(LobbsHistory *h, const LobbsFrame *)
 
 static void mailBodyOk(LobbsHistory *h, const LobbsFrame *, const char *line)
 {
-    uint64_t toUuid = h->ctx->dal->getUserUuidByUsername(h->scratch);
+    uint64_t toUuid = AuthDal(*h->ctx->db).getUserUuidByUsername(h->scratch);
     if (toUuid == 0) {
         char buf[64];
         snprintf(buf, sizeof(buf), "User '%s' not found.", h->scratch);
@@ -126,7 +143,7 @@ static void mailBodyOk(LobbsHistory *h, const LobbsFrame *, const char *line)
         lobbsHistoryReply(h, "Login required.");
         return;
     }
-    if (h->ctx->dal->sendMail(h->ctx->user->uuid, toUuid, line))
+    if (mailOf(h).sendMail(h->ctx->user->uuid, toUuid, line))
         lobbsHistoryReply(h, "Mail sent.");
     else
         lobbsHistoryReply(h, "Failed to send mail.");
@@ -185,7 +202,7 @@ static void mailDelOk(LobbsHistory *h, const LobbsFrame *, const char *line)
 {
     if (!h->ctx->user)
         return;
-    if (h->ctx->dal->deleteMailInboxIndex(h->ctx->user->uuid, (uint32_t)atoi(line)))
+    if (mailOf(h).deleteMailInboxIndex(h->ctx->user->uuid, (uint32_t)atoi(line)))
         lobbsHistoryReply(h, "Deleted.");
     else
         lobbsHistoryReply(h, "Invalid message number");
@@ -206,7 +223,7 @@ static void mailDel(LobbsHistory *h, const LobbsFrame *)
 
 static void mailOtherOk(LobbsHistory *h, const LobbsFrame *, const char *line)
 {
-    uint64_t uuid = h->ctx->dal->getUserUuidByUsername(line);
+    uint64_t uuid = AuthDal(*h->ctx->db).getUserUuidByUsername(line);
     if (uuid == 0) {
         char buf[64];
         snprintf(buf, sizeof(buf), "User '%s' not found.", line);
@@ -244,13 +261,13 @@ void lobbsMailPush(LobbsHistory *h)
     f.kind = LobbsFrameKind::Menu;
     f.tag = "/mail";
     f.draw = drawMail;
-    f.items[0] = {"Inbox", mailInbox};
-    f.items[1] = {"Send", mailSend};
-    f.items[2] = {"Read", mailRead};
-    f.items[3] = {"Delete", mailDel};
+    f.items[0] = {"Inbox", mailInbox, lobbsMailItemStatus};
+    f.items[1] = {"Send", mailSend, nullptr};
+    f.items[2] = {"Read", mailRead, nullptr};
+    f.items[3] = {"Delete", mailDel, nullptr};
     f.itemCount = 4;
     if (h->ctx && h->ctx->isAdmin) {
-        f.items[4] = {"Other inbox", mailOther};
+        f.items[4] = {"Other inbox", mailOther, nullptr};
         f.itemCount = 5;
     }
     lobbsHistoryPush(h, f);

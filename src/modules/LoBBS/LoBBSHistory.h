@@ -1,7 +1,8 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "LoBBSDal.h"
+#include "LoBBSDb.h"
+#include <stddef.h>
 #include <stdint.h>
 
 class LoBBSModule;
@@ -15,7 +16,7 @@ struct LobbsCtx {
     LoBBSModule *mod = nullptr;
     const meshtastic_MeshPacket *mp = nullptr;
     uint32_t sessionNodeId = 0;
-    LoBBSDal *dal = nullptr;
+    LoBBSDb *db = nullptr;
     bool isAuth = false;
     const meshtastic_LoBBSUser *user = nullptr;
     bool isAdmin = false;
@@ -26,6 +27,8 @@ enum class LobbsFrameKind : uint8_t { Menu, Prompt };
 struct LobbsItem {
     const char *label = nullptr;
     void (*onPick)(LobbsHistory *h, const LobbsFrame *self) = nullptr;
+    // Writes a suffix into buf (include leading space). Empty means no mark.
+    void (*status)(LobbsHistory *h, char *buf, size_t cap) = nullptr;
 };
 
 static constexpr uint8_t LOBBS_HISTORY_DEPTH = 8;

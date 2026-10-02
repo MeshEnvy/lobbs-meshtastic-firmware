@@ -1,6 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "AppUtil.h"
+#include "../lobbs.pb.h"
 #include "gps/RTC.h"
 #include <cstdio>
 #include <cstring>
@@ -49,9 +50,9 @@ void lobbsAppTruncMsg(const char *message, char *buffer, size_t bufferSize, size
     }
 }
 
-bool lobbsAppLoadUser(LoBBSDal *dal, uint64_t uuid, meshtastic_LoBBSUser *outUser)
+bool lobbsAppLoadUser(LoBBSDb *db, uint64_t uuid, meshtastic_LoBBSUser *outUser)
 {
-    auto users = dal->getDb()->select(
+    auto users = db->getDb()->select(
         "users",
         [uuid](const void *rec) -> bool { return ((const meshtastic_LoBBSUser *)rec)->uuid == uuid; }, nullptr);
     bool found = !users.empty();
@@ -61,6 +62,32 @@ bool lobbsAppLoadUser(LoBBSDal *dal, uint64_t uuid, meshtastic_LoBBSUser *outUse
     return found;
 }
 
+void lobbsAppStatusCount(char *buf, size_t cap, uint16_t n)
+{
+    if (!buf || cap == 0)
+        return;
+    buf[0] = '\0';
+    if (n == 0)
+        return;
+    if (n > 99)
+        snprintf(buf, cap, " (99+)");
+    else
+        snprintf(buf, cap, " (%u)", (unsigned)n);
+}
+
+void lobbsAppAppendMenuLine(LobbsHistory *h, char *buf, size_t cap, size_t *n, uint8_t index, const LobbsItem *item)
+{
+    if (!buf || !n || !item || *n + 1 >= cap)
+        return;
+    char status[16];
+    status[0] = '\0';
+    if (item->status)
+        item->status(h, status, sizeof(status));
+    int w = snprintf(buf + *n, cap - *n, "[%u] %s%s\n", (unsigned)(index + 1), item->label ? item->label : "", status);
+    if (w > 0)
+        *n += (size_t)w;
+}
+
 void lobbsAppDrawTitled(LobbsHistory *h, const LobbsFrame *self, const char *title)
 {
     char buf[200];
@@ -68,12 +95,8 @@ void lobbsAppDrawTitled(LobbsHistory *h, const LobbsFrame *self, const char *tit
     int w = snprintf(buf, sizeof(buf), "%s\n", title);
     if (w > 0)
         n = (size_t)w;
-    for (uint8_t i = 0; i < self->itemCount && n + 1 < sizeof(buf); i++) {
-        w = snprintf(buf + n, sizeof(buf) - n, "[%u] %s\n", (unsigned)(i + 1), self->items[i].label);
-        if (w < 0)
-            break;
-        n += (size_t)w;
-    }
+    for (uint8_t i = 0; i < self->itemCount && n + 1 < sizeof(buf); i++)
+        lobbsAppAppendMenuLine(h, buf, sizeof(buf), &n, i, &self->items[i]);
     snprintf(buf + n, sizeof(buf) - n, "? < << p");
     lobbsHistoryReply(h, buf);
 }

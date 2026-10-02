@@ -1,9 +1,9 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "LoBBSMenu.h"
-#include "apps/Mail.h"
-#include "apps/News.h"
-#include "apps/Root.h"
+#include "apps/Mail/Mail.h"
+#include "apps/News/News.h"
+#include "apps/Root/Root.h"
 #include "LoBBSHistory.h"
 #include "LoBBSModule.h"
 #include "LoBBSPaging.h"
@@ -49,7 +49,7 @@ static LobbsMenuSlot *allocSlot(uint32_t sessionNodeId)
     return &s;
 }
 
-static void runLine(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal, bool isAuth,
+static void runLine(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db, bool isAuth,
                     const meshtastic_LoBBSUser *user, bool isAdmin, const char *line)
 {
     LobbsMenuSlot *slot = allocSlot(sessionNodeId);
@@ -57,7 +57,7 @@ static void runLine(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t 
     ctx.mod = mod;
     ctx.mp = &mp;
     ctx.sessionNodeId = sessionNodeId;
-    ctx.dal = dal;
+    ctx.db = db;
     ctx.isAuth = isAuth;
     ctx.user = user;
     ctx.isAdmin = isAdmin;
@@ -65,23 +65,23 @@ static void runLine(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t 
 }
 
 LobbsMenuKeyResult lobbsMenuTryGlobalKeys(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId,
-                                          LoBBSDal *dal, bool isAuth, const meshtastic_LoBBSUser *user, bool isAdmin,
+                                          LoBBSDb *db, bool isAuth, const meshtastic_LoBBSUser *user, bool isAdmin,
                                           const char *line)
 {
-    runLine(mod, mp, sessionNodeId, dal, isAuth, user, isAdmin, line);
+    runLine(mod, mp, sessionNodeId, db, isAuth, user, isAdmin, line);
     return LobbsMenuKeyResult::Handled;
 }
 
-void lobbsMenuHandleLine(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal, bool isAuth,
+void lobbsMenuHandleLine(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db, bool isAuth,
                          const meshtastic_LoBBSUser *user, bool isAdmin, const char *line)
 {
-    runLine(mod, mp, sessionNodeId, dal, isAuth, user, isAdmin, line);
+    runLine(mod, mp, sessionNodeId, db, isAuth, user, isAdmin, line);
 }
 
-void lobbsMenuReprint(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal, bool isAuth,
+void lobbsMenuReprint(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db, bool isAuth,
                       const meshtastic_LoBBSUser *user, bool isAdmin)
 {
-    runLine(mod, mp, sessionNodeId, dal, isAuth, user, isAdmin, "?");
+    runLine(mod, mp, sessionNodeId, db, isAuth, user, isAdmin, "?");
 }
 
 void lobbsMenuOnLogout(uint32_t sessionNodeId)
@@ -101,7 +101,7 @@ void lobbsMenuAfterMailList(uint32_t sessionNodeId, uint64_t inboxUuid)
     (void)inboxUuid;
 }
 
-void lobbsMenuShowMailList(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal,
+void lobbsMenuShowMailList(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db,
                            const meshtastic_LoBBSUser *user, bool isAdmin, uint64_t inboxUuid)
 {
     LobbsMenuSlot *slot = allocSlot(sessionNodeId);
@@ -109,7 +109,7 @@ void lobbsMenuShowMailList(LoBBSModule *mod, const meshtastic_MeshPacket &mp, ui
     ctx.mod = mod;
     ctx.mp = &mp;
     ctx.sessionNodeId = sessionNodeId;
-    ctx.dal = dal;
+    ctx.db = db;
     ctx.isAuth = user != nullptr;
     ctx.user = user;
     ctx.isAdmin = isAdmin;
@@ -121,7 +121,7 @@ void lobbsMenuShowMailList(LoBBSModule *mod, const meshtastic_MeshPacket &mp, ui
     lobbsHistoryDraw(&slot->hist);
 }
 
-void lobbsMenuShowMailRead(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal,
+void lobbsMenuShowMailRead(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db,
                            const meshtastic_LoBBSUser *user, bool isAdmin, uint64_t inboxUuid, uint32_t idx)
 {
     LobbsMenuSlot *slot = allocSlot(sessionNodeId);
@@ -129,7 +129,7 @@ void lobbsMenuShowMailRead(LoBBSModule *mod, const meshtastic_MeshPacket &mp, ui
     ctx.mod = mod;
     ctx.mp = &mp;
     ctx.sessionNodeId = sessionNodeId;
-    ctx.dal = dal;
+    ctx.db = db;
     ctx.isAuth = user != nullptr;
     ctx.user = user;
     ctx.isAdmin = isAdmin;
@@ -142,7 +142,7 @@ void lobbsMenuShowMailRead(LoBBSModule *mod, const meshtastic_MeshPacket &mp, ui
     lobbsHistoryDraw(&slot->hist);
 }
 
-void lobbsMenuShowNewsList(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal,
+void lobbsMenuShowNewsList(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db,
                            const meshtastic_LoBBSUser *user, bool isAdmin)
 {
     LobbsMenuSlot *slot = allocSlot(sessionNodeId);
@@ -150,7 +150,7 @@ void lobbsMenuShowNewsList(LoBBSModule *mod, const meshtastic_MeshPacket &mp, ui
     ctx.mod = mod;
     ctx.mp = &mp;
     ctx.sessionNodeId = sessionNodeId;
-    ctx.dal = dal;
+    ctx.db = db;
     ctx.isAuth = user != nullptr;
     ctx.user = user;
     ctx.isAdmin = isAdmin;
@@ -162,7 +162,7 @@ void lobbsMenuShowNewsList(LoBBSModule *mod, const meshtastic_MeshPacket &mp, ui
     lobbsHistoryDraw(&slot->hist);
 }
 
-void lobbsMenuShowNewsRead(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal,
+void lobbsMenuShowNewsRead(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db,
                            const meshtastic_LoBBSUser *user, bool isAdmin, uint32_t idx)
 {
     LobbsMenuSlot *slot = allocSlot(sessionNodeId);
@@ -170,7 +170,7 @@ void lobbsMenuShowNewsRead(LoBBSModule *mod, const meshtastic_MeshPacket &mp, ui
     ctx.mod = mod;
     ctx.mp = &mp;
     ctx.sessionNodeId = sessionNodeId;
-    ctx.dal = dal;
+    ctx.db = db;
     ctx.isAuth = user != nullptr;
     ctx.user = user;
     ctx.isAdmin = isAdmin;

@@ -1,12 +1,13 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "Root.h"
-#include "AppUtil.h"
-#include "Mail.h"
-#include "News.h"
-#include "Users.h"
-#include "../LoBBSPaging.h"
-#include "../LoBBSVersion.h"
+#include "../AppUtil.h"
+#include "../Mail/Mail.h"
+#include "../News/News.h"
+#include "../Auth/AuthDal.h"
+#include "../Auth/Users.h"
+#include "../../LoBBSPaging.h"
+#include "../../LoBBSVersion.h"
 #include <cstdio>
 #include <cstring>
 
@@ -29,7 +30,7 @@ static void rootWhoami(LobbsHistory *h, const LobbsFrame *)
 
 static void rootLogout(LobbsHistory *h, const LobbsFrame *)
 {
-    h->ctx->dal->logoutUser(h->ctx->sessionNodeId);
+    AuthDal(*h->ctx->db).logoutUser(h->ctx->sessionNodeId);
     h->ctx->isAuth = false;
     h->ctx->isAdmin = false;
     h->ctx->user = nullptr;
@@ -71,8 +72,8 @@ static void loginPassOk(LobbsHistory *h, const LobbsFrame *, const char *line)
     snprintf(h->scratch2, sizeof(h->scratch2), "%s", line);
     const char *username = h->scratch;
     const char *password = h->scratch2;
-    LoBBSDal *dal = h->ctx->dal;
-    if (!dal->isValidUsername(username)) {
+    AuthDal auth(*h->ctx->db);
+    if (!auth.isValidUsername(username)) {
         lobbsHistoryReply(h, "Invalid username.");
         h->drew = false;
         return;
@@ -83,8 +84,8 @@ static void loginPassOk(LobbsHistory *h, const LobbsFrame *, const char *line)
         return;
     }
     meshtastic_LoBBSUser dbUser = meshtastic_LoBBSUser_init_zero;
-    if (dal->loadUserByUsername(username, &dbUser)) {
-        if (!dal->verifyPassword(&dbUser, password)) {
+    if (auth.loadUserByUsername(username, &dbUser)) {
+        if (!auth.verifyPassword(&dbUser, password)) {
             lobbsHistoryReply(h, "Invalid password");
             h->scratch[0] = '\0';
             lobbsHistoryPop(h);
@@ -92,15 +93,15 @@ static void loginPassOk(LobbsHistory *h, const LobbsFrame *, const char *line)
             h->drew = false;
             return;
         }
-        if (!dal->loginUser(username, h->ctx->sessionNodeId)) {
+        if (!auth.loginUser(username, h->ctx->sessionNodeId)) {
             lobbsHistoryReply(h, "Error creating session");
             return;
         }
-    } else if (!dal->createUser(username, password, h->ctx->sessionNodeId)) {
+    } else if (!auth.createUser(username, password, h->ctx->sessionNodeId)) {
         lobbsHistoryReply(h, "Error creating account");
         return;
     } else {
-        dal->loadUserByUsername(username, &dbUser);
+        auth.loadUserByUsername(username, &dbUser);
     }
     h->ctx->isAuth = true;
     h->ctx->isAdmin = dbUser.is_admin;
@@ -122,12 +123,8 @@ static void drawRoot(LobbsHistory *h, const LobbsFrame *self)
     int w = snprintf(buf, sizeof(buf), "LoBBS v%s\n", LOBBS_VERSION_SHORT);
     if (w > 0)
         n = (size_t)w;
-    for (uint8_t i = 0; i < self->itemCount && n + 1 < sizeof(buf); i++) {
-        w = snprintf(buf + n, sizeof(buf) - n, "[%u] %s\n", (unsigned)(i + 1), self->items[i].label);
-        if (w < 0)
-            break;
-        n += (size_t)w;
-    }
+    for (uint8_t i = 0; i < self->itemCount && n + 1 < sizeof(buf); i++)
+        lobbsAppAppendMenuLine(h, buf, sizeof(buf), &n, i, &self->items[i]);
     snprintf(buf + n, sizeof(buf) - n, "? < << p");
     lobbsHistoryReply(h, buf);
 }
@@ -152,15 +149,15 @@ void lobbsRootInstall(LobbsHistory *h)
     f.tag = "/";
     f.draw = drawRoot;
     if (h->ctx && h->ctx->isAuth) {
-        f.items[0] = {"Mail", rootMail};
-        f.items[1] = {"News", rootNews};
-        f.items[2] = {"Users", rootUsers};
-        f.items[3] = {"Who am I", rootWhoami};
-        f.items[4] = {"Logout", rootLogout};
+        f.items[0] = {"Mail", rootMail, lobbsMailItemStatus};
+        f.items[1] = {"News", rootNews, lobbsNewsItemStatus};
+        f.items[2] = {"Users", rootUsers, nullptr};
+        f.items[3] = {"Who am I", rootWhoami, nullptr};
+        f.items[4] = {"Logout", rootLogout, nullptr};
         f.itemCount = 5;
     } else {
-        f.items[0] = {"Login", rootLogin};
-        f.items[1] = {"Who am I", rootWhoami};
+        f.items[0] = {"Login", rootLogin, nullptr};
+        f.items[1] = {"Who am I", rootWhoami, nullptr};
         f.itemCount = 2;
     }
     h->depth = 0;

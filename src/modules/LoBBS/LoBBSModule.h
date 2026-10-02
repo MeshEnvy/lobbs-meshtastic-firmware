@@ -1,7 +1,7 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "LoBBSDal.h"
+#include "LoBBSDb.h"
 #include "LoBBSMenu.h"
 #include "LoBBSVersion.h"
 #include "SinglePortModule.h"
@@ -16,11 +16,11 @@ class LoBBSModule : public SinglePortModule
 {
     friend ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPacket &mp);
     friend LobbsMenuKeyResult lobbsMenuTryGlobalKeys(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId,
-                                                     LoBBSDal *dal, bool isAuth, const meshtastic_LoBBSUser *user, bool isAdmin,
+                                                     LoBBSDb *db, bool isAuth, const meshtastic_LoBBSUser *user, bool isAdmin,
                                                      const char *line);
-    friend void lobbsMenuHandleLine(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal,
+    friend void lobbsMenuHandleLine(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db,
                                     bool isAuth, const meshtastic_LoBBSUser *user, bool isAdmin, const char *line);
-    friend void lobbsMenuReprint(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDal *dal,
+    friend void lobbsMenuReprint(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, LoBBSDb *db,
                                  bool isAuth, const meshtastic_LoBBSUser *user, bool isAdmin);
 
   public:
@@ -36,7 +36,7 @@ class LoBBSModule : public SinglePortModule
     char replyBuffer[256];
 
   private:
-    LoBBSDal *dal;
+    LoBBSDb *db;
 };
 
 extern LoBBSModule *lobbsModule;

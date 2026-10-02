@@ -1,13 +1,29 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "News.h"
-#include "AppUtil.h"
-#include "../LoBBSModule.h"
+#include "NewsDal.h"
+#include "../AppUtil.h"
+#include "../../LoBBSModule.h"
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+
+static NewsDal newsOf(LobbsHistory *h)
+{
+    return NewsDal(*h->ctx->db);
+}
+
+void lobbsNewsItemStatus(LobbsHistory *h, char *buf, size_t cap)
+{
+    if (!buf || cap == 0)
+        return;
+    buf[0] = '\0';
+    if (!h->ctx || !h->ctx->db || !h->ctx->user)
+        return;
+    lobbsAppStatusCount(buf, cap, newsOf(h).countUnreadNews(h->ctx->user->uuid));
+}
 
 static void drawNewsRead(LobbsHistory *h, const LobbsFrame *self)
 {
@@ -15,7 +31,7 @@ static void drawNewsRead(LobbsHistory *h, const LobbsFrame *self)
         lobbsHistoryReply(h, "Login required.");
         return;
     }
-    auto newsItems = h->ctx->dal->getAllNewsForUser(h->ctx->user->uuid);
+    auto newsItems = newsOf(h).getAllNewsForUser(h->ctx->user->uuid);
     uint32_t idx = self->arg1;
     if (idx == 0 || idx > newsItems.size()) {
         for (auto &e : newsItems)
@@ -25,7 +41,7 @@ static void drawNewsRead(LobbsHistory *h, const LobbsFrame *self)
     }
     const meshtastic_LoBBSNews *news = newsItems[idx - 1].news;
     meshtastic_LoBBSUser author = meshtastic_LoBBSUser_init_zero;
-    lobbsAppLoadUser(h->ctx->dal, news->author_user_uuid, &author);
+    lobbsAppLoadUser(h->ctx->db, news->author_user_uuid, &author);
     char name[32];
     char body[120];
     char when[32];
@@ -38,7 +54,7 @@ static void drawNewsRead(LobbsHistory *h, const LobbsFrame *self)
     uint64_t newsUuid = news->uuid;
     snprintf(reply, sizeof(reply), "From: @%s (%s)\n%s%s", name, when, body, LOBBS_HIST_NAV);
     lobbsHistoryReply(h, reply);
-    h->ctx->dal->markNewsAsRead(newsUuid, h->ctx->user->uuid);
+    newsOf(h).markNewsAsRead(newsUuid, h->ctx->user->uuid);
     for (auto &e : newsItems)
         delete[] (uint8_t *)e.news;
 }
@@ -54,7 +70,7 @@ static void drawNewsList(LobbsHistory *h, const LobbsFrame *)
         lobbsHistoryReply(h, "Login required.");
         return;
     }
-    auto newsItems = h->ctx->dal->getAllNewsForUser(h->ctx->user->uuid);
+    auto newsItems = newsOf(h).getAllNewsForUser(h->ctx->user->uuid);
     if (newsItems.empty()) {
         for (auto &e : newsItems)
             delete[] (uint8_t *)e.news;
@@ -65,7 +81,7 @@ static void drawNewsList(LobbsHistory *h, const LobbsFrame *)
     for (size_t i = 0; i < newsItems.size(); i++) {
         const meshtastic_LoBBSNews *news = newsItems[i].news;
         meshtastic_LoBBSUser author = meshtastic_LoBBSUser_init_zero;
-        lobbsAppLoadUser(h->ctx->dal, news->author_user_uuid, &author);
+        lobbsAppLoadUser(h->ctx->db, news->author_user_uuid, &author);
         char name[32];
         char when[32];
         char trunc[50];
@@ -123,7 +139,7 @@ static void newsPostOk(LobbsHistory *h, const LobbsFrame *, const char *line)
         h->drew = false;
         return;
     }
-    if (h->ctx->dal->postNews(h->ctx->user->uuid, line))
+    if (newsOf(h).postNews(h->ctx->user->uuid, line))
         lobbsHistoryReply(h, "News posted.");
     else
         lobbsHistoryReply(h, "Failed to post news.");
@@ -165,7 +181,7 @@ static void newsDelOk(LobbsHistory *h, const LobbsFrame *, const char *line)
     if (!h->ctx->user)
         return;
     uint32_t idx = (uint32_t)atoi(line);
-    auto newsItems = h->ctx->dal->getAllNewsForUser(h->ctx->user->uuid);
+    auto newsItems = newsOf(h).getAllNewsForUser(h->ctx->user->uuid);
     if (idx == 0 || idx > newsItems.size()) {
         for (auto &e : newsItems)
             delete[] (uint8_t *)e.news;
@@ -181,7 +197,7 @@ static void newsDelOk(LobbsHistory *h, const LobbsFrame *, const char *line)
         delete[] (uint8_t *)e.news;
     if (!allowed)
         lobbsHistoryReply(h, "Not allowed.");
-    else if (h->ctx->dal->deleteNewsUuid(newsUuid))
+    else if (newsOf(h).deleteNewsUuid(newsUuid))
         lobbsHistoryReply(h, "Deleted.");
     else
         lobbsHistoryReply(h, "Failed to delete.");
@@ -211,10 +227,10 @@ void lobbsNewsPush(LobbsHistory *h)
     f.kind = LobbsFrameKind::Menu;
     f.tag = "/news";
     f.draw = drawNews;
-    f.items[0] = {"List", newsList};
-    f.items[1] = {"Post", newsPost};
-    f.items[2] = {"Read", newsRead};
-    f.items[3] = {"Delete", newsDel};
+    f.items[0] = {"List", newsList, lobbsNewsItemStatus};
+    f.items[1] = {"Post", newsPost, nullptr};
+    f.items[2] = {"Read", newsRead, nullptr};
+    f.items[3] = {"Delete", newsDel, nullptr};
     f.itemCount = 4;
     lobbsHistoryPush(h, f);
 }

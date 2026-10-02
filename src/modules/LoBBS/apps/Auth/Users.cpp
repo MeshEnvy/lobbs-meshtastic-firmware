@@ -1,11 +1,17 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "Users.h"
-#include "AppUtil.h"
-#include "../LoBBSModule.h"
+#include "AuthDal.h"
+#include "../AppUtil.h"
+#include "../../LoBBSModule.h"
 #include <cctype>
 #include <cstring>
 #include <string>
+
+static AuthDal authOf(LobbsHistory *h)
+{
+    return AuthDal(*h->ctx->db);
+}
 
 static int cmpUser(const void *a, const void *b)
 {
@@ -15,7 +21,7 @@ static int cmpUser(const void *a, const void *b)
 static void drawUserList(LobbsHistory *h, const LobbsFrame *self)
 {
     const char *filter = h->scratch;
-    auto users = h->ctx->dal->getDb()->select(
+    auto users = h->ctx->db->getDb()->select(
         "users",
         [filter](const void *rec) -> bool {
             const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
@@ -91,25 +97,25 @@ static void usersFilter(LobbsHistory *h, const LobbsFrame *)
 
 static void usersActOk(LobbsHistory *h, const LobbsFrame *self, const char *line)
 {
-    LoBBSDal *dal = h->ctx->dal;
+    AuthDal auth = authOf(h);
     uint32_t act = self->arg1;
     if (act == 1) {
-        if (dal->kickUserByUsername(line))
+        if (auth.kickUserByUsername(line))
             lobbsHistoryReply(h, "Sessions cleared.");
         else
             lobbsHistoryReply(h, "User not found.");
     } else if (act == 2) {
-        if (dal->setUserAdminByUsername(line, true))
+        if (auth.setUserAdminByUsername(line, true))
             lobbsHistoryReply(h, "Promoted.");
         else
             lobbsHistoryReply(h, "User not found.");
     } else {
         meshtastic_LoBBSUser target = meshtastic_LoBBSUser_init_zero;
-        if (!dal->loadUserByUsername(line, &target))
+        if (!auth.loadUserByUsername(line, &target))
             lobbsHistoryReply(h, "User not found.");
-        else if (target.is_admin && dal->countAdminUsers() <= 1)
+        else if (target.is_admin && auth.countAdminUsers() <= 1)
             lobbsHistoryReply(h, "Cannot demote last admin.");
-        else if (dal->setUserAdminByUsername(line, false))
+        else if (auth.setUserAdminByUsername(line, false))
             lobbsHistoryReply(h, "Demoted.");
         else
             lobbsHistoryReply(h, "Failed.");
@@ -160,13 +166,13 @@ void lobbsUsersPush(LobbsHistory *h)
     f.kind = LobbsFrameKind::Menu;
     f.tag = "/users";
     f.draw = drawUsers;
-    f.items[0] = {"List", usersList};
-    f.items[1] = {"Filter", usersFilter};
+    f.items[0] = {"List", usersList, nullptr};
+    f.items[1] = {"Filter", usersFilter, nullptr};
     f.itemCount = 2;
     if (h->ctx && h->ctx->isAdmin) {
-        f.items[2] = {"Kick", usersKick};
-        f.items[3] = {"Promote", usersPromote};
-        f.items[4] = {"Demote", usersDemote};
+        f.items[2] = {"Kick", usersKick, nullptr};
+        f.items[3] = {"Promote", usersPromote, nullptr};
+        f.items[4] = {"Demote", usersDemote, nullptr};
         f.itemCount = 5;
     }
     lobbsHistoryPush(h, f);

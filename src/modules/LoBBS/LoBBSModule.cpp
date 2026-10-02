@@ -1,7 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "LoBBSModule.h"
-#include "LoBBSDal.h"
+#include "LoBBSDb.h"
 #include "LoBBSDispatch.h"
 #include "LoBBSPaging.h"
 #include "MeshService.h"
@@ -11,7 +11,7 @@
 
 LoBBSModule::LoBBSModule()
     : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP) {
-  dal = new LoBBSDal(nodeDB->getNodeNum());
+  db = new LoBBSDb(nodeDB->getNodeNum());
 }
 
 ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
