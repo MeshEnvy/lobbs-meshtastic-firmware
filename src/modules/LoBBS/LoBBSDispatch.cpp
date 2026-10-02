@@ -2,6 +2,7 @@
 
 #include "LoBBSDispatch.h"
 #include "LoBBSModule.h"
+#include "LoBBSMenu.h"
 #include "LoBBSPaging.h"
 #include "LoBBSVersion.h"
 #include "MeshModule.h"
@@ -9,6 +10,7 @@
 #include "configuration.h"
 #include "gps/RTC.h"
 #include "lobbs.pb.h"
+#include "mesh/NodeDB.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -110,7 +112,56 @@ static void freeNewsEntries(std::vector<LoBBSNewsEntry> &newsItems)
 
 static uint32_t lobbsSessionNodeId(const meshtastic_MeshPacket &mp)
 {
-    return mp.from ? mp.from : nodeDB->getNodeNum();
+    return getFrom(&mp);
+}
+
+static void lobbsTrimLine(char *line)
+{
+    if (!line)
+        return;
+    size_t len = strlen(line);
+    while (len > 0 && (line[len - 1] == ' ' || line[len - 1] == '\t' || line[len - 1] == '\r' || line[len - 1] == '\n'))
+        line[--len] = '\0';
+    char *start = line;
+    while (*start == ' ' || *start == '\t')
+        start++;
+    if (start != line)
+        memmove(line, start, strlen(start) + 1);
+}
+
+// Phone clients sometimes loop our DM replies back with from=0; do not answer those.
+static bool lobbsLooksLikeEchoedReply(const char *text, size_t len)
+{
+    if (!text || len == 0)
+        return false;
+    if (len >= 7 && strncmp(text, "LoBBS v", 7) == 0)
+        return true;
+    if (len >= 5 && strncmp(text, "Mail\n", 5) == 0)
+        return true;
+    if (len >= 5 && strncmp(text, "News\n", 5) == 0)
+        return true;
+    if (len >= 6 && strncmp(text, "Users\n", 6) == 0)
+        return true;
+    if (strstr(text, "\n[1]") && strstr(text, "? < << p"))
+        return true;
+    if (strncmp(text, "From: @", 7) == 0)
+        return true;
+    if (len >= 4 && text[0] == '[' && isdigit((unsigned char)text[1]) && text[2] == ']' &&
+        (text[3] == ' ' || text[3] == '*'))
+        return true;
+    if (strcmp(text, "Number?") == 0 || strcmp(text, "Delete #?") == 0 || strcmp(text, "No mail") == 0)
+        return true;
+    return false;
+}
+
+static bool lobbsIgnoreLoopbackPacket(const meshtastic_MeshPacket &mp, const char *text, size_t len)
+{
+    const uint32_t ourNode = nodeDB->getNodeNum();
+    if (mp.from == ourNode)
+        return true;
+    if (isFromUs(&mp) && lobbsLooksLikeEchoedReply(text, len))
+        return true;
+    return false;
 }
 
 static bool lobbsIsDigitsOnly(const char *s)
@@ -275,6 +326,18 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
     if (!isToUs(&mp))
         return ProcessMessage::CONTINUE;
 
+    if (mp.decoded.payload.size == 0)
+        return ProcessMessage::CONTINUE;
+
+    size_t copyLen = mp.decoded.payload.size;
+    if (copyLen >= sizeof(mod->msgBuffer))
+        copyLen = sizeof(mod->msgBuffer) - 1;
+    memcpy(mod->msgBuffer, mp.decoded.payload.bytes, copyLen);
+    mod->msgBuffer[copyLen] = '\0';
+
+    if (lobbsIgnoreLoopbackPacket(mp, mod->msgBuffer, mp.decoded.payload.size))
+        return ProcessMessage::CONTINUE;
+
     const uint32_t sessionNodeId = lobbsSessionNodeId(mp);
     LoBBSDal *dal = mod->dal;
 
@@ -282,15 +345,17 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
     bool isAuthenticated = dal->loadUserByNodeId(sessionNodeId, &existingUser);
     const bool isAdmin = isAuthenticated && existingUser.is_admin;
 
-    if (mp.decoded.payload.size == 0)
+    lobbsTrimLine(mod->msgBuffer);
+    if (mod->msgBuffer[0] == '\0')
         return ProcessMessage::CONTINUE;
 
-    memcpy(mod->msgBuffer, mp.decoded.payload.bytes, mp.decoded.payload.size);
-    mod->msgBuffer[mp.decoded.payload.size] = '\0';
-
     if (mod->msgBuffer[0] != '/') {
-        if (isAuthenticated && mod->msgBuffer[0] == '@')
-            mod->sendReply(mp, "Use: /mail send <user> <msg>");
+        const char *line = mod->msgBuffer;
+        if (lobbsMenuTryGlobalKeys(mod, mp, sessionNodeId, dal, isAuthenticated, isAuthenticated ? &existingUser : nullptr,
+                                   isAdmin, line) == LobbsMenuKeyResult::Handled)
+            return ProcessMessage::CONTINUE;
+        lobbsMenuHandleLine(mod, mp, sessionNodeId, dal, isAuthenticated, isAuthenticated ? &existingUser : nullptr, isAdmin,
+                            line);
         return ProcessMessage::CONTINUE;
     }
 
@@ -316,8 +381,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
     }
 
     if (wantHelp) {
-        lobbsPageClearUser(sessionNodeId);
-        mod->sendReply(mp, lobbsHelpLookup(helpTopic, helpVerb, isAuthenticated, isAdmin));
+        lobbsMenuReprint(mod, mp, sessionNodeId, dal, isAuthenticated, isAuthenticated ? &existingUser : nullptr, isAdmin);
         return ProcessMessage::CONTINUE;
     }
 
@@ -331,8 +395,8 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
             }
             pageNum = atoi(pageArg);
         }
-        std::string page;
-        std::string err;
+        const char *page = nullptr;
+        const char *err = nullptr;
         if (!lobbsPageFetch(sessionNodeId, pageNum, page, err))
             mod->sendReply(mp, err);
         else
@@ -392,13 +456,16 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
     }
 
     if (!isAuthenticated) {
-        mod->sendReply(mp, lobbsHelpLookup(nullptr, nullptr, false, false));
+        lobbsMenuReprint(mod, mp, sessionNodeId, dal, false, nullptr, false);
         return ProcessMessage::CONTINUE;
     }
 
     if (strcasecmp(cmdName, "/bye") == 0) {
         dal->logoutUser(sessionNodeId);
+        lobbsMenuOnLogout(sessionNodeId);
+        lobbsPageClearUser(sessionNodeId);
         mod->sendReply(mp, "Goodbye!");
+        mod->sendReply(mp, std::string("LoBBS v") + LOBBS_VERSION_SHORT + "\n[1] Login\n[2] Who am I" + "\n? < << p");
         return ProcessMessage::CONTINUE;
     }
 
@@ -451,38 +518,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                     return ProcessMessage::CONTINUE;
                 }
             }
-            auto mailMessages = dal->getAllMailForUser(inboxUuid);
-            if (mailMessages.empty()) {
-                mod->sendReply(mp, "No mail");
-                freeMailMessages(mailMessages);
-                return ProcessMessage::CONTINUE;
-            }
-            int unreadCount = 0;
-            for (auto *mailPtr : mailMessages) {
-                if (!((const meshtastic_LoBBSMail *)mailPtr)->read)
-                    unreadCount++;
-            }
-            std::string mailList;
-            if (unreadCount > 0) {
-                char unreadStr[32];
-                snprintf(unreadStr, sizeof(unreadStr), "(%d unread)\n", unreadCount);
-                mailList += unreadStr;
-            }
-            for (size_t i = 0; i < mailMessages.size(); i++) {
-                const meshtastic_LoBBSMail *mail = (const meshtastic_LoBBSMail *)mailMessages[i];
-                meshtastic_LoBBSUser sender = meshtastic_LoBBSUser_init_zero;
-                bool foundSender = loadUserByUuid(dal, mail->from_user_uuid, &sender);
-                char entryBuffer[256];
-                char timeStr[32];
-                char truncMsg[50];
-                formatTimeAgo(mail->timestamp, timeStr, sizeof(timeStr));
-                truncateMessage(mail->message, truncMsg, sizeof(truncMsg), 25);
-                snprintf(entryBuffer, sizeof(entryBuffer), "[%d]%s @%s: %s (%s)\n", (int)(i + 1), mail->read ? "" : "*",
-                         foundSender ? sender.username : "unknown", truncMsg, timeStr);
-                mailList += entryBuffer;
-            }
-            mod->sendPagedReply(sessionNodeId, mp, mailList);
-            freeMailMessages(mailMessages);
+            lobbsMenuShowMailList(mod, mp, sessionNodeId, dal, &existingUser, isAdmin, inboxUuid);
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "read") == 0) {
@@ -495,23 +531,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 mod->sendReply(mp, err);
                 return ProcessMessage::CONTINUE;
             }
-            auto mailMessages = dal->getAllMailForUser(inboxUuid);
-            if (idx == 0 || idx > mailMessages.size()) {
-                mod->sendReply(mp, "Invalid message number");
-                freeMailMessages(mailMessages);
-                return ProcessMessage::CONTINUE;
-            }
-            const meshtastic_LoBBSMail *mail = (const meshtastic_LoBBSMail *)mailMessages[idx - 1];
-            meshtastic_LoBBSUser sender = meshtastic_LoBBSUser_init_zero;
-            loadUserByUuid(dal, mail->from_user_uuid, &sender);
-            char timeStr[32];
-            formatTimeAgo(mail->timestamp, timeStr, sizeof(timeStr));
-            std::string reply = std::string("From: @") + (sender.username[0] ? sender.username : "unknown") + " (" + timeStr +
-                                ")\n" + mail->message;
-            mod->sendReply(mp, reply);
-            if (inboxUuid == existingUser.uuid)
-                dal->markMailAsRead(mail->uuid);
-            freeMailMessages(mailMessages);
+            lobbsMenuShowMailRead(mod, mp, sessionNodeId, dal, &existingUser, isAdmin, inboxUuid, idx);
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "del") == 0) {
@@ -541,38 +561,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "list") == 0) {
-            auto newsItems = dal->getAllNewsForUser(existingUser.uuid);
-            if (newsItems.empty()) {
-                mod->sendReply(mp, "No news");
-                freeNewsEntries(newsItems);
-                return ProcessMessage::CONTINUE;
-            }
-            int unreadCount = 0;
-            for (const auto &entry : newsItems) {
-                if (!entry.isRead)
-                    unreadCount++;
-            }
-            std::string newsList;
-            if (unreadCount > 0) {
-                char unreadStr[32];
-                snprintf(unreadStr, sizeof(unreadStr), "(%d unread)\n", unreadCount);
-                newsList += unreadStr;
-            }
-            for (size_t i = 0; i < newsItems.size(); i++) {
-                const meshtastic_LoBBSNews *news = newsItems[i].news;
-                meshtastic_LoBBSUser author = meshtastic_LoBBSUser_init_zero;
-                loadUserByUuid(dal, news->author_user_uuid, &author);
-                char entryBuffer[256];
-                char timeStr[32];
-                char truncMsg[50];
-                formatTimeAgo(news->timestamp, timeStr, sizeof(timeStr));
-                truncateMessage(news->message, truncMsg, sizeof(truncMsg), 25);
-                snprintf(entryBuffer, sizeof(entryBuffer), "[%d]%s @%s: %s (%s)\n", (int)(i + 1),
-                         newsItems[i].isRead ? "" : "*", author.username[0] ? author.username : "unknown", truncMsg, timeStr);
-                newsList += entryBuffer;
-            }
-            mod->sendPagedReply(sessionNodeId, mp, newsList);
-            freeNewsEntries(newsItems);
+            lobbsMenuShowNewsList(mod, mp, sessionNodeId, dal, &existingUser, isAdmin);
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "read") == 0) {
@@ -581,23 +570,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 mod->sendReply(mp, "Usage: /news read <n>");
                 return ProcessMessage::CONTINUE;
             }
-            uint32_t idx = (uint32_t)atoi(arg1);
-            auto newsItems = dal->getAllNewsForUser(existingUser.uuid);
-            if (idx == 0 || idx > newsItems.size()) {
-                mod->sendReply(mp, "Invalid news number");
-                freeNewsEntries(newsItems);
-                return ProcessMessage::CONTINUE;
-            }
-            const meshtastic_LoBBSNews *news = newsItems[idx - 1].news;
-            meshtastic_LoBBSUser author = meshtastic_LoBBSUser_init_zero;
-            loadUserByUuid(dal, news->author_user_uuid, &author);
-            char timeStr[32];
-            formatTimeAgo(news->timestamp, timeStr, sizeof(timeStr));
-            std::string reply = std::string("From: @") + (author.username[0] ? author.username : "unknown") + " (" + timeStr +
-                                ")\n" + news->message;
-            mod->sendReply(mp, reply);
-            dal->markNewsAsRead(news->uuid, existingUser.uuid);
-            freeNewsEntries(newsItems);
+            lobbsMenuShowNewsRead(mod, mp, sessionNodeId, dal, &existingUser, isAdmin, (uint32_t)atoi(arg1));
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "post") == 0) {
@@ -674,7 +647,8 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 if (u->is_admin)
                     userListMsg += "*";
             }
-            mod->sendPagedReply(sessionNodeId, mp, userListMsg);
+            mod->sendPagedReply(sessionNodeId, mp, userListMsg.c_str());
+            lobbsMenuAfterUserList(sessionNodeId);
             LoDb::freeRecords(users);
             return ProcessMessage::CONTINUE;
         }
@@ -721,7 +695,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
         return ProcessMessage::CONTINUE;
     }
 
-    mod->sendReply(mp, lobbsHelpLookup(nullptr, nullptr, true, isAdmin));
+    lobbsMenuReprint(mod, mp, sessionNodeId, dal, isAuthenticated, &existingUser, isAdmin);
     return ProcessMessage::CONTINUE;
 }
 

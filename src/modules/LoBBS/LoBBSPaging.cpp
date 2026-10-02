@@ -3,10 +3,9 @@
 #include "LoBBSPaging.h"
 #include <cstdio>
 #include <cstring>
-#include <vector>
 
 struct LobbsPageResult {
-    std::string pages[LOBBS_MAX_PAGES];
+    char pages[LOBBS_MAX_PAGES][LOBBS_PAGE_BYTES + 1];
     uint8_t count = 0;
     uint8_t lastSent = 0;
 };
@@ -18,6 +17,7 @@ struct LobbsPageSlot {
 };
 
 static LobbsPageSlot lobbsPageSlots[LOBBS_MAX_PAGE_USERS];
+static char lobbsPageErr[64];
 
 static LobbsPageSlot *lobbsFindSlot(uint32_t sessionNodeId)
 {
@@ -38,7 +38,8 @@ static LobbsPageSlot *lobbsAllocSlot(uint32_t sessionNodeId)
         if (!slot.occupied) {
             slot.sessionNodeId = sessionNodeId;
             slot.occupied = true;
-            slot.result = LobbsPageResult();
+            slot.result.count = 0;
+            slot.result.lastSent = 0;
             return &slot;
         }
     }
@@ -49,28 +50,46 @@ static LobbsPageSlot *lobbsAllocSlot(uint32_t sessionNodeId)
     LobbsPageSlot &slot = lobbsPageSlots[LOBBS_MAX_PAGE_USERS - 1];
     slot.sessionNodeId = sessionNodeId;
     slot.occupied = true;
-    slot.result = LobbsPageResult();
+    slot.result.count = 0;
+    slot.result.lastSent = 0;
     return &slot;
 }
 
-static bool lobbsSplitIntoPages(const std::string &body, LobbsPageResult &out, std::string &errMsg)
+static bool lobbsSplitIntoPages(const char *body, LobbsPageResult &out, const char *&errMsg)
 {
     out.count = 0;
-    const size_t maxChunk = LOBBS_PAGE_BYTES;
+    if (!body)
+        body = "";
+    size_t bodyLen = strlen(body);
     size_t pos = 0;
-    while (pos < body.size()) {
+    if (bodyLen == 0) {
+        out.pages[0][0] = '\0';
+        out.count = 1;
+        return true;
+    }
+    while (pos < bodyLen) {
         if (out.count >= LOBBS_MAX_PAGES) {
             errMsg = "Too many results. Narrow with a filter.";
             return false;
         }
-        size_t remaining = body.size() - pos;
-        size_t chunk = remaining < maxChunk ? remaining : maxChunk;
-        if (pos + chunk < body.size()) {
-            size_t lastNl = body.rfind('\n', pos + chunk - 1);
-            if (lastNl != std::string::npos && lastNl >= pos)
-                chunk = lastNl - pos + 1;
+        size_t remaining = bodyLen - pos;
+        size_t chunk = remaining < LOBBS_PAGE_BYTES ? remaining : LOBBS_PAGE_BYTES;
+        if (pos + chunk < bodyLen) {
+            size_t nl = 0;
+            for (size_t i = chunk; i > 0; i--) {
+                if (body[pos + i - 1] == '\n') {
+                    nl = i;
+                    break;
+                }
+            }
+            if (nl > 0)
+                chunk = nl;
         }
-        out.pages[out.count++] = body.substr(pos, chunk);
+        if (chunk == 0)
+            chunk = 1;
+        memcpy(out.pages[out.count], body + pos, chunk);
+        out.pages[out.count][chunk] = '\0';
+        out.count++;
         pos += chunk;
     }
     return true;
@@ -79,24 +98,26 @@ static bool lobbsSplitIntoPages(const std::string &body, LobbsPageResult &out, s
 void lobbsPageClearUser(uint32_t sessionNodeId)
 {
     LobbsPageSlot *slot = lobbsFindSlot(sessionNodeId);
-    if (slot)
-        slot->occupied = false;
+    if (!slot)
+        return;
+    slot->result.count = 0;
+    slot->result.lastSent = 0;
+    slot->occupied = false;
 }
 
-bool lobbsPageStoreAndFirst(uint32_t sessionNodeId, const std::string &body, std::string &outPage, std::string &errMsg)
+bool lobbsPageStoreAndFirst(uint32_t sessionNodeId, const char *body, const char *&outPage, const char *&errMsg)
 {
-    LobbsPageResult split;
-    if (!lobbsSplitIntoPages(body, split, errMsg))
-        return false;
-
     LobbsPageSlot *slot = lobbsAllocSlot(sessionNodeId);
-    slot->result = split;
+    if (!lobbsSplitIntoPages(body, slot->result, errMsg)) {
+        slot->result.count = 0;
+        return false;
+    }
     slot->result.lastSent = 1;
     outPage = slot->result.pages[0];
     return true;
 }
 
-bool lobbsPageFetch(uint32_t sessionNodeId, int pageNum, std::string &outPage, std::string &errMsg)
+bool lobbsPageFetch(uint32_t sessionNodeId, int pageNum, const char *&outPage, const char *&errMsg)
 {
     LobbsPageSlot *slot = lobbsFindSlot(sessionNodeId);
     if (!slot || !slot->occupied || slot->result.count == 0) {
@@ -107,7 +128,8 @@ bool lobbsPageFetch(uint32_t sessionNodeId, int pageNum, std::string &outPage, s
     uint8_t target = 0;
     if (pageNum <= 0) {
         if (slot->result.lastSent >= slot->result.count) {
-            errMsg = "Page out of range (1-" + std::to_string(slot->result.count) + ")";
+            snprintf(lobbsPageErr, sizeof(lobbsPageErr), "Page out of range (1-%u)", slot->result.count);
+            errMsg = lobbsPageErr;
             return false;
         }
         target = slot->result.lastSent + 1;
@@ -116,9 +138,8 @@ bool lobbsPageFetch(uint32_t sessionNodeId, int pageNum, std::string &outPage, s
     }
 
     if (target < 1 || target > slot->result.count) {
-        char buf[48];
-        snprintf(buf, sizeof(buf), "Page out of range (1-%u)", slot->result.count);
-        errMsg = buf;
+        snprintf(lobbsPageErr, sizeof(lobbsPageErr), "Page out of range (1-%u)", slot->result.count);
+        errMsg = lobbsPageErr;
         return false;
     }
 

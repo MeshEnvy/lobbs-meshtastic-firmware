@@ -31,12 +31,13 @@ We use **meshforge.org** to make it super easy to get up and running with LoBBS.
 
 ## Using LoBBS
 
-- **Joining the BBS** — DM `/login <username> <password>` to create an account or sign in. `/help` or `/hi` lists topics; add a topic and verb (e.g. `/help mail send`) for usage lines.
-- **Logging out** — `/bye` ends the session for your node.
-- **Mail** — `/mail send <user> <msg>`, `/mail list`, `/mail read <n>`, `/mail del <n>`. Admins may pass another username before `<n>` on list, read, and del.
-- **News** — `/news list`, `/news read <n>`, `/news post <msg>`, `/news del <n>` (author or admin for del).
-- **Users** — `/user list [filter]`. Admins: `/user kick`, `promote`, and `demote` with a username.
-- **Long lists** — `/p` or `/p <n>` for the next page of the last list (up to 10 pages per result).
+DM the node with short lines (no slash required). LoBBS shows numbered menus; reply with `1`, `2`, and so on.
+
+- **Navigation** — `?` reprint this screen, `<` back one level, `<<` home, `p` or `p2` next or numbered page of a list.
+- **Guests** — root menu: login or who am I. Login asks username, then password.
+- **Logged in** — root: Mail, News, Users, who am I, logout. Each topic has its own numbered submenu.
+- **Lists** — item numbers match `[n]` in the list; send that number to read mail or news. Use `p` when the list spans multiple messages.
+- **Shortcuts** — slash commands still work (`/login`, `/mail list`, `/bye`, …) for power users.
 
 LoBBS replies are capped at 200 bytes per message. Unread items show `*` in lists; timestamps use relative forms like `2h ago`.
 

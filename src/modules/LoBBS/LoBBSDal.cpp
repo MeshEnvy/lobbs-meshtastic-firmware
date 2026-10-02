@@ -369,14 +369,17 @@ std::vector<LoBBSNewsEntry> LoBBSDal::getNewsForUser(uint64_t userUuid, uint32_t
     return result;
 }
 
+// Upper bound for menu/slash list paths (LoDB still scans the table; this caps retained rows).
+static constexpr uint32_t LOBBS_MAX_LIST_ROWS = 256;
+
 std::vector<void *> LoBBSDal::getAllMailForUser(uint64_t userUuid)
 {
-    return getMailForUser(userUuid, 0, 0x7fffffff);
+    return getMailForUser(userUuid, 0, LOBBS_MAX_LIST_ROWS);
 }
 
 std::vector<LoBBSNewsEntry> LoBBSDal::getAllNewsForUser(uint64_t userUuid)
 {
-    return getNewsForUser(userUuid, 0, 0x7fffffff);
+    return getNewsForUser(userUuid, 0, LOBBS_MAX_LIST_ROWS);
 }
 
 bool LoBBSDal::deleteMailUuid(uint64_t mailUuid)
