@@ -1,20 +1,24 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "../../LoBBSDb.h"
-#include "../../lobbs.pb.h"
+#include "../../LoBBSConfig.h"
+#include "auth.pb.h"
+#include <lodb/LoDB.h>
+#include <stdint.h>
+#include <string>
 
 class AuthDal
 {
   public:
-    static void registerTables(LoDb &db);
-
-    explicit AuthDal(LoBBSDb &db) : db_(db) {}
+    AuthDal(LoDb &lodb);
 
     bool isValidUsername(const char *username);
     bool isValidPassword(const char *password);
     bool loadUserByUsername(const char *username, meshtastic_LoBBSUser *user);
+    bool loadUserByUuid(uint64_t uuid, meshtastic_LoBBSUser *user);
     bool loadUserByNodeId(uint32_t nodeId, meshtastic_LoBBSUser *user);
+    /** filterSubstr may be null or empty for all users. On false, *emptyReply is the user-facing message. */
+    bool buildUserList(const char *filterSubstr, std::string &msg, const char **emptyReply);
     bool createUser(const char *username, const char *password, uint32_t nodeId);
     bool verifyPassword(const meshtastic_LoBBSUser *user, const char *password);
     bool loginUser(const char *username, uint32_t nodeId);
@@ -27,8 +31,7 @@ class AuthDal
 
   private:
     static void hashPassword(const char *password, uint8_t *hash);
-    LoDb *lodb() { return db_.getDb(); }
-    LoBBSDb &db_;
+    LoDb &lodb_;
 };
 
 #endif

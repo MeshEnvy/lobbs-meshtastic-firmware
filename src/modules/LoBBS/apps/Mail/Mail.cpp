@@ -1,7 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "Mail.h"
-#include "MailDal.h"
+#include "mail.pb.h"
 #include "../Auth/AuthDal.h"
 #include "../AppUtil.h"
 #include "../../LoBBSModule.h"
@@ -10,9 +10,11 @@
 #include <cstring>
 #include <string>
 
-static MailDal mailOf(LobbsHistory *h)
+MailApp::MailApp(LoDb &lodb) : dal_(lodb) {}
+
+static MailDal &mailOf(LobbsHistory *h)
 {
-    return MailDal(*h->ctx->db);
+    return h->ctx->mod->mail().dal();
 }
 
 void lobbsMailItemStatus(LobbsHistory *h, char *buf, size_t cap)
@@ -20,7 +22,7 @@ void lobbsMailItemStatus(LobbsHistory *h, char *buf, size_t cap)
     if (!buf || cap == 0)
         return;
     buf[0] = '\0';
-    if (!h->ctx || !h->ctx->db || !h->ctx->user)
+    if (!h->ctx || !h->ctx->mod || !h->ctx->user)
         return;
     lobbsAppStatusCount(buf, cap, mailOf(h).countUnreadMail(h->ctx->user->uuid));
 }
@@ -36,7 +38,7 @@ static void drawMailRead(LobbsHistory *h, const LobbsFrame *self)
     }
     const meshtastic_LoBBSMail *mail = (const meshtastic_LoBBSMail *)mailMessages[idx - 1];
     meshtastic_LoBBSUser sender = meshtastic_LoBBSUser_init_zero;
-    lobbsAppLoadUser(h->ctx->db, mail->from_user_uuid, &sender);
+    lobbsAppLoadUser(h->ctx->mod->auth().dal(), mail->from_user_uuid, &sender);
     char name[32];
     char body[120];
     char when[32];
@@ -78,7 +80,7 @@ static void drawInbox(LobbsHistory *h, const LobbsFrame *self)
     for (size_t i = 0; i < mailMessages.size(); i++) {
         const meshtastic_LoBBSMail *mail = (const meshtastic_LoBBSMail *)mailMessages[i];
         meshtastic_LoBBSUser sender = meshtastic_LoBBSUser_init_zero;
-        lobbsAppLoadUser(h->ctx->db, mail->from_user_uuid, &sender);
+        lobbsAppLoadUser(h->ctx->mod->auth().dal(), mail->from_user_uuid, &sender);
         char name[32];
         char when[32];
         char trunc[50];
@@ -131,7 +133,7 @@ static void mailInbox(LobbsHistory *h, const LobbsFrame *)
 
 static void mailBodyOk(LobbsHistory *h, const LobbsFrame *, const char *line)
 {
-    uint64_t toUuid = AuthDal(*h->ctx->db).getUserUuidByUsername(h->scratch);
+    uint64_t toUuid = h->ctx->mod->auth().dal().getUserUuidByUsername(h->scratch);
     if (toUuid == 0) {
         char buf[64];
         snprintf(buf, sizeof(buf), "User '%s' not found.", h->scratch);
@@ -223,7 +225,7 @@ static void mailDel(LobbsHistory *h, const LobbsFrame *)
 
 static void mailOtherOk(LobbsHistory *h, const LobbsFrame *, const char *line)
 {
-    uint64_t uuid = AuthDal(*h->ctx->db).getUserUuidByUsername(line);
+    uint64_t uuid = h->ctx->mod->auth().dal().getUserUuidByUsername(line);
     if (uuid == 0) {
         char buf[64];
         snprintf(buf, sizeof(buf), "User '%s' not found.", line);

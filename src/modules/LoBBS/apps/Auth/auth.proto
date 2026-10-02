@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package meshtastic;
+
+/*
+ * LoBBS User Record
+ * Stores user authentication information for the LoBBS system
+ * UUID: username (for direct lookups)
+ */
+message LoBBSUser {
+  /*
+   * Username for the user account
+   */
+  string username = 1;
+
+  /*
+   * SHA256 hash of the user's password (32 bytes)
+   */
+  bytes password_hash = 2;
+
+  /*
+   * User UUID - deterministic hash derived from username
+   */
+  uint64 uuid = 3;
+
+  /*
+   * Whether this user is an administrator
+   */
+  bool is_admin = 4;
+}
+
+/*
+ * LoBBS Session Record
+ * Maps node IDs to logged-in user UUIDs
+ * UUID: node ID as uint64
+ */
+message LoBBSSession {
+  /*
+   * User UUID of the logged-in user
+   */
+  uint64 user_uuid = 1;
+
+  /*
+   * Last login timestamp
+   */
+  uint32 last_login_time = 2;
+
+  /*
+   * Node ID (stored for reference)
+   */
+  uint32 node_id = 3;
+}

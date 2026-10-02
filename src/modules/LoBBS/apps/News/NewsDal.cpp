@@ -2,15 +2,15 @@
 
 #include "NewsDal.h"
 #include "configuration.h"
-
-void NewsDal::registerTables(LoDb &db)
-{
-    db.registerTable("news", &meshtastic_LoBBSNews_msg, sizeof(meshtastic_LoBBSNews));
-    db.registerTable("news_reads", &meshtastic_LoBBSNewsRead_msg, sizeof(meshtastic_LoBBSNewsRead));
-}
 #include "gps/RTC.h"
 #include <algorithm>
 #include <cstring>
+
+NewsDal::NewsDal(LoDb &lodb) : lodb_(lodb)
+{
+    lodb_.registerTable("news", &meshtastic_LoBBSNews_msg, sizeof(meshtastic_LoBBSNews));
+    lodb_.registerTable("news_reads", &meshtastic_LoBBSNewsRead_msg, sizeof(meshtastic_LoBBSNewsRead));
+}
 
 static void buildNewsReadKey(uint64_t newsUuid, uint64_t userUuid, char *out, size_t outSize)
 {
@@ -34,7 +34,7 @@ bool NewsDal::postNews(uint64_t authorUserUuid, const char *message)
     news.message[sizeof(news.message) - 1] = '\0';
     news.timestamp = getTime();
 
-    LoDbError err = lodb()->insert("news", newsUuid, &news);
+    LoDbError err = lodb_.insert("news", newsUuid, &news);
     return err == LODB_OK;
 }
 
@@ -45,7 +45,7 @@ bool NewsDal::isNewsReadByUser(uint64_t newsUuid, uint64_t userUuid)
     lodb_uuid_t readUuid = lodb_new_uuid(key, 0);
 
     meshtastic_LoBBSNewsRead readRecord = meshtastic_LoBBSNewsRead_init_zero;
-    LoDbError err = lodb()->get("news_reads", readUuid, &readRecord);
+    LoDbError err = lodb_.get("news_reads", readUuid, &readRecord);
     return err == LODB_OK;
 }
 
@@ -63,12 +63,12 @@ bool NewsDal::markNewsAsRead(uint64_t newsUuid, uint64_t userUuid)
     readRecord.user_uuid = userUuid;
     readRecord.read_timestamp = getTime();
 
-    return lodb()->insert("news_reads", readUuid, &readRecord) == LODB_OK;
+    return lodb_.insert("news_reads", readUuid, &readRecord) == LODB_OK;
 }
 
 std::vector<LoBBSNewsEntry> NewsDal::getNewsForUser(uint64_t userUuid, uint32_t offset, uint32_t limit)
 {
-    auto allNews = lodb()->select("news", LoDbFilter(), LoDbComparator());
+    auto allNews = lodb_.select("news", LoDbFilter(), LoDbComparator());
 
     std::vector<LoBBSNewsEntry> newsWithStatus;
     newsWithStatus.reserve(allNews.size());
@@ -101,7 +101,7 @@ std::vector<LoBBSNewsEntry> NewsDal::getAllNewsForUser(uint64_t userUuid)
 
 uint16_t NewsDal::countUnreadNews(uint64_t userUuid)
 {
-    auto allNews = lodb()->select("news", LoDbFilter(), nullptr);
+    auto allNews = lodb_.select("news", LoDbFilter(), nullptr);
     uint16_t count = 0;
     for (void *newsPtr : allNews) {
         const meshtastic_LoBBSNews *news = (const meshtastic_LoBBSNews *)newsPtr;
@@ -116,7 +116,7 @@ uint16_t NewsDal::countUnreadNews(uint64_t userUuid)
 
 bool NewsDal::deleteNewsUuid(uint64_t newsUuid)
 {
-    return lodb()->deleteRecord("news", newsUuid) == LODB_OK;
+    return lodb_.deleteRecord("news", newsUuid) == LODB_OK;
 }
 
 bool NewsDal::deleteNewsListIndex(uint64_t readerUuid, uint32_t oneBasedIndex)

@@ -5,7 +5,8 @@
 #include "../Mail/Mail.h"
 #include "../News/News.h"
 #include "../Auth/AuthDal.h"
-#include "../Auth/Users.h"
+#include "../Auth/Auth.h"
+#include "../../LoBBSModule.h"
 #include "../../LoBBSPaging.h"
 #include "../../LoBBSVersion.h"
 #include <cstdio>
@@ -30,7 +31,7 @@ static void rootWhoami(LobbsHistory *h, const LobbsFrame *)
 
 static void rootLogout(LobbsHistory *h, const LobbsFrame *)
 {
-    AuthDal(*h->ctx->db).logoutUser(h->ctx->sessionNodeId);
+    h->ctx->mod->auth().dal().logoutUser(h->ctx->sessionNodeId);
     h->ctx->isAuth = false;
     h->ctx->isAdmin = false;
     h->ctx->user = nullptr;
@@ -72,7 +73,7 @@ static void loginPassOk(LobbsHistory *h, const LobbsFrame *, const char *line)
     snprintf(h->scratch2, sizeof(h->scratch2), "%s", line);
     const char *username = h->scratch;
     const char *password = h->scratch2;
-    AuthDal auth(*h->ctx->db);
+    AuthDal &auth = h->ctx->mod->auth().dal();
     if (!auth.isValidUsername(username)) {
         lobbsHistoryReply(h, "Invalid username.");
         h->drew = false;
@@ -139,7 +140,7 @@ static void rootNews(LobbsHistory *h, const LobbsFrame *)
 }
 static void rootUsers(LobbsHistory *h, const LobbsFrame *)
 {
-    lobbsUsersPush(h);
+    lobbsAuthPush(h);
 }
 
 void lobbsRootInstall(LobbsHistory *h)

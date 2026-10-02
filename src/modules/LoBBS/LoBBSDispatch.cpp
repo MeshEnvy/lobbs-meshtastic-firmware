@@ -12,7 +12,7 @@
 #include "MeshService.h"
 #include "configuration.h"
 #include "gps/RTC.h"
-#include "lobbs.pb.h"
+#include "apps/Auth/auth.pb.h"
 #include "mesh/NodeDB.h"
 #include <algorithm>
 #include <cctype>
@@ -41,31 +41,6 @@ static const char *stristr(const char *haystack, const char *needle)
             return haystack;
     }
     return nullptr;
-}
-
-static int compareUsernames(const void *a, const void *b)
-{
-    const meshtastic_LoBBSUser *u1 = (const meshtastic_LoBBSUser *)a;
-    const meshtastic_LoBBSUser *u2 = (const meshtastic_LoBBSUser *)b;
-    return strcasecmp(u1->username, u2->username);
-}
-
-static bool loadUserByUuid(LoBBSDb *db, uint64_t uuid, meshtastic_LoBBSUser *outUser)
-{
-    auto users = db->getDb()->select(
-        "users",
-        [uuid](const void *rec) -> bool {
-            const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
-            return u->uuid == uuid;
-        },
-        nullptr);
-    bool found = false;
-    if (!users.empty()) {
-        *outUser = *(const meshtastic_LoBBSUser *)users[0];
-        found = true;
-    }
-    LoDb::freeRecords(users);
-    return found;
 }
 
 static void formatTimeAgo(uint32_t timestamp, char *buffer, size_t bufferSize)
@@ -294,7 +269,7 @@ static const char *lobbsPayloadAfterPrefix(const meshtastic_MeshPacket &mp, cons
     return msgStart;
 }
 
-static bool lobbsResolveInboxTarget(LoBBSDb *db, char *arg1, char *arg2, const meshtastic_LoBBSUser &self, bool isAdmin,
+static bool lobbsResolveInboxTarget(LoBBSModule *mod, char *arg1, char *arg2, const meshtastic_LoBBSUser &self, bool isAdmin,
                                     uint64_t *inboxUuid, uint32_t *indexOut, std::string &err)
 {
     if (!arg1) {
@@ -314,7 +289,7 @@ static bool lobbsResolveInboxTarget(LoBBSDb *db, char *arg1, char *arg2, const m
         err = "Usage: <user> <n>";
         return false;
     }
-    uint64_t uuid = AuthDal(*db).getUserUuidByUsername(arg1);
+    uint64_t uuid = mod->auth().dal().getUserUuidByUsername(arg1);
     if (uuid == 0) {
         err = lobbsUserNotFoundMsg(arg1);
         return false;
@@ -342,8 +317,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
         return ProcessMessage::CONTINUE;
 
     const uint32_t sessionNodeId = lobbsSessionNodeId(mp);
-    LoBBSDb *db = mod->db;
-    AuthDal auth(*db);
+    AuthDal &auth = mod->auth().dal();
 
     meshtastic_LoBBSUser existingUser = meshtastic_LoBBSUser_init_zero;
     bool isAuthenticated = auth.loadUserByNodeId(sessionNodeId, &existingUser);
@@ -355,10 +329,10 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
 
     if (mod->msgBuffer[0] != '/') {
         const char *line = mod->msgBuffer;
-        if (lobbsMenuTryGlobalKeys(mod, mp, sessionNodeId, db, isAuthenticated, isAuthenticated ? &existingUser : nullptr,
+        if (lobbsMenuTryGlobalKeys(mod, mp, sessionNodeId, isAuthenticated, isAuthenticated ? &existingUser : nullptr,
                                    isAdmin, line) == LobbsMenuKeyResult::Handled)
             return ProcessMessage::CONTINUE;
-        lobbsMenuHandleLine(mod, mp, sessionNodeId, db, isAuthenticated, isAuthenticated ? &existingUser : nullptr, isAdmin,
+        lobbsMenuHandleLine(mod, mp, sessionNodeId, isAuthenticated, isAuthenticated ? &existingUser : nullptr, isAdmin,
                             line);
         return ProcessMessage::CONTINUE;
     }
@@ -385,7 +359,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
     }
 
     if (wantHelp) {
-        lobbsMenuReprint(mod, mp, sessionNodeId, db, isAuthenticated, isAuthenticated ? &existingUser : nullptr, isAdmin);
+        lobbsMenuReprint(mod, mp, sessionNodeId, isAuthenticated, isAuthenticated ? &existingUser : nullptr, isAdmin);
         return ProcessMessage::CONTINUE;
     }
 
@@ -460,7 +434,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
     }
 
     if (!isAuthenticated) {
-        lobbsMenuReprint(mod, mp, sessionNodeId, db, false, nullptr, false);
+        lobbsMenuReprint(mod, mp, sessionNodeId, false, nullptr, false);
         return ProcessMessage::CONTINUE;
     }
 
@@ -502,7 +476,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 mod->sendReply(mp, lobbsUserNotFoundMsg(recipient));
                 return ProcessMessage::CONTINUE;
             }
-            if (MailDal(*db).sendMail(existingUser.uuid, toUuid, body2))
+            if (mod->mail().dal().sendMail(existingUser.uuid, toUuid, body2))
                 mod->sendReply(mp, "Mail sent.");
             else
                 mod->sendReply(mp, "Failed to send mail.");
@@ -522,7 +496,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                     return ProcessMessage::CONTINUE;
                 }
             }
-            lobbsMenuShowMailList(mod, mp, sessionNodeId, db, &existingUser, isAdmin, inboxUuid);
+            lobbsMenuShowMailList(mod, mp, sessionNodeId, &existingUser, isAdmin, inboxUuid);
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "read") == 0) {
@@ -531,11 +505,11 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
             uint64_t inboxUuid = 0;
             uint32_t idx = 0;
             std::string err;
-            if (!lobbsResolveInboxTarget(db, arg1, arg2, existingUser, isAdmin, &inboxUuid, &idx, err)) {
+            if (!lobbsResolveInboxTarget(mod, arg1, arg2, existingUser, isAdmin, &inboxUuid, &idx, err)) {
                 mod->sendReply(mp, err);
                 return ProcessMessage::CONTINUE;
             }
-            lobbsMenuShowMailRead(mod, mp, sessionNodeId, db, &existingUser, isAdmin, inboxUuid, idx);
+            lobbsMenuShowMailRead(mod, mp, sessionNodeId, &existingUser, isAdmin, inboxUuid, idx);
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "del") == 0) {
@@ -544,11 +518,11 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
             uint64_t inboxUuid = 0;
             uint32_t idx = 0;
             std::string err;
-            if (!lobbsResolveInboxTarget(db, arg1, arg2, existingUser, isAdmin, &inboxUuid, &idx, err)) {
+            if (!lobbsResolveInboxTarget(mod, arg1, arg2, existingUser, isAdmin, &inboxUuid, &idx, err)) {
                 mod->sendReply(mp, err);
                 return ProcessMessage::CONTINUE;
             }
-            if (MailDal(*db).deleteMailInboxIndex(inboxUuid, idx))
+            if (mod->mail().dal().deleteMailInboxIndex(inboxUuid, idx))
                 mod->sendReply(mp, "Deleted.");
             else
                 mod->sendReply(mp, "Invalid message number");
@@ -565,7 +539,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "list") == 0) {
-            lobbsMenuShowNewsList(mod, mp, sessionNodeId, db, &existingUser, isAdmin);
+            lobbsMenuShowNewsList(mod, mp, sessionNodeId, &existingUser, isAdmin);
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "read") == 0) {
@@ -574,7 +548,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 mod->sendReply(mp, "Usage: /news read <n>");
                 return ProcessMessage::CONTINUE;
             }
-            lobbsMenuShowNewsRead(mod, mp, sessionNodeId, db, &existingUser, isAdmin, (uint32_t)atoi(arg1));
+            lobbsMenuShowNewsRead(mod, mp, sessionNodeId, &existingUser, isAdmin, (uint32_t)atoi(arg1));
             return ProcessMessage::CONTINUE;
         }
         if (strcasecmp(verb, "post") == 0) {
@@ -583,7 +557,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 mod->sendReply(mp, "Usage: /news post <msg>");
                 return ProcessMessage::CONTINUE;
             }
-            if (NewsDal(*db).postNews(existingUser.uuid, body))
+            if (mod->news().dal().postNews(existingUser.uuid, body))
                 mod->sendReply(mp, "News posted");
             else
                 mod->sendReply(mp, "Failed to post news");
@@ -596,7 +570,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 return ProcessMessage::CONTINUE;
             }
             uint32_t idx = (uint32_t)atoi(arg1);
-            auto newsItems = NewsDal(*db).getAllNewsForUser(existingUser.uuid);
+            auto newsItems = mod->news().dal().getAllNewsForUser(existingUser.uuid);
             if (idx == 0 || idx > newsItems.size()) {
                 mod->sendReply(mp, "Invalid news number");
                 freeNewsEntries(newsItems);
@@ -610,7 +584,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 mod->sendReply(mp, "Not allowed.");
                 return ProcessMessage::CONTINUE;
             }
-            if (NewsDal(*db).deleteNewsUuid(newsUuid))
+            if (mod->news().dal().deleteNewsUuid(newsUuid))
                 mod->sendReply(mp, "Deleted.");
             else
                 mod->sendReply(mp, "Failed to delete.");
@@ -632,28 +606,14 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
                 mod->sendReply(mp, "Invalid filter.");
                 return ProcessMessage::CONTINUE;
             }
-            auto username_filter = [filterStr](const void *rec) -> bool {
-                const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
-                return !filterStr || !filterStr[0] || stristr(u->username, filterStr) != nullptr;
-            };
-            auto users = db->getDb()->select("users", username_filter, compareUsernames);
-            if (users.empty()) {
-                mod->sendReply(mp, filterStr && filterStr[0] ? "No users match filter." : "No users found");
-                LoDb::freeRecords(users);
+            std::string userListMsg;
+            const char *emptyReply = nullptr;
+            if (!auth.buildUserList(filterStr, userListMsg, &emptyReply)) {
+                mod->sendReply(mp, emptyReply);
                 return ProcessMessage::CONTINUE;
-            }
-            std::string userListMsg = "Users:\n";
-            for (size_t i = 0; i < users.size(); i++) {
-                const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)users[i];
-                if (i > 0)
-                    userListMsg += ", ";
-                userListMsg += u->username;
-                if (u->is_admin)
-                    userListMsg += "*";
             }
             mod->sendPagedReply(sessionNodeId, mp, userListMsg.c_str());
             lobbsMenuAfterUserList(sessionNodeId);
-            LoDb::freeRecords(users);
             return ProcessMessage::CONTINUE;
         }
         if (!isAdmin) {
@@ -699,7 +659,7 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
         return ProcessMessage::CONTINUE;
     }
 
-    lobbsMenuReprint(mod, mp, sessionNodeId, db, isAuthenticated, &existingUser, isAdmin);
+    lobbsMenuReprint(mod, mp, sessionNodeId, isAuthenticated, &existingUser, isAdmin);
     return ProcessMessage::CONTINUE;
 }
 

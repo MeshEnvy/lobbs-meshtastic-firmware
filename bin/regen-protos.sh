@@ -13,9 +13,14 @@ echo "prebuilt binaries for your computer into nanopb-0.4.9"
 cd "$ROOT/protobufs"
 "$NANOPB" --experimental_allow_proto3_optional "--nanopb_out=-S.cpp -v:$ROOT/src/mesh/generated/" -I="$ROOT/protobufs" meshtastic/*.proto
 
-# LoBBS: firmware-only protos under src/modules/LoBBS/ (not part of meshtastic/protobufs).
-cd "$ROOT/src/modules/LoBBS"
-"$NANOPB" --experimental_allow_proto3_optional "--nanopb_out=-S.cpp -v:." -I=. lobbs.proto
+# LoBBS: per-app protos under src/modules/LoBBS/apps/ (not part of meshtastic/protobufs).
+LOBBS="$ROOT/src/modules/LoBBS"
+for app_proto in Auth/auth Mail/mail News/news; do
+  app_dir="${app_proto%%/*}"
+  proto_base="${app_proto##*/}"
+  cd "$LOBBS/apps/$app_dir"
+  "$NANOPB" --experimental_allow_proto3_optional "--nanopb_out=-S.cpp -v:." -I=. "${proto_base}.proto"
+done
 
 # LoDB: diagnostics proto embedded in the firmware source tree.
 cd "$ROOT/src/lodb"

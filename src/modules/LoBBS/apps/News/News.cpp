@@ -1,7 +1,6 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "News.h"
-#include "NewsDal.h"
 #include "../AppUtil.h"
 #include "../../LoBBSModule.h"
 #include <cctype>
@@ -10,9 +9,11 @@
 #include <cstring>
 #include <string>
 
-static NewsDal newsOf(LobbsHistory *h)
+NewsApp::NewsApp(LoDb &lodb) : dal_(lodb) {}
+
+static NewsDal &newsOf(LobbsHistory *h)
 {
-    return NewsDal(*h->ctx->db);
+    return h->ctx->mod->news().dal();
 }
 
 void lobbsNewsItemStatus(LobbsHistory *h, char *buf, size_t cap)
@@ -20,7 +21,7 @@ void lobbsNewsItemStatus(LobbsHistory *h, char *buf, size_t cap)
     if (!buf || cap == 0)
         return;
     buf[0] = '\0';
-    if (!h->ctx || !h->ctx->db || !h->ctx->user)
+    if (!h->ctx || !h->ctx->mod || !h->ctx->user)
         return;
     lobbsAppStatusCount(buf, cap, newsOf(h).countUnreadNews(h->ctx->user->uuid));
 }
@@ -41,7 +42,7 @@ static void drawNewsRead(LobbsHistory *h, const LobbsFrame *self)
     }
     const meshtastic_LoBBSNews *news = newsItems[idx - 1].news;
     meshtastic_LoBBSUser author = meshtastic_LoBBSUser_init_zero;
-    lobbsAppLoadUser(h->ctx->db, news->author_user_uuid, &author);
+    lobbsAppLoadUser(h->ctx->mod->auth().dal(), news->author_user_uuid, &author);
     char name[32];
     char body[120];
     char when[32];
@@ -81,7 +82,7 @@ static void drawNewsList(LobbsHistory *h, const LobbsFrame *)
     for (size_t i = 0; i < newsItems.size(); i++) {
         const meshtastic_LoBBSNews *news = newsItems[i].news;
         meshtastic_LoBBSUser author = meshtastic_LoBBSUser_init_zero;
-        lobbsAppLoadUser(h->ctx->db, news->author_user_uuid, &author);
+        lobbsAppLoadUser(h->ctx->mod->auth().dal(), news->author_user_uuid, &author);
         char name[32];
         char when[32];
         char trunc[50];

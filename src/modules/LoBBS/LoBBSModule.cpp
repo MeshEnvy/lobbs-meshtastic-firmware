@@ -1,7 +1,6 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "LoBBSModule.h"
-#include "LoBBSDb.h"
 #include "LoBBSDispatch.h"
 #include "LoBBSPaging.h"
 #include "MeshService.h"
@@ -10,12 +9,19 @@
 #include <string>
 
 LoBBSModule::LoBBSModule()
-    : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP) {
-  db = new LoBBSDb(nodeDB->getNodeNum());
+    : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(new LoDb("lobbs")), auth_(*lodb_), mail_(*lodb_),
+      news_(*lodb_)
+{
 }
 
-ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp) {
-  return lobbsDispatchReceived(this, mp);
+LoBBSModule::~LoBBSModule()
+{
+    delete lodb_;
+}
+
+ProcessMessage LoBBSModule::handleReceived(const meshtastic_MeshPacket &mp)
+{
+    return lobbsDispatchReceived(this, mp);
 }
 
 void lobbsBreadcrumb(const char *step)
@@ -23,7 +29,6 @@ void lobbsBreadcrumb(const char *step)
   if (!step)
     return;
 #if !defined(ARCH_PORTDUINO)
-  // No flush: USB CDC flush can block the main loop long enough for the watchdog.
   Serial.print("INFO  | LoBBS ");
   Serial.println(step);
 #else

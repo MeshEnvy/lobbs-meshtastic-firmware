@@ -1,8 +1,8 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "../../LoBBSDb.h"
-#include "../../lobbs.pb.h"
+#include "news.pb.h"
+#include <lodb/LoDB.h>
 #include <stdint.h>
 #include <vector>
 
@@ -14,9 +14,7 @@ struct LoBBSNewsEntry {
 class NewsDal
 {
   public:
-    static void registerTables(LoDb &db);
-
-    explicit NewsDal(LoBBSDb &db) : db_(db) {}
+    explicit NewsDal(LoDb &lodb);
 
     bool postNews(uint64_t authorUserUuid, const char *message);
     std::vector<LoBBSNewsEntry> getNewsForUser(uint64_t userUuid, uint32_t offset, uint32_t limit);
@@ -28,8 +26,7 @@ class NewsDal
 
   private:
     bool isNewsReadByUser(uint64_t newsUuid, uint64_t userUuid);
-    LoBBSDb &db_;
-    LoDb *lodb() { return db_.getDb(); }
+    LoDb &lodb_;
 };
 
 #endif

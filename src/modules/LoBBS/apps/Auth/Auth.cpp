@@ -1,61 +1,27 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "Users.h"
-#include "AuthDal.h"
+#include "Auth.h"
 #include "../AppUtil.h"
 #include "../../LoBBSModule.h"
-#include <cctype>
 #include <cstring>
 #include <string>
 
-static AuthDal authOf(LobbsHistory *h)
-{
-    return AuthDal(*h->ctx->db);
-}
+AuthApp::AuthApp(LoDb &lodb) : dal_(lodb) {}
 
-static int cmpUser(const void *a, const void *b)
+static AuthDal &authOf(LobbsHistory *h)
 {
-    return strcasecmp(((const meshtastic_LoBBSUser *)a)->username, ((const meshtastic_LoBBSUser *)b)->username);
+    return h->ctx->mod->auth().dal();
 }
 
 static void drawUserList(LobbsHistory *h, const LobbsFrame *self)
 {
-    const char *filter = h->scratch;
-    auto users = h->ctx->db->getDb()->select(
-        "users",
-        [filter](const void *rec) -> bool {
-            const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
-            if (!filter || !filter[0])
-                return true;
-            const char *hay = u->username;
-            for (; *hay; hay++) {
-                const char *a = hay;
-                const char *b = filter;
-                while (*a && *b && tolower((unsigned char)*a) == tolower((unsigned char)*b)) {
-                    a++;
-                    b++;
-                }
-                if (!*b)
-                    return true;
-            }
-            return false;
-        },
-        cmpUser);
-    if (users.empty()) {
-        LoDb::freeRecords(users);
-        lobbsHistoryReply(h, filter[0] ? "No users match filter." : "No users found");
+    const char *filter = h->scratch[0] ? h->scratch : nullptr;
+    std::string msg;
+    const char *emptyReply = nullptr;
+    if (!authOf(h).buildUserList(filter, msg, &emptyReply)) {
+        lobbsHistoryReply(h, emptyReply);
         return;
     }
-    std::string msg = "Users:\n";
-    for (size_t i = 0; i < users.size(); i++) {
-        const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)users[i];
-        if (i > 0)
-            msg += ", ";
-        msg += u->username;
-        if (u->is_admin)
-            msg += "*";
-    }
-    LoDb::freeRecords(users);
     msg += LOBBS_HIST_NAV;
     h->ctx->mod->sendPagedReply(h->ctx->sessionNodeId, *h->ctx->mp, msg.c_str());
     h->drew = true;
@@ -97,7 +63,7 @@ static void usersFilter(LobbsHistory *h, const LobbsFrame *)
 
 static void usersActOk(LobbsHistory *h, const LobbsFrame *self, const char *line)
 {
-    AuthDal auth = authOf(h);
+    AuthDal &auth = authOf(h);
     uint32_t act = self->arg1;
     if (act == 1) {
         if (auth.kickUserByUsername(line))
@@ -160,7 +126,7 @@ static void drawUsers(LobbsHistory *h, const LobbsFrame *self)
     lobbsAppDrawTitled(h, self, "Users");
 }
 
-void lobbsUsersPush(LobbsHistory *h)
+void lobbsAuthPush(LobbsHistory *h)
 {
     LobbsFrame f = {};
     f.kind = LobbsFrameKind::Menu;

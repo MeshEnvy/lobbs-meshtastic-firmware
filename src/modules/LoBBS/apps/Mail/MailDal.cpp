@@ -1,15 +1,15 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "MailDal.h"
-#include "../../lobbs.pb.h"
+#include "mail.pb.h"
 #include "configuration.h"
-
-void MailDal::registerTables(LoDb &db)
-{
-    db.registerTable("mail", &meshtastic_LoBBSMail_msg, sizeof(meshtastic_LoBBSMail));
-}
 #include "gps/RTC.h"
 #include <cstring>
+
+MailDal::MailDal(LoDb &lodb) : lodb_(lodb)
+{
+    lodb_.registerTable("mail", &meshtastic_LoBBSMail_msg, sizeof(meshtastic_LoBBSMail));
+}
 
 static int compareMailByTimestamp(const void *a, const void *b)
 {
@@ -37,7 +37,7 @@ bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *m
     mail.timestamp = getTime();
     mail.read = false;
 
-    LoDbError err = lodb()->insert("mail", mailUuid, &mail);
+    LoDbError err = lodb_.insert("mail", mailUuid, &mail);
     if (err != LODB_OK) {
         LOG_ERROR("Failed to send mail");
         return false;
@@ -52,7 +52,7 @@ std::vector<void *> MailDal::getMailForUser(uint64_t userUuid, uint32_t offset, 
         return m->to_user_uuid == userUuid;
     };
 
-    auto allMail = lodb()->select("mail", mail_filter, compareMailByTimestamp);
+    auto allMail = lodb_.select("mail", mail_filter, compareMailByTimestamp);
 
     std::vector<void *> result;
     for (size_t i = offset; i < allMail.size() && i < offset + limit; i++)
@@ -73,13 +73,13 @@ std::vector<void *> MailDal::getAllMailForUser(uint64_t userUuid)
 bool MailDal::markMailAsRead(uint64_t mailUuid)
 {
     meshtastic_LoBBSMail mail = meshtastic_LoBBSMail_init_zero;
-    LoDbError err = lodb()->get("mail", mailUuid, &mail);
+    LoDbError err = lodb_.get("mail", mailUuid, &mail);
     if (err != LODB_OK)
         return false;
 
     mail.read = true;
-    lodb()->deleteRecord("mail", mailUuid);
-    err = lodb()->insert("mail", mailUuid, &mail);
+    lodb_.deleteRecord("mail", mailUuid);
+    err = lodb_.insert("mail", mailUuid, &mail);
     return err == LODB_OK;
 }
 
@@ -89,7 +89,7 @@ uint16_t MailDal::countUnreadMail(uint64_t userUuid)
         const meshtastic_LoBBSMail *m = (const meshtastic_LoBBSMail *)rec;
         return m->to_user_uuid == userUuid && !m->read;
     };
-    auto rows = lodb()->select("mail", mail_filter, nullptr);
+    auto rows = lodb_.select("mail", mail_filter, nullptr);
     uint16_t count = (uint16_t)(rows.size() > 0xffff ? 0xffff : rows.size());
     LoDb::freeRecords(rows);
     return count;
@@ -97,7 +97,7 @@ uint16_t MailDal::countUnreadMail(uint64_t userUuid)
 
 bool MailDal::deleteMailUuid(uint64_t mailUuid)
 {
-    return lodb()->deleteRecord("mail", mailUuid) == LODB_OK;
+    return lodb_.deleteRecord("mail", mailUuid) == LODB_OK;
 }
 
 bool MailDal::deleteMailInboxIndex(uint64_t inboxOwnerUuid, uint32_t oneBasedIndex)

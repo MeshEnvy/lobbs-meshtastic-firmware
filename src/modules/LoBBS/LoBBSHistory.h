@@ -1,7 +1,7 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "LoBBSDb.h"
+#include "LoBBSConfig.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -16,7 +16,6 @@ struct LobbsCtx {
     LoBBSModule *mod = nullptr;
     const meshtastic_MeshPacket *mp = nullptr;
     uint32_t sessionNodeId = 0;
-    LoBBSDb *db = nullptr;
     bool isAuth = false;
     const meshtastic_LoBBSUser *user = nullptr;
     bool isAdmin = false;

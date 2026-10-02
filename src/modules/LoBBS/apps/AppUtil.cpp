@@ -1,7 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "AppUtil.h"
-#include "../lobbs.pb.h"
+#include "Auth/AuthDal.h"
 #include "gps/RTC.h"
 #include <cstdio>
 #include <cstring>
@@ -50,16 +50,9 @@ void lobbsAppTruncMsg(const char *message, char *buffer, size_t bufferSize, size
     }
 }
 
-bool lobbsAppLoadUser(LoBBSDb *db, uint64_t uuid, meshtastic_LoBBSUser *outUser)
+bool lobbsAppLoadUser(AuthDal &auth, uint64_t uuid, meshtastic_LoBBSUser *outUser)
 {
-    auto users = db->getDb()->select(
-        "users",
-        [uuid](const void *rec) -> bool { return ((const meshtastic_LoBBSUser *)rec)->uuid == uuid; }, nullptr);
-    bool found = !users.empty();
-    if (found)
-        *outUser = *(const meshtastic_LoBBSUser *)users[0];
-    LoDb::freeRecords(users);
-    return found;
+    return auth.loadUserByUuid(uuid, outUser);
 }
 
 void lobbsAppStatusCount(char *buf, size_t cap, uint16_t n)
