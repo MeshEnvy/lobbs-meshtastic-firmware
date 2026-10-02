@@ -12,6 +12,8 @@
 
 This repository is Meshtastic firmware with LoBBS integrated in the tree. Flash it like any other Meshtastic build for your board: you get mesh networking and a full bulletin board right on the device. User accounts, private mail, news, and administration over the mesh, with no sidecar services or host computer.
 
+**Canonical home:** [github.com/MeshEnvy/lobbs-meshtastic-firmware](https://github.com/MeshEnvy/lobbs-meshtastic-firmware). The older [MeshEnvy/lobbs](https://github.com/MeshEnvy/lobbs) monorepo is archived; MeshCore compatibility is not being pursued.
+
 ## Features
 
 - **User directory** with username registration and secure password storage
