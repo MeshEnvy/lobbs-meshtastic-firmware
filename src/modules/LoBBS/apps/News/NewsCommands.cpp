@@ -141,14 +141,15 @@ static void newsSubDelete(LoBBSCommandCtx &ctx)
         return;
     }
     const meshtastic_LoBBSNews *item = newsItems[idx - 1].news;
-    bool allowed = ctx.isAdmin || item->author_user_uuid == ctx.user->uuid;
+    if (!ctx.isAdmin) {
+        for (auto &e : newsItems)
+            delete[] (uint8_t *)e.news;
+        lobbsCommandReply(ctx, "Admin only.");
+        return;
+    }
     uint64_t uuid = item->uuid;
     for (auto &e : newsItems)
         delete[] (uint8_t *)e.news;
-    if (!allowed) {
-        lobbsCommandReply(ctx, "Failed.");
-        return;
-    }
     lobbsCommandReply(ctx, news.deleteNewsUuid(uuid) ? "Deleted." : "Failed.");
 }
 
@@ -177,9 +178,29 @@ static const LoBBSSubHelpEntry newsHelp[] = {
     {"list", "list [pN] — news index"},
     {"read", "read N — read and mark read"},
     {"unread", "unread N — mark unread"},
-    {"delete", "delete N — delete (author or admin)"},
+    {"delete", "delete N — delete (admin)"},
     {"post", "post message... — post news"},
 };
+
+static bool newsRewriteNumericAsRead(LoBBSCommandCtx &ctx)
+{
+    if (ctx.argc < 2 || !ctx.argv[1])
+        return false;
+    const char *tok = ctx.argv[1];
+    if (!isdigit((unsigned char)tok[0]))
+        return false;
+    for (const char *s = tok; *s; s++) {
+        if (!isdigit((unsigned char)*s))
+            return false;
+    }
+    if (ctx.argc + 1 >= LOBBS_CMD_MAX_ARGC)
+        return false;
+    for (int i = ctx.argc; i >= 2; i--)
+        ctx.argv[i] = ctx.argv[i - 1];
+    ctx.argv[1] = (char *)"read";
+    ctx.argc++;
+    return true;
+}
 
 static void handleNews(LoBBSCommandCtx &ctx)
 {
@@ -187,6 +208,7 @@ static void handleNews(LoBBSCommandCtx &ctx)
         return;
     if (lobbsCommandTrySubHelp(ctx, "News Help", newsHelp, sizeof(newsHelp) / sizeof(newsHelp[0])))
         return;
+    (void)newsRewriteNumericAsRead(ctx);
     lobbsCommandDispatchSub(ctx, newsSubs, sizeof(newsSubs) / sizeof(newsSubs[0]), "list",
                             "Unknown command. Try /help news");
 }

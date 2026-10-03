@@ -7,6 +7,7 @@
 #include "apps/Auth/Auth.h"
 #include "apps/Mail/Mail.h"
 #include "apps/News/News.h"
+#include "apps/Wall/Wall.h"
 #include <lodb/LoDB.h>
 #include <string>
 
@@ -29,6 +30,7 @@ class LoBBSModule : public SinglePortModule
     AuthApp &auth() { return auth_; }
     MailApp &mail() { return mail_; }
     NewsApp &news() { return news_; }
+    WallApp &wall() { return wall_; }
 
   protected:
     virtual ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;
@@ -39,6 +41,7 @@ class LoBBSModule : public SinglePortModule
     AuthApp auth_;
     MailApp mail_;
     NewsApp news_;
+    WallApp wall_;
 };
 
 extern LoBBSModule *lobbsModule;

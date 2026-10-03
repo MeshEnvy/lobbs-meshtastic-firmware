@@ -9,7 +9,7 @@
 
 LoBBSModule::LoBBSModule()
     : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(new LoDb("lobbs")), auth_(*lodb_), mail_(*lodb_),
-      news_(*lodb_)
+      news_(*lodb_), wall_(*lodb_)
 {
     lobbsWireup();
 }
