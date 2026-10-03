@@ -29,6 +29,7 @@ class AuthDal
     uint64_t getUserUuidByUsername(const char *username);
 
     bool setUserAdminByUsername(const char *username, bool isAdmin);
+    bool setPasswordByUsername(const char *username, const char *password);
     uint32_t countAdminUsers();
     uint32_t countAllUsers();
     bool kickUserByUsername(const char *username);

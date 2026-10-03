@@ -73,6 +73,51 @@ static void handleLogin(LoBBSCommandCtx &ctx)
     lobbsCommandReply(ctx, buf);
 }
 
+static bool passwdApply(AuthDal &auth, const char *username, const char *newPass, const char *confirm, LoBBSCommandCtx &ctx)
+{
+    if (strcmp(newPass, confirm) != 0) {
+        lobbsCommandReply(ctx, "Passwords do not match.");
+        return false;
+    }
+    if (strlen(newPass) < 5 || !auth.isValidPassword(newPass)) {
+        lobbsCommandReply(ctx, "Password too short.");
+        return false;
+    }
+    if (!auth.setPasswordByUsername(username, newPass)) {
+        lobbsCommandReply(ctx, "Error updating password.");
+        return false;
+    }
+    lobbsCommandReply(ctx, "Password updated.");
+    return true;
+}
+
+static void handlePasswd(LoBBSCommandCtx &ctx)
+{
+    AuthDal &auth = ctx.mod->auth().dal();
+    if (ctx.argc == 3) {
+        if (!lobbsCommandRequireLogin(ctx))
+            return;
+        passwdApply(auth, ctx.user->username, ctx.argv[1], ctx.argv[2], ctx);
+        return;
+    }
+    if (ctx.argc == 4) {
+        if (!lobbsCommandRequireAdmin(ctx))
+            return;
+        if (!auth.isValidUsername(ctx.argv[1])) {
+            lobbsCommandReply(ctx, "Invalid username.");
+            return;
+        }
+        meshtastic_LoBBSUser dbUser = meshtastic_LoBBSUser_init_zero;
+        if (!auth.loadUserByUsername(ctx.argv[1], &dbUser)) {
+            lobbsCommandReply(ctx, "User not found.");
+            return;
+        }
+        passwdApply(auth, ctx.argv[1], ctx.argv[2], ctx.argv[3], ctx);
+        return;
+    }
+    lobbsCommandReply(ctx, "Usage: /passwd new confirm\nUsage: /passwd user new confirm (admin)");
+}
+
 static void usersSubList(LoBBSCommandCtx &ctx)
 {
     AuthDal &auth = ctx.mod->auth().dal();
@@ -168,6 +213,11 @@ static const LoBBSSubHelpEntry logoutHelp[] = {
     {"logout", "logout — end session"},
 };
 
+static const LoBBSSubHelpEntry passwdHelp[] = {
+    {"passwd", "passwd new confirm — change your password"},
+    {"passwd", "passwd user new confirm — admin: reset user password"},
+};
+
 static void handleUsers(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireLogin(ctx))
@@ -185,6 +235,7 @@ static void filterAuthCommands(void *value, LoBBSCommandCtx *ctx)
     lobbsFilterCommandsAdd(*cmds, "whoami", handleWhoami);
     lobbsFilterCommandsAdd(*cmds, "login", handleLogin);
     lobbsFilterCommandsAdd(*cmds, "logout", handleLogout);
+    lobbsFilterCommandsAdd(*cmds, "passwd", handlePasswd);
     lobbsFilterCommandsAdd(*cmds, "users", handleUsers);
 }
 
@@ -195,6 +246,7 @@ static void filterAuthHelpTopicsEarly(void *value, LoBBSCommandCtx *ctx)
     lobbsFilterHelpTopicAdd(*topics, "whoami", "Whoami Help", whoamiHelp, sizeof(whoamiHelp) / sizeof(whoamiHelp[0]));
     lobbsFilterHelpTopicAdd(*topics, "login", "Login Help", loginHelp, sizeof(loginHelp) / sizeof(loginHelp[0]));
     lobbsFilterHelpTopicAdd(*topics, "logout", "Logout Help", logoutHelp, sizeof(logoutHelp) / sizeof(logoutHelp[0]));
+    lobbsFilterHelpTopicAdd(*topics, "passwd", "Passwd Help", passwdHelp, sizeof(passwdHelp) / sizeof(passwdHelp[0]));
 }
 
 static void filterAuthHelpTopicsUsers(void *value, LoBBSCommandCtx *ctx)
@@ -225,6 +277,7 @@ static void filterAuthHelpIndexEarly(void *value, LoBBSCommandCtx *ctx)
     if (ctx->isAuth) {
         lobbsFilterLinesPush(*index, "whoami");
         lobbsFilterLinesPush(*index, "logout");
+        lobbsFilterLinesPush(*index, "passwd");
     } else {
         lobbsFilterLinesPush(*index, "login");
     }

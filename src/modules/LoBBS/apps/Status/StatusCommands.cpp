@@ -5,8 +5,12 @@
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSReply.h"
 #include "../../LoBBSVersion.h"
+#include "gps/RTC.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <stdint.h>
+#include <sys/time.h>
 
 static void handleHi(LoBBSCommandCtx &ctx)
 {
@@ -44,17 +48,70 @@ static void handleStatus(LoBBSCommandCtx &ctx)
     lobbsCommandReply(ctx, buf);
 }
 
+static void handleTime(LoBBSCommandCtx &ctx)
+{
+    if (ctx.argc == 1) {
+        char buf[LOBBS_REPLY_BYTES + 1];
+        snprintf(buf, sizeof(buf), "Time: %u (%s)", (unsigned)getTime(), RtcName(getRTCQuality()));
+        lobbsCommandReply(ctx, buf);
+        return;
+    }
+    if (ctx.argc == 2) {
+        if (!lobbsCommandRequireAdmin(ctx))
+            return;
+        char *end = nullptr;
+        unsigned long sec = strtoul(ctx.argv[1], &end, 10);
+        if (!ctx.argv[1][0] || end == ctx.argv[1] || *end != '\0' || sec > UINT32_MAX) {
+            lobbsCommandReply(ctx, "Invalid time.");
+            return;
+        }
+        struct timeval tv;
+        tv.tv_sec = (time_t)sec;
+        tv.tv_usec = 0;
+        RTCSetResult r = perhapsSetRTC(RTCQualityNTP, &tv, true);
+        if (r == RTCSetResultSuccess)
+            lobbsCommandReply(ctx, "Time set.");
+        else if (r == RTCSetResultInvalidTime)
+            lobbsCommandReply(ctx, "Invalid time.");
+        else
+            lobbsCommandReply(ctx, "Could not set time.");
+        return;
+    }
+    lobbsCommandReply(ctx, "Usage: /time\nUsage: /time unix (admin)");
+}
+
+static const LoBBSSubHelpEntry timeHelp[] = {
+    {"time", "time — show Unix time and source"},
+    {"time", "time unix — admin: set clock to Unix epoch"},
+};
+
 static void filterStatusCommands(void *value, LoBBSCommandCtx *ctx)
 {
     (void)ctx;
     auto *cmds = (LoBBSFilterCommands *)value;
     lobbsFilterCommandsAdd(*cmds, "status", handleStatus);
     lobbsFilterCommandsAdd(*cmds, "hi", handleHi);
+    lobbsFilterCommandsAdd(*cmds, "time", handleTime);
+}
+
+static void filterStatusHelpTopics(void *value, LoBBSCommandCtx *ctx)
+{
+    (void)ctx;
+    lobbsFilterHelpTopicAdd(*(LoBBSFilterHelpTopics *)value, "time", "Time Help", timeHelp,
+                            sizeof(timeHelp) / sizeof(timeHelp[0]));
+}
+
+static void filterStatusHelpIndex(void *value, LoBBSCommandCtx *ctx)
+{
+    (void)ctx;
+    lobbsFilterLinesPush(*(LoBBSFilterLines *)value, "time");
 }
 
 void lobbsStatusRegisterCommands()
 {
     lobbsRegisterFilter("commands", filterStatusCommands);
+    lobbsRegisterFilter("help_topics", filterStatusHelpTopics);
+    lobbsRegisterFilter("help_index", filterStatusHelpIndex);
 }
 
 #endif

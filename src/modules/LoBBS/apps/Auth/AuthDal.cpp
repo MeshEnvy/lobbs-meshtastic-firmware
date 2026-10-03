@@ -281,6 +281,17 @@ bool AuthDal::setUserAdminByUsername(const char *username, bool isAdmin)
     return lodb_.insert("users", user.uuid, &user) == LODB_OK;
 }
 
+bool AuthDal::setPasswordByUsername(const char *username, const char *password)
+{
+    meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
+    if (!loadUserByUsername(username, &user))
+        return false;
+    user.password_hash.size = 32;
+    hashPassword(password, user.password_hash.bytes);
+    lodb_.deleteRecord("users", user.uuid);
+    return lodb_.insert("users", user.uuid, &user) == LODB_OK;
+}
+
 uint32_t AuthDal::countAdminUsers()
 {
     return (uint32_t)lodb_.count("users", [](const void *rec) -> bool {
