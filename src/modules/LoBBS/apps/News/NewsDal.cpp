@@ -66,6 +66,17 @@ bool NewsDal::markNewsAsRead(uint64_t newsUuid, uint64_t userUuid)
     return lodb_.insert("news_reads", readUuid, &readRecord) == LODB_OK;
 }
 
+bool NewsDal::markNewsAsUnread(uint64_t newsUuid, uint64_t userUuid)
+{
+    if (!isNewsReadByUser(newsUuid, userUuid))
+        return true;
+
+    char key[35];
+    buildNewsReadKey(newsUuid, userUuid, key, sizeof(key));
+    lodb_uuid_t readUuid = lodb_new_uuid(key, 0);
+    return lodb_.deleteRecord("news_reads", readUuid) == LODB_OK;
+}
+
 std::vector<LoBBSNewsEntry> NewsDal::getNewsForUser(uint64_t userUuid, uint32_t offset, uint32_t limit)
 {
     auto allNews = lodb_.select("news", LoDbFilter(), LoDbComparator());

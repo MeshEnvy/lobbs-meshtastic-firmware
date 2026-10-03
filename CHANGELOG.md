@@ -4,6 +4,12 @@ LoBBS changes in this Meshtastic firmware fork. Meshtastic upstream release note
 
 LoBBS semver is the `[LOBBS]` section in `version.properties`. Builds inject `LOBBS_VERSION` / `LOBBS_VERSION_SHORT` the same way as `APP_VERSION` (see `bin/readprops.py`, `bin/platformio-custom.py`).
 
+## 2.3.0
+
+- Stateless slash CLI only: `/[id] command args…`, replies optionally prefixed `<id>`. No menu stack or page cache on device.
+- Lists paginate with `pN` (re-query offset/limit). `/status` and `/hi` show unread mail and news counts.
+- Ignore non-slash DMs and self-originated loopback (`from` = local node).
+
 ## 2.2.0
 
 - Numbered menus over DM: pick `1`, `2`, … instead of typing topic verbs. Prompts for login, mail, and news.

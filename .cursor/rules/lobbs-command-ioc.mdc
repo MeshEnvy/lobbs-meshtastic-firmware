@@ -1,0 +1,46 @@
+---
+description: LoBBS slash CLI — command registration and inversion of control
+globs: src/modules/LoBBS/**/*
+alwaysApply: false
+---
+
+# LoBBS command IoC
+
+LoBBS is a stateless slash CLI over mesh DMs. **Plugins own their commands and status lines.** The registry parses and dispatches. One wireup file lists plugins.
+
+## Required layout
+
+| Layer | Role | May include |
+| --- | --- | --- |
+| `LoBBSDispatch.cpp` | Trim line, session/auth lookup, call handler | `LoBBSCommandRegistry.h`, `AuthDal` for session only |
+| `LoBBSHooks.*` | `lobbsRegisterFilter`, `lobbsApplyFilters`, command/line filter value types | No plugin or DAL headers |
+| `LoBBSCommandRegistry.*` | Parse `/[id] verb …`, dispatch table, reply/page/subcommand helpers | `LoBBSHooks.h` only (no `apps/*Commands.h`) |
+| `LoBBSWireup.cpp` | **Only** plugin list: reset filters, call each `lobbs*RegisterCommands`, apply `commands`, `lobbsCommandsInstall` | All plugin `*Commands.h` |
+| `apps/<App>/*Commands.*` | Handlers + filter registration | That app's DAL, `LoBBSHooks`, registry helpers |
+| `apps/<App>/<App>.cpp` | Construct app / DAL wiring | No command switch |
+
+## Do
+
+- Extend LoBBS only through `lobbsRegisterFilter` from each plugin's `lobbs*RegisterCommands()`.
+- Root verbs: subscribe to the `commands` filter and use `lobbsFilterCommandsAdd`.
+- `/status` and `/hi`: Status plugin handler applies `status_lines`; each app pushes its own line (e.g. unread counts).
+- `/help`: Help plugin applies `help_topics` for `/help <topic>` and `help_index` (with live `LoBBSCommandCtx`) for the root command list. Each app pushes index names only when that command is available now (e.g. `logout` when authed, `login` when not).
+- Call `lobbsWireup()` once from `LoBBSModule` construction.
+- Use `LoBBSCommandCtx` in handlers; reply via `lobbsCommandReply(ctx, …)`.
+- Multi-word app commands (`/mail list`, `/users find`, …) use `lobbsCommandDispatchSub` with a `LoBBSSubcommand[]` table, not a hand-rolled `strcasecmp` chain.
+- New plugin: add `lobbsXRegisterCommands()` plus one call in `LoBBSWireup.cpp`.
+
+## Don't
+
+- Add a central `if/else` chain or giant switch that lists every verb and pulls in every DAL (`LoBBSCommands.cpp` style).
+- `#include` plugin headers from `LoBBSCommandRegistry.cpp` or `LoBBSHooks.cpp`.
+- Call another app's DAL from the Status handler or from dispatch.
+- Add hook-specific register APIs (`lobbsCommandRegister`, `lobbsStatusRegister`).
+
+## Aliases
+
+Multiple `lobbsFilterCommandsAdd` entries may share one handler (e.g. `status` and `hi` in Status plugin).
+
+## Help
+
+Help dispatch lives in `apps/Help/HelpCommands.cpp`. Topic text lives in each plugin (`help_topics` filter + shared `LoBBSSubHelpEntry` table with `lobbsCommandTrySubHelp`).

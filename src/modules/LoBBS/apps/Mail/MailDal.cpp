@@ -83,6 +83,19 @@ bool MailDal::markMailAsRead(uint64_t mailUuid)
     return err == LODB_OK;
 }
 
+bool MailDal::markMailAsUnread(uint64_t mailUuid)
+{
+    meshtastic_LoBBSMail mail = meshtastic_LoBBSMail_init_zero;
+    LoDbError err = lodb_.get("mail", mailUuid, &mail);
+    if (err != LODB_OK)
+        return false;
+
+    mail.read = false;
+    lodb_.deleteRecord("mail", mailUuid);
+    err = lodb_.insert("mail", mailUuid, &mail);
+    return err == LODB_OK;
+}
+
 uint16_t MailDal::countUnreadMail(uint64_t userUuid)
 {
     auto mail_filter = [userUuid](const void *rec) -> bool {

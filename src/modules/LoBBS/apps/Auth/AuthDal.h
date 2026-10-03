@@ -19,6 +19,9 @@ class AuthDal
     bool loadUserByNodeId(uint32_t nodeId, meshtastic_LoBBSUser *user);
     /** filterSubstr may be null or empty for all users. On false, *emptyReply is the user-facing message. */
     bool buildUserList(const char *filterSubstr, std::string &msg, const char **emptyReply);
+    /** Paginated user names (one per line in reply). page1Based >= 1. Sets totalCount. On false, *emptyReply set. */
+    bool formatUserListPage(const char *filterSubstr, uint32_t page1Based, std::string &msg, uint32_t &totalCount,
+                            const char **emptyReply);
     bool createUser(const char *username, const char *password, uint32_t nodeId);
     bool verifyPassword(const meshtastic_LoBBSUser *user, const char *password);
     bool loginUser(const char *username, uint32_t nodeId);

@@ -20,6 +20,7 @@ class NewsDal
     std::vector<LoBBSNewsEntry> getNewsForUser(uint64_t userUuid, uint32_t offset, uint32_t limit);
     std::vector<LoBBSNewsEntry> getAllNewsForUser(uint64_t userUuid);
     bool markNewsAsRead(uint64_t newsUuid, uint64_t userUuid);
+    bool markNewsAsUnread(uint64_t newsUuid, uint64_t userUuid);
     uint16_t countUnreadNews(uint64_t userUuid);
     bool deleteNewsUuid(uint64_t newsUuid);
     bool deleteNewsListIndex(uint64_t readerUuid, uint32_t oneBasedIndex);

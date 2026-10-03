@@ -19,7 +19,7 @@ This repository is Meshtastic firmware with LoBBS integrated in the tree. Flash 
 - **User directory** with username registration and secure password storage
 - **Private mail inbox** with paging, read receipts, and inline `@mention` delivery
 - **News feed** with threaded announcements and per-user read tracking
-- Session-aware command parser with **contextual help**
+- Stateless slash CLI over DM (one command, one reply)
 - Backed by [LoDB](https://github.com/MeshEnvy/lodb) for on-device storage so the entire BBS persists across reboots
 
 ## Installation
@@ -33,13 +33,16 @@ We use **meshforge.org** to make it super easy to get up and running with LoBBS.
 
 ## Using LoBBS
 
-DM the node with short lines (no slash required). LoBBS shows numbered menus; reply with `1`, `2`, and so on.
+LoBBS is intentionally a **stateless CLI** on the radio: you send one slash command, you get one reply. There is no menu session or navigation state on the device. Rich clients (web UI, phone apps, bots) can wrap the same commands with threading, layout, and reply tracking. That design also keeps mesh traffic to a single command and a single response instead of multi-message menu redraws.
 
-- **Navigation** — `?` reprint this screen, `<` back one level, `<<` home, `p` or `p2` next or numbered page of a list.
-- **Guests** — root menu: login or who am I. Login asks username, then password.
-- **Logged in** — root: Mail, News, Users, who am I, logout. Each topic has its own numbered submenu.
-- **Lists** — item numbers match `[n]` in the list; send that number to read mail or news. Use `p` when the list spans multiple messages.
-- **Shortcuts** — slash commands still work (`/login`, `/mail list`, `/bye`, …) for power users.
+DM the node with lines that start with `/`. Optional request id for machines:
+
+```
+/42 login ben mypassword
+<42>Welcome ben!
+```
+
+Humans can omit the id: `/hi` is the intro screen; `/status` shows unread summary lines (mail, news, etc.). Lists use `pN` page tokens (re-query each time, no cached pages): `/mail list p2`. Multi-page replies pack as many lines as fit in 200 bytes; the last line is `{p 2/3}` when there is another page. Send `/help` for the command index.
 
 LoBBS replies are capped at 200 bytes per message. Unread items show `*` in lists; timestamps use relative forms like `2h ago`.
 
