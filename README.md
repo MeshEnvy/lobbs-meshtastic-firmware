@@ -44,7 +44,7 @@ DM the node with lines that start with `/`. Optional request id for machines:
 <42>Welcome ben!
 ```
 
-Humans can omit the id: `/hi` is the intro screen; `/status` shows system totals (users, mail, news), new yarn words since your last `/yarn`, and whether the wall canvas changed since you last viewed it. `/yarn` and `/wall` view need no login; adding a word or painting the wall needs login and respects quotas. Admins set limits with `/yarn limit 3600 1 32` and `/wall limit 3600 3`. Lists use `pN` page tokens (re-query each time, no cached pages): `/mail list p2`. Multi-page replies pack as many lines as fit in 200 bytes; the last line is `{p 2/3}` when there is another page. Send `/help` for the command index.
+Humans can omit the id: `/hi` is the intro screen (welcome by name when logged in); `/status` works without login and shows all-time totals for users, mail, news, and yarn. When logged in, `/status` shows unread mail and news, new yarn words since your last `/yarn`, and whether the wall canvas changed since you last viewed it. `/yarn` and `/wall` view need no login; adding a word or painting the wall needs login and respects quotas. Admins set limits with `/yarn limit 3600 1 32` and `/wall limit 3600 3`. Lists use `pN` page tokens (re-query each time, no cached pages): `/mail list p2`. Multi-page replies pack as many lines as fit in 200 bytes; the last line is `{p 2/3}` when there is another page. Send `/help` for the command index.
 
 LoBBS replies are capped at 200 bytes per message. Unread items show `*` in lists; timestamps use relative forms like `2h ago`.
 

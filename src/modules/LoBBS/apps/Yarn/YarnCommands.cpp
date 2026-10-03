@@ -82,11 +82,18 @@ static void filterYarnCommands(void *value, LoBBSCommandCtx *ctx)
 
 static void filterYarnStatusLines(void *value, LoBBSCommandCtx *ctx)
 {
-    if (!ctx || !ctx->mod || !ctx->isAuth || !ctx->user)
+    if (!ctx || !ctx->mod)
         return;
     char line[LOBBS_FILTER_LINE_BYTES];
-    uint32_t n = ctx->mod->yarn().dal().newWordsForUser(ctx->user->uuid);
-    snprintf(line, sizeof(line), "Yarn: %u", (unsigned)n);
+    if (ctx->isAuth) {
+        if (!ctx->user)
+            return;
+        uint32_t n = ctx->mod->yarn().dal().newWordsForUser(ctx->user->uuid);
+        snprintf(line, sizeof(line), "Yarn: %u", (unsigned)n);
+    } else {
+        uint32_t n = ctx->mod->yarn().dal().totalWordsAppended();
+        snprintf(line, sizeof(line), "Yarn: %u (all time)", (unsigned)n);
+    }
     lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
 }
 

@@ -10,19 +10,21 @@
 
 static void handleHi(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireLogin(ctx))
-        return;
     char buf[LOBBS_REPLY_BYTES + 1];
-    snprintf(buf, sizeof(buf),
-             "LoBBS v%s\nWelcome back, %s!\nUse /help for general help\nUse /help <cmd> for help with a command\nUse /status to see what's happening",
-             LOBBS_VERSION_SHORT, ctx.user->username);
+    if (ctx.isAuth && ctx.user) {
+        snprintf(buf, sizeof(buf),
+                 "LoBBS v%s\nWelcome back, %s!\nUse /help for general help\nUse /help <cmd> for help with a command\nUse /status to see what's happening",
+                 LOBBS_VERSION_SHORT, ctx.user->username);
+    } else {
+        snprintf(buf, sizeof(buf),
+                 "LoBBS v%s\nWelcome!\nUse /help for general help\nUse /help <cmd> for help with a command\nUse /status to see what's happening\nUse /login to sign in",
+                 LOBBS_VERSION_SHORT);
+    }
     lobbsCommandReply(ctx, buf);
 }
 
 static void handleStatus(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireLogin(ctx))
-        return;
     LoBBSFilterLines lines{};
     lobbsApplyFilters("status_lines", &lines, &ctx);
     if (lines.count == 0) {

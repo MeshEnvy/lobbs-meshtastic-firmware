@@ -210,7 +210,10 @@ static void filterAuthStatusLines(void *value, LoBBSCommandCtx *ctx)
         return;
     char line[LOBBS_FILTER_LINE_BYTES];
     uint32_t n = ctx->mod->auth().dal().countAllUsers();
-    snprintf(line, sizeof(line), "Users: %u", (unsigned)n);
+    if (ctx->isAuth)
+        snprintf(line, sizeof(line), "Users: %u", (unsigned)n);
+    else
+        snprintf(line, sizeof(line), "Users: %u (all time)", (unsigned)n);
     lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
 }
 

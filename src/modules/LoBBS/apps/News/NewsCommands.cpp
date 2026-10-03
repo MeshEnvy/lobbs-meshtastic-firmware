@@ -224,8 +224,15 @@ static void filterNewsStatusLines(void *value, LoBBSCommandCtx *ctx)
     if (!ctx || !ctx->mod)
         return;
     char line[LOBBS_FILTER_LINE_BYTES];
-    uint32_t n = ctx->mod->news().dal().countAllNews();
-    snprintf(line, sizeof(line), "News: %u", (unsigned)n);
+    if (ctx->isAuth) {
+        if (!ctx->user)
+            return;
+        uint32_t n = ctx->mod->news().dal().countUnreadNews(ctx->user->uuid);
+        snprintf(line, sizeof(line), "News: %u", (unsigned)n);
+    } else {
+        uint32_t n = ctx->mod->news().dal().countAllNews();
+        snprintf(line, sizeof(line), "News: %u (all time)", (unsigned)n);
+    }
     lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
 }
 
