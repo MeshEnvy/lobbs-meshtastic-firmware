@@ -105,7 +105,7 @@ Released from the archived MPM plugin monorepo ([MeshEnvy/lobbs](https://github.
 - User directory and search functionality.
 
 [Unreleased]: https://github.com/MeshEnvy/lobbs-meshtastic-firmware/compare/lobbs-1.3.0.f18d6d6-meshtastic-2.7.26.54e0d8d...lobbs
-[1.3.0]: https://github.com/MeshEnvy/lobbs-meshtastic-firmware/compare/f18d6d6b0...lobbs-1.3.0.f18d6d6-meshtastic-2.7.26.54e0d8d
+[1.3.0]: https://github.com/MeshEnvy/lobbs-meshtastic-firmware/releases/tag/lobbs-1.3.0.f18d6d6-meshtastic-2.7.26.54e0d8d
 [1.2.1]: https://github.com/MeshEnvy/lobbs/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/MeshEnvy/lobbs/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/MeshEnvy/lobbs/compare/v1.1.0...v1.1.1
