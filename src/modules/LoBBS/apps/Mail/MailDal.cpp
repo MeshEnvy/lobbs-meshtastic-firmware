@@ -96,6 +96,12 @@ bool MailDal::markMailAsUnread(uint64_t mailUuid)
     return err == LODB_OK;
 }
 
+uint32_t MailDal::countAllMail()
+{
+    int n = lodb_.count("mail");
+    return n < 0 ? 0 : (uint32_t)n;
+}
+
 uint16_t MailDal::countUnreadMail(uint64_t userUuid)
 {
     auto mail_filter = [userUuid](const void *rec) -> bool {

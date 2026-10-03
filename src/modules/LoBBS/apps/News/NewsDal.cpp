@@ -110,6 +110,12 @@ std::vector<LoBBSNewsEntry> NewsDal::getAllNewsForUser(uint64_t userUuid)
     return getNewsForUser(userUuid, 0, LOBBS_MAX_LIST_ROWS);
 }
 
+uint32_t NewsDal::countAllNews()
+{
+    int n = lodb_.count("news");
+    return n < 0 ? 0 : (uint32_t)n;
+}
+
 uint16_t NewsDal::countUnreadNews(uint64_t userUuid)
 {
     auto allNews = lodb_.select("news", LoDbFilter(), nullptr);

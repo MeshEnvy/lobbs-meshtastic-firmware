@@ -23,7 +23,7 @@ LoBBS is a stateless slash CLI over mesh DMs. **Plugins own their commands and s
 
 - Extend LoBBS only through `lobbsRegisterFilter` from each plugin's `lobbs*RegisterCommands()`.
 - Root verbs: subscribe to the `commands` filter and use `lobbsFilterCommandsAdd`.
-- `/status` and `/hi`: Status plugin handler applies `status_lines`; each app pushes its own line (e.g. unread counts).
+- `/status` and `/hi`: Status handler applies `status_lines`; Auth/Mail/News push all-time totals (users, mail, news).
 - `/help`: Help plugin applies `help_topics` for `/help <topic>` and `help_index` (with live `LoBBSCommandCtx`) for the root command list. Each app pushes index names only when that command is available now (e.g. `logout` when authed, `login` when not).
 - Call `lobbsWireup()` once from `LoBBSModule` construction.
 - Use `LoBBSCommandCtx` in handlers; reply via `lobbsCommandReply(ctx, …)`.

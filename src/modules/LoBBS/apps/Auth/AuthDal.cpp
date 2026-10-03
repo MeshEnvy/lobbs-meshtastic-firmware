@@ -289,6 +289,12 @@ uint32_t AuthDal::countAdminUsers()
     });
 }
 
+uint32_t AuthDal::countAllUsers()
+{
+    int n = lodb_.count("users");
+    return n < 0 ? 0 : (uint32_t)n;
+}
+
 bool AuthDal::kickUserByUsername(const char *username)
 {
     meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;

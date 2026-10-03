@@ -225,11 +225,11 @@ static void filterMailCommands(void *value, LoBBSCommandCtx *ctx)
 
 static void filterMailStatusLines(void *value, LoBBSCommandCtx *ctx)
 {
-    if (!ctx || !ctx->isAuth || !ctx->user)
+    if (!ctx || !ctx->mod)
         return;
-    char line[32];
-    uint16_t n = ctx->mod->mail().dal().countUnreadMail(ctx->user->uuid);
-    snprintf(line, sizeof(line), "Mail (%u)", (unsigned)n);
+    char line[LOBBS_FILTER_LINE_BYTES];
+    uint32_t n = ctx->mod->mail().dal().countAllMail();
+    snprintf(line, sizeof(line), "Mail: %u", (unsigned)n);
     lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
 }
 

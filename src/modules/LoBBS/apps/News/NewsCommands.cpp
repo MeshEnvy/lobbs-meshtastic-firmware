@@ -199,11 +199,11 @@ static void filterNewsCommands(void *value, LoBBSCommandCtx *ctx)
 
 static void filterNewsStatusLines(void *value, LoBBSCommandCtx *ctx)
 {
-    if (!ctx || !ctx->isAuth || !ctx->user)
+    if (!ctx || !ctx->mod)
         return;
-    char line[32];
-    uint16_t n = ctx->mod->news().dal().countUnreadNews(ctx->user->uuid);
-    snprintf(line, sizeof(line), "News (%u)", (unsigned)n);
+    char line[LOBBS_FILTER_LINE_BYTES];
+    uint32_t n = ctx->mod->news().dal().countAllNews();
+    snprintf(line, sizeof(line), "News: %u", (unsigned)n);
     lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
 }
 

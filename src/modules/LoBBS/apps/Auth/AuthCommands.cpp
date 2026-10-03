@@ -204,6 +204,16 @@ static void filterAuthHelpTopicsUsers(void *value, LoBBSCommandCtx *ctx)
                             sizeof(usersHelp) / sizeof(usersHelp[0]));
 }
 
+static void filterAuthStatusLines(void *value, LoBBSCommandCtx *ctx)
+{
+    if (!ctx || !ctx->mod)
+        return;
+    char line[LOBBS_FILTER_LINE_BYTES];
+    uint32_t n = ctx->mod->auth().dal().countAllUsers();
+    snprintf(line, sizeof(line), "Users: %u", (unsigned)n);
+    lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
+}
+
 static void filterAuthHelpIndexEarly(void *value, LoBBSCommandCtx *ctx)
 {
     if (!ctx)
@@ -226,6 +236,7 @@ static void filterAuthHelpIndexUsers(void *value, LoBBSCommandCtx *ctx)
 void lobbsAuthRegisterCommands()
 {
     lobbsRegisterFilter("commands", filterAuthCommands);
+    lobbsRegisterFilter("status_lines", filterAuthStatusLines);
     lobbsRegisterFilter("help_topics", filterAuthHelpTopicsEarly);
     lobbsRegisterFilter("help_index", filterAuthHelpIndexEarly);
 }

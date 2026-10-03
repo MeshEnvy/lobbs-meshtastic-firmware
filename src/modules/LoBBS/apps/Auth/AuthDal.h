@@ -30,6 +30,7 @@ class AuthDal
 
     bool setUserAdminByUsername(const char *username, bool isAdmin);
     uint32_t countAdminUsers();
+    uint32_t countAllUsers();
     bool kickUserByUsername(const char *username);
 
   private:

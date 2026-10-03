@@ -16,6 +16,7 @@ class MailDal
     bool markMailAsRead(uint64_t mailUuid);
     bool markMailAsUnread(uint64_t mailUuid);
     uint16_t countUnreadMail(uint64_t userUuid);
+    uint32_t countAllMail();
     bool deleteMailUuid(uint64_t mailUuid);
     bool deleteMailInboxIndex(uint64_t inboxOwnerUuid, uint32_t oneBasedIndex);
 

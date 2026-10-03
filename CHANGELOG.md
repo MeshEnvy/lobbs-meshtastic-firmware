@@ -7,7 +7,7 @@ LoBBS semver is the `[LOBBS]` section in `version.properties`. Builds inject `LO
 ## 2.3.0
 
 - Stateless slash CLI only: `/[id] command args…`, replies optionally prefixed `<id>`. No menu stack or page cache on device.
-- Lists paginate with `pN` (re-query offset/limit). `/status` and `/hi` show unread mail and news counts.
+- Lists paginate with `pN` (re-query offset/limit). `/status` shows all-time users, mail, and news counts.
 - Ignore non-slash DMs and self-originated loopback (`from` = local node).
 
 ## 2.2.0
