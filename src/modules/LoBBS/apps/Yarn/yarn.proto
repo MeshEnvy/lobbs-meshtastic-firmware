@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package meshtastic;
+
+message LoBBSYarnCurrent {
+  string text = 1;
+  uint32 total_words_appended = 2;
+}
+
+message LoBBSYarnSeen {
+  uint64 user_uuid = 1;
+  uint32 last_seen_total_words = 2;
+}
+
+message LoBBSYarnConfig {
+  uint32 period_seconds = 1;
+  uint32 max_words_per_interval = 2;
+  uint32 max_chars_per_interval = 3;
+}
+
+message LoBBSYarnQuota {
+  uint64 user_uuid = 1;
+  uint32 cycle_start = 2;
+  uint32 words_used = 3;
+  uint32 chars_used = 4;
+}

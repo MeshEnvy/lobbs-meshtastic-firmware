@@ -20,6 +20,7 @@ This repository is Meshtastic firmware with LoBBS integrated in the tree. Flash 
 - **Private mail inbox** with paging, read receipts, and inline `@mention` delivery
 - **News feed** with announcements and per-user read tracking
 - **Shared ASCII wall** (12×12 canvas) with batch paint, erase tokens (`-a4`), per-user paint quota, and new/seen on `/status`
+- **Yarn** collab word game: `/yarn` shows the tail, `/yarn word …` appends words (quota); `/status` shows how many words were added since you last looked
 - Stateless slash CLI over DM (one command, one reply)
 - Backed by [LoDB](https://github.com/MeshEnvy/lodb) for on-device storage so the entire BBS persists across reboots
 
@@ -43,7 +44,7 @@ DM the node with lines that start with `/`. Optional request id for machines:
 <42>Welcome ben!
 ```
 
-Humans can omit the id: `/hi` is the intro screen; `/status` shows system totals (users, mail, news) and whether the wall canvas changed since you last viewed it. `/wall` shows the grid (no login); logged-in paint is quota-limited (default 1 cell per hour). Admins set limits with `/wall limit 3600 3`. Lists use `pN` page tokens (re-query each time, no cached pages): `/mail list p2`. Multi-page replies pack as many lines as fit in 200 bytes; the last line is `{p 2/3}` when there is another page. Send `/help` for the command index.
+Humans can omit the id: `/hi` is the intro screen; `/status` shows system totals (users, mail, news), new yarn words since your last `/yarn`, and whether the wall canvas changed since you last viewed it. `/yarn` and `/wall` view need no login; adding a word or painting the wall needs login and respects quotas. Admins set limits with `/yarn limit 3600 1 32` and `/wall limit 3600 3`. Lists use `pN` page tokens (re-query each time, no cached pages): `/mail list p2`. Multi-page replies pack as many lines as fit in 200 bytes; the last line is `{p 2/3}` when there is another page. Send `/help` for the command index.
 
 LoBBS replies are capped at 200 bytes per message. Unread items show `*` in lists; timestamps use relative forms like `2h ago`.
 

@@ -72,7 +72,7 @@ static void handleWall(LoBBSCommandCtx &ctx)
         lobbsCommandReply(ctx, err[0] ? err : "Paint failed.");
         return;
     }
-    replyGrid(ctx, false);
+    replyGrid(ctx, true);
 }
 
 static void filterWallCommands(void *value, LoBBSCommandCtx *ctx)

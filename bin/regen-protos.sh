@@ -15,7 +15,7 @@ cd "$ROOT/protobufs"
 
 # LoBBS: per-app protos under src/modules/LoBBS/apps/ (not part of meshtastic/protobufs).
 LOBBS="$ROOT/src/modules/LoBBS"
-for app_proto in Auth/auth Mail/mail News/news Wall/wall; do
+for app_proto in Auth/auth Mail/mail News/news Yarn/yarn Wall/wall; do
   app_dir="${app_proto%%/*}"
   proto_base="${app_proto##*/}"
   cd "$LOBBS/apps/$app_dir"

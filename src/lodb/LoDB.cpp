@@ -149,9 +149,14 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const void *rec
     {
         auto existing = LoFS::open(file_path, FILE_O_READ);
         if (existing) {
+            size_t existingSize = existing.size();
             existing.close();
-            LODB_LOG_ERROR("UUID already exists: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
-            return LODB_ERR_INVALID;
+            if (existingSize == 0) {
+                LoFS::remove(file_path);
+            } else {
+                LODB_LOG_ERROR("UUID already exists: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
+                return LODB_ERR_INVALID;
+            }
         }
     }
 
@@ -173,18 +178,19 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const void *rec
     auto file = LoFS::open(file_path, FILE_O_WRITE);
     if (!file) {
         LODB_LOG_ERROR("Failed to open file for writing: %s", file_path);
+        LoFS::remove(file_path);
         return LODB_ERR_IO;
     }
 
     size_t written = file.write(buffer.get(), encoded_size);
+    file.flush();
+    file.close();
     if (written != encoded_size) {
         LODB_LOG_ERROR("Failed to write file, wrote %u of %u bytes", (unsigned)written, (unsigned)encoded_size);
-        file.close();
+        LoFS::remove(file_path);
         return LODB_ERR_IO;
     }
 
-    file.flush();
-    file.close();
     LODB_LOG_DEBUG("Wrote record to: %s (%u bytes)", file_path, (unsigned)encoded_size);
 
     LODB_LOG_INFO("Inserted record with custom UUID: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
@@ -218,10 +224,17 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
     }
 
     size_t total_size = file.size();
+    if (total_size == 0) {
+        file.close();
+        LoFS::remove(file_path);
+        LODB_LOG_WARN("Removed empty record file: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
+        return LODB_ERR_NOT_FOUND;
+    }
     if (total_size > LODB_MAX_RECORD_FILE_BYTES) {
         LODB_LOG_ERROR("Record file too large: %s (%u > %u)", file_path, (unsigned)total_size,
                        (unsigned)LODB_MAX_RECORD_FILE_BYTES);
         file.close();
+        LoFS::remove(file_path);
         return LODB_ERR_IO;
     }
 
@@ -235,13 +248,10 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
     file_size = file.read(buffer.get(), total_size);
     file.close();
 
-    if (file_size == 0) {
-        LODB_LOG_ERROR("Record file is empty: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
-        return LODB_ERR_IO;
-    }
-    if (file_size != total_size) {
-        LODB_LOG_ERROR("Record read short: %s (%u of %u)", file_path, (unsigned)file_size, (unsigned)total_size);
-        return LODB_ERR_IO;
+    if (file_size == 0 || file_size != total_size) {
+        LODB_LOG_ERROR("Record read bad size: %s (%u of %u)", file_path, (unsigned)file_size, (unsigned)total_size);
+        LoFS::remove(file_path);
+        return LODB_ERR_NOT_FOUND;
     }
 
     LODB_LOG_DEBUG("Read record file: %s (%u bytes)", file_path, (unsigned)file_size);
@@ -251,6 +261,7 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
 
     if (!pb_decode(&stream, table->pb_descriptor, record_out)) {
         LODB_LOG_ERROR("Failed to decode protobuf from " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
+        LoFS::remove(file_path);
         return LODB_ERR_DECODE;
     }
 
@@ -298,22 +309,33 @@ LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const void *rec
 
     size_t encoded_size = stream.bytes_written;
 
-    LoFS::remove(file_path);
-    auto file = LoFS::open(file_path, FILE_O_WRITE);
+    char tmp_path[196];
+    if (snprintf(tmp_path, sizeof(tmp_path), "%s.w", file_path) >= (int)sizeof(tmp_path)) {
+        LODB_LOG_ERROR("Temp path too long for update");
+        return LODB_ERR_IO;
+    }
+    LoFS::remove(tmp_path);
+
+    auto file = LoFS::open(tmp_path, FILE_O_WRITE);
     if (!file) {
-        LODB_LOG_ERROR("Failed to open file for update: %s", file_path);
+        LODB_LOG_ERROR("Failed to open temp for update: %s", tmp_path);
         return LODB_ERR_IO;
     }
 
     size_t written = file.write(buffer.get(), encoded_size);
+    file.flush();
+    file.close();
     if (written != encoded_size) {
-        LODB_LOG_ERROR("Failed to write updated file");
-        file.close();
+        LODB_LOG_ERROR("Failed to write updated temp file");
+        LoFS::remove(tmp_path);
         return LODB_ERR_IO;
     }
 
-    file.flush();
-    file.close();
+    if (!LoFS::rename(tmp_path, file_path)) {
+        LODB_LOG_ERROR("Failed to rename temp to: %s", file_path);
+        LoFS::remove(tmp_path);
+        return LODB_ERR_IO;
+    }
 
     LODB_LOG_INFO("Updated record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
     return LODB_OK;

@@ -40,6 +40,11 @@ static lodb_uuid_t wallQuotaRecordUuid(uint64_t userUuid)
     return lodb_new_uuid(key, 0);
 }
 
+static void wallSealCanvas(meshtastic_LoBBSWallCanvas &canvas)
+{
+    canvas.cells[LOBBS_WALL_CELLS] = '\0';
+}
+
 uint32_t WallDal::computeCrc32(const uint8_t *data, size_t len)
 {
     uint32_t crc = 0xffffffff;
@@ -54,22 +59,28 @@ uint32_t WallDal::computeCrc32(const uint8_t *data, size_t len)
 bool WallDal::loadCanvas(meshtastic_LoBBSWallCanvas &out)
 {
     lodb_uuid_t id = wallCanvasRecordUuid();
-    if (lodb_.get("wall_canvas", id, &out) == LODB_OK)
+    if (lodb_.get("wall_canvas", id, &out) == LODB_OK) {
+        wallSealCanvas(out);
         return true;
-    meshtastic_LoBBSWallCanvas fresh = meshtastic_LoBBSWallCanvas_init_zero;
+    }
+    out = meshtastic_LoBBSWallCanvas_init_zero;
     for (int i = 0; i < LOBBS_WALL_CELLS; i++)
-        fresh.cells[i] = ' ';
-    fresh.crc32 = computeCrc32((const uint8_t *)fresh.cells, LOBBS_WALL_CELLS);
-    if (lodb_.insert("wall_canvas", id, &fresh) != LODB_OK)
+        out.cells[i] = ' ';
+    wallSealCanvas(out);
+    out.crc32 = computeCrc32((const uint8_t *)out.cells, LOBBS_WALL_CELLS);
+    lodb_.deleteRecord("wall_canvas", id);
+    if (lodb_.insert("wall_canvas", id, &out) != LODB_OK)
         return false;
-    out = fresh;
     return true;
 }
 
 bool WallDal::saveCanvas(meshtastic_LoBBSWallCanvas &canvas)
 {
+    wallSealCanvas(canvas);
     canvas.crc32 = computeCrc32((const uint8_t *)canvas.cells, LOBBS_WALL_CELLS);
-    return lodb_.update("wall_canvas", wallCanvasRecordUuid(), &canvas) == LODB_OK;
+    lodb_uuid_t id = wallCanvasRecordUuid();
+    lodb_.deleteRecord("wall_canvas", id);
+    return lodb_.insert("wall_canvas", id, &canvas) == LODB_OK;
 }
 
 bool WallDal::loadConfig(meshtastic_LoBBSWallConfig &out)
@@ -80,6 +91,7 @@ bool WallDal::loadConfig(meshtastic_LoBBSWallConfig &out)
     meshtastic_LoBBSWallConfig fresh = meshtastic_LoBBSWallConfig_init_zero;
     fresh.period_seconds = LOBBS_WALL_DEFAULT_PERIOD_SEC;
     fresh.max_cells_per_cycle = LOBBS_WALL_DEFAULT_MAX_CELLS;
+    lodb_.deleteRecord("wall_config", id);
     if (lodb_.insert("wall_config", id, &fresh) != LODB_OK)
         return false;
     out = fresh;
@@ -100,20 +112,16 @@ bool WallDal::setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle, char 
     }
     meshtastic_LoBBSWallConfig cfg = meshtastic_LoBBSWallConfig_init_zero;
     lodb_uuid_t id = wallConfigRecordUuid();
-    bool exists = lodb_.get("wall_config", id, &cfg) == LODB_OK;
     cfg.period_seconds = periodSeconds;
     cfg.max_cells_per_cycle = maxCellsPerCycle;
-    if (exists)
-        return lodb_.update("wall_config", id, &cfg) == LODB_OK;
+    lodb_.deleteRecord("wall_config", id);
     return lodb_.insert("wall_config", id, &cfg) == LODB_OK;
 }
 
 bool WallDal::saveQuota(meshtastic_LoBBSWallQuota &quota)
 {
     lodb_uuid_t id = wallQuotaRecordUuid(quota.user_uuid);
-    meshtastic_LoBBSWallQuota existing = meshtastic_LoBBSWallQuota_init_zero;
-    if (lodb_.get("wall_quota", id, &existing) == LODB_OK)
-        return lodb_.update("wall_quota", id, &quota) == LODB_OK;
+    lodb_.deleteRecord("wall_quota", id);
     return lodb_.insert("wall_quota", id, &quota) == LODB_OK;
 }
 
@@ -221,8 +229,7 @@ bool WallDal::markSeen(uint64_t userUuid, uint32_t crc32)
     seen.user_uuid = userUuid;
     seen.last_crc32 = crc32;
     lodb_uuid_t id = wallSeenRecordUuid(userUuid);
-    if (lodb_.get("wall_seen", id, &seen) == LODB_OK)
-        return lodb_.update("wall_seen", id, &seen) == LODB_OK;
+    lodb_.deleteRecord("wall_seen", id);
     return lodb_.insert("wall_seen", id, &seen) == LODB_OK;
 }
 
@@ -308,6 +315,7 @@ bool WallDal::applyPaintTokens(uint64_t userUuid, bool isAdmin, const char *cons
         }
         canvas.cells[row * LOBBS_WALL_COLS + (col - 1)] = ch;
     }
+    wallSealCanvas(canvas);
     if (!checkPaintQuota(userUuid, isAdmin, count, err, errCap))
         return false;
     if (!saveCanvas(canvas)) {

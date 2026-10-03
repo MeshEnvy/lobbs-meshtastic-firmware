@@ -9,6 +9,7 @@ LoBBS semver is the `[LOBBS]` section in `version.properties`. Builds inject `LO
 - Stateless slash CLI only: `/[id] command args…`, replies optionally prefixed `<id>`. No menu stack or page cache on device.
 - Lists paginate with `pN` (re-query offset/limit). `/status` shows all-time users, mail, and news counts; Wall shows new vs seen for the shared 12×12 ASCII canvas.
 - `/wall` displays and marks the canvas seen; batch paint with tokens like `/wall a4x b2|` or erase `-a4`. Paint quota defaults to 1 cell per 3600s (admins bypass); `/wall limit SEC CELLS` sets policy. `/news` is the text announcement feed (list, read, post, unread, admin delete).
+- `/yarn` collaborative one-word tail (trim from front when full); `/yarn limit SEC WORDS CHARS` for admin quotas. `/status` includes `Yarn: N` new words since you last viewed.
 - Ignore non-slash DMs and self-originated loopback (`from` = local node).
 
 ## 2.2.0

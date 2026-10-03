@@ -10,7 +10,7 @@
 #endif
 
 typedef struct _meshtastic_LoBBSWallCanvas {
-    char cells[144];
+    char cells[145];
     uint32_t crc32;
 } meshtastic_LoBBSWallCanvas;
 
@@ -54,7 +54,7 @@ extern "C" {
 #define meshtastic_LoBBSWallQuota_cells_used_tag 3
 
 #define meshtastic_LoBBSWallCanvas_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, BYTES,    cells,             1) \
+X(a, STATIC,   SINGULAR, STRING,   cells,             1) \
 X(a, STATIC,   SINGULAR, UINT32,   crc32,             2)
 #define meshtastic_LoBBSWallCanvas_CALLBACK NULL
 #define meshtastic_LoBBSWallCanvas_DEFAULT NULL
@@ -88,7 +88,7 @@ extern const pb_msgdesc_t meshtastic_LoBBSWallQuota_msg;
 #define meshtastic_LoBBSWallConfig_fields &meshtastic_LoBBSWallConfig_msg
 #define meshtastic_LoBBSWallQuota_fields &meshtastic_LoBBSWallQuota_msg
 
-#define meshtastic_LoBBSWallCanvas_size            152
+#define meshtastic_LoBBSWallCanvas_size            153
 #define meshtastic_LoBBSWallSeen_size              17
 #define meshtastic_LoBBSWallConfig_size            12
 #define meshtastic_LoBBSWallQuota_size             22

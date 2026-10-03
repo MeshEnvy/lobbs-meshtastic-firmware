@@ -3,7 +3,7 @@ syntax = "proto3";
 package meshtastic;
 
 message LoBBSWallCanvas {
-  bytes cells = 1;
+  string cells = 1;
   uint32 crc32 = 2;
 }
 
