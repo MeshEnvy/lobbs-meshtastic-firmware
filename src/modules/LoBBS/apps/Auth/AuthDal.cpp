@@ -86,7 +86,7 @@ bool AuthDal::buildUserList(const char *filterSubstr, std::string &msg, const ch
         if (i > 0)
             msg += ", ";
         msg += u->username;
-        if (u->is_admin)
+        if (u->is_sysop)
             msg += "*";
     }
     LoDb::freeRecords(users);
@@ -118,7 +118,7 @@ bool AuthDal::formatUserListPage(const char *filterSubstr, uint32_t page1Based, 
     for (size_t i = 0; i < users.size(); i++) {
         const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)users[i];
         std::string line = u->username;
-        if (u->is_admin)
+        if (u->is_sysop)
             line += "*";
         lines.push_back(line);
     }
@@ -211,14 +211,14 @@ bool AuthDal::createUser(const char *username, const char *password, uint32_t no
     user.uuid = userUuid;
     user.password_hash.size = 32;
     hashPassword(password, user.password_hash.bytes);
-    user.is_admin = isFirstUser;
+    user.is_sysop = isFirstUser;
     LoDbError err = lodb_.insert("users", userUuid, &user);
     if (err != LODB_OK) {
         LOG_ERROR("Failed to create user: %s", username);
         return false;
     }
 
-    LOG_INFO("Created user: %s (admin: %s)", username, isFirstUser ? "yes" : "no");
+    LOG_INFO("Created user: %s (sysop: %s)", username, isFirstUser ? "yes" : "no");
     return loginUser(username, nodeId);
 }
 
@@ -271,12 +271,12 @@ uint64_t AuthDal::getUserUuidByUsername(const char *username)
     return 0;
 }
 
-bool AuthDal::setUserAdminByUsername(const char *username, bool isAdmin)
+bool AuthDal::setUserSysopByUsername(const char *username, bool isSysop)
 {
     meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
     if (!loadUserByUsername(username, &user))
         return false;
-    user.is_admin = isAdmin;
+    user.is_sysop = isSysop;
     lodb_.deleteRecord("users", user.uuid);
     return lodb_.insert("users", user.uuid, &user) == LODB_OK;
 }
@@ -292,11 +292,11 @@ bool AuthDal::setPasswordByUsername(const char *username, const char *password)
     return lodb_.insert("users", user.uuid, &user) == LODB_OK;
 }
 
-uint32_t AuthDal::countAdminUsers()
+uint32_t AuthDal::countSysopUsers()
 {
     return (uint32_t)lodb_.count("users", [](const void *rec) -> bool {
         const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
-        return u->is_admin;
+        return u->is_sysop;
     });
 }
 

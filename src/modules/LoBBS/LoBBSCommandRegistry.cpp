@@ -221,11 +221,11 @@ bool lobbsCommandRequireLogin(LoBBSCommandCtx &ctx)
     return false;
 }
 
-bool lobbsCommandRequireAdmin(LoBBSCommandCtx &ctx)
+bool lobbsCommandRequireSysop(LoBBSCommandCtx &ctx)
 {
-    if (ctx.isAdmin)
+    if (ctx.isSysop)
         return true;
-    lobbsCommandReply(ctx, "Admin only.");
+    lobbsCommandReply(ctx, "SysOp only.");
     return false;
 }
 
@@ -370,7 +370,7 @@ static bool lobbsParseSlash(char *line, LoBBSCommandCtx &ctx)
 }
 
 void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, bool isAuth,
-                         const meshtastic_LoBBSUser *user, bool isAdmin, char *line)
+                         const meshtastic_LoBBSUser *user, bool isSysop, char *line)
 {
     LoBBSCommandCtx ctx;
     ctx.mod = mod;
@@ -378,7 +378,7 @@ void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint
     ctx.sessionNodeId = sessionNodeId;
     ctx.isAuth = isAuth;
     ctx.user = user;
-    ctx.isAdmin = isAdmin;
+    ctx.isSysop = isSysop;
 
     if (!lobbsParseSlash(line, ctx))
         return;

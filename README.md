@@ -6,32 +6,138 @@
 
 ### Watch the Walkthrough
 
-[![LoBBS 2.0 walkthrough](.github/lobbs-2.0-walkthrough-youtube-thumb.jpg)](https://www.youtube.com/watch?v=FwtDY1QBXpQ)
+[![LoBBS 2.0 walkthrough](.github/lobbs-2.0-walkthrough-youtube-thumb.jpg)](https://youtu.be/lMK1zx9DbOI)
 
 -------
 
-This repository is Meshtastic firmware with LoBBS integrated in the tree. Flash it like any other Meshtastic build for your board: you get mesh networking and a full bulletin board right on the device. User accounts, private mail, news, and administration over the mesh, with no sidecar services or host computer.
-
-**Canonical home:** [github.com/MeshEnvy/lobbs-meshtastic-firmware](https://github.com/MeshEnvy/lobbs-meshtastic-firmware). The older [MeshEnvy/lobbs](https://github.com/MeshEnvy/lobbs) monorepo is archived; MeshCore compatibility is not being pursued.
+[Discord](https://discord.gg/DMrGcGQfMN)
 
 ## Features
 
-- **User directory** with username registration and secure password storage
-- **Private mail inbox** with paging, read receipts, and inline `@mention` delivery
-- **News feed** with announcements and per-user read tracking
-- **Shared ASCII wall** (12×12 canvas) with batch paint, erase tokens (`-a4`), per-user paint quota, and new/seen on `/status`
-- **Yarn** collab word game: `/yarn` shows the tail, `/yarn word …` appends words (quota); `/status` shows how many words were added since you last looked
-- Stateless slash CLI over DM (one command, one reply)
-- Backed by [LoDB](https://github.com/MeshEnvy/lodb) for on-device storage so the entire BBS persists across reboots
+- **User directory** 
+- **Private mail** 
+- **News feed** 
+- **Shared ASCII art wall**
+- **Collaborative stories**
+- CLI over DM
+
 
 ## Installation
 
-We use **meshforge.org** to make it super easy to get up and running with LoBBS. Just go to [https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware](https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware) to get started.
+[Install on MeshForge](https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware) or compile and flash from source.
+
+## How to use LoBBS
+
+DM the node a line that starts with `/`. 
+
+`/login username password` signs in or creates the account. The first account is the SysOp.
+
+### Public
+
+| Command | Notes |
+| --- | --- |
+| `/hi` | Intro and version |
+| `/status` | Display overall status|
+| `/time` | Current time |
+| `/help [topic]` | Command list |
+| `/wall` | Play the Wall game (shared ASCII art) |
+| `/yarn` | Play the Yarn game (shared story) |
+
+### Session
+
+| Command | Notes |
+| --- | --- |
+| `/login user password` | Sign in or create an account |
+| `/logout` | End session |
+| `/whoami` | Who you are |
+| `/passwd new confirm` | Change your password |
+
+### Users
+
+Login required.
+
+| Command | Notes |
+| --- | --- |
+| `/users list [pN]` | User list |
+| `/users find text [pN]` | Search usernames |
+
+### Mail
+
+Login required. SysOps reading someone else's inbox: [SysOp commands](#sysop-commands).
+
+| Command | Notes |
+| --- | --- |
+| `/mail list [pN]` | Your inbox |
+| `/mail read N` | Read message N |
+| `/mail N` | Same as `/mail read N` |
+| `/mail unread N` | Mark unread |
+| `/mail delete N` | Delete from your inbox |
+| `/mail send user message…` | Send mail |
+
+### News
+
+Login required.
+
+| Command | Notes |
+| --- | --- |
+| `/news list [pN]` | News index |
+| `/news read N` | Read item N |
+| `/news N` | Same as `/news read N` |
+| `/news unread N` | Mark unread |
+| `/news post message…` | Post news |
+
+### Wall
+
+`/wall` shows the grid (no login). Painting needs login.
+
+Rows `a`–`l`, columns `1`–`12`. `a4x` paints `x` at row a, column 4. `-a4` clears that cell. Several tokens in one command: `/wall a1# a2# b2#`.
+
+| Command | Notes |
+| --- | --- |
+| `/wall token…` | Paint. Default quota is 1 cell per hour |
+
+### Yarn
+
+`/yarn` shows the tail (no login). Adding words needs login.
+
+| Command | Notes |
+| --- | --- |
+| `/yarn word …` | Add words. Default quota is 1 word (32 characters) per hour |
+
+## SysOp commands
+
+The first registered account is the SysOp. Other users get `SysOp only.`
+
+| Command | Notes |
+| --- | --- |
+| `/passwd user new confirm` | Reset a user's password |
+| `/users kick user` | Log that user out |
+| `/users promote user` | Make them a SysOp |
+| `/users demote user` | Remove SysOp (not the last SysOp) |
+| `/mail list user [pN]` | Their inbox |
+| `/mail read user N` | Read their message (does not mark it read) |
+| `/news delete N` | Delete a news item |
+| `/wall limit SEC CELLS` | Paint quota (default 3600 seconds, 1 cell) |
+| `/yarn limit SEC WORDS CHARS` | Yarn quota (default 3600 seconds, 1 word, 32 characters) |
+| `/time unix` | Set the clock. The time must be after this firmware was built, or the reply is `Invalid time.` |
+
+SysOps painting the wall or adding yarn do not use quota.
+
+## Machine interface (message IDs)
+
+Put a number and a space after `/` so the reply starts with that same number. The command itself does not change.
+
+```
+/42 login alice secret12
+<42>Welcome alice!
+```
+
+Without a number, the reply has no prefix. The number must be followed by a space (`/42 login`, not `/42login`). The 200-byte limit includes the `<42>` prefix.
 
 ## Versions
 
 - **Meshtastic base** — `[VERSION]` in `version.properties` (same as upstream: `APP_VERSION` in the phone app, e.g. `2.7.26.<git sha>`).
-- **LoBBS** — `[LOBBS]` in `version.properties`; help text shows `LoBBS v` plus the short semver (e.g. `2.2.0` on branch `lobbs` while 2.0.0 is unreleased). Product history: [CHANGELOG.md](CHANGELOG.md). Bump LoBBS build with `python bin/bump_lobbs_version.py` (Meshtastic build: `bin/bump_version.py`).
+- **LoBBS** — `[LOBBS]` in `version.properties`; help text shows `LoBBS v` plus the short semver (e.g. `2.0.0`). Product history: [CHANGELOG.md](CHANGELOG.md). Bump LoBBS build with `python bin/bump_lobbs_version.py` (Meshtastic build: `bin/bump_version.py`).
 
 ### Release tags (source only)
 
@@ -41,25 +147,9 @@ LoBBS cuts annotated git tags on branch `lobbs` (no `v` prefix, no firmware bina
 
 Example: `lobbs-1.3.0.f18d6d6-meshtastic-2.7.26.54e0d8d`. The trailing Meshtastic sha is the upstream pin for that release line (default `54e0d8d` for 2.7.26). Preview or create a tag with `bin/lobbs-release-tag.sh` (dry-run) or `bin/lobbs-release-tag.sh --create`. Use `--lobbs-version` when tagging a commit that predates the `[LOBBS]` section in `version.properties`.
 
-## Using LoBBS
-
-LoBBS is intentionally a **stateless CLI** on the radio: you send one slash command, you get one reply. There is no menu session or navigation state on the device. Rich clients (web UI, phone apps, bots) can wrap the same commands with threading, layout, and reply tracking. That design also keeps mesh traffic to a single command and a single response instead of multi-message menu redraws.
-
-DM the node with lines that start with `/`. Optional request id for machines:
-
-```
-/42 login ben mypassword
-<42>Welcome ben!
-```
-
-Humans can omit the id: `/hi` is the intro screen (welcome by name when logged in); `/time` shows Unix time and its source; `/status` works without login and shows all-time totals for users, mail, news, and yarn. When logged in, `/status` shows unread mail and news, new yarn words since your last `/yarn`, and whether the wall canvas changed since you last viewed it. `/yarn` and `/wall` view need no login; adding a word or painting the wall needs login and respects quotas. Change your password with `/passwd new confirm` (admins can reset another user with `/passwd user new confirm`). Admins set limits with `/yarn limit 3600 1 32` and `/wall limit 3600 3`. Lists use `pN` page tokens (re-query each time, no cached pages): `/mail list p2`. Multi-page replies pack as many lines as fit in 200 bytes; the last line is `{p 2/3}` when there is another page. Send `/help` for the command index.
-
-LoBBS replies are capped at 200 bytes per message. Unread items show `*` in lists; timestamps use relative forms like `2h ago`.
-
-
 ## License
 
-LoBBS is distributed under the GPLv3 license. 
+LoBBS (the BBS) is [MIT](https://opensource.org/license/mit). Meshtastic firmware in this tree is [GPL v3](LICENSE). 
 
 ## Disclaimer
 

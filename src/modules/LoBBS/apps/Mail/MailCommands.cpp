@@ -76,7 +76,7 @@ static void mailSubList(LoBBSCommandCtx &ctx)
     AuthDal &auth = ctx.mod->auth().dal();
     uint64_t inboxUuid = ctx.user->uuid;
     if (ctx.argc >= 3) {
-        if (!lobbsCommandRequireAdmin(ctx))
+        if (!lobbsCommandRequireSysop(ctx))
             return;
         if (!resolveUser(ctx, auth, ctx.argv[2], inboxUuid))
             return;
@@ -91,11 +91,11 @@ static void mailSubRead(LoBBSCommandCtx &ctx)
 {
     AuthDal &auth = ctx.mod->auth().dal();
     MailDal &mail = ctx.mod->mail().dal();
-    bool adminRead = ctx.isAdmin && ctx.argc >= 4;
+    bool sysopRead = ctx.isSysop && ctx.argc >= 4;
     uint32_t idx = 0;
     uint64_t inboxUuid = ctx.user->uuid;
     bool markRead = true;
-    if (adminRead) {
+    if (sysopRead) {
         if (!resolveUser(ctx, auth, ctx.argv[2], inboxUuid))
             return;
         idx = (uint32_t)atoi(ctx.argv[3]);
@@ -179,8 +179,8 @@ static const LoBBSSubcommand mailSubs[] = {
 };
 
 static const LoBBSSubHelpEntry mailHelp[] = {
-    {"list", "list [pN] — inbox; admin: list user [pN]"},
-    {"read", "read N — read message (/mail N); admin: read user N"},
+    {"list", "list [pN] — inbox; sysop: list user [pN]"},
+    {"read", "read N — read message (/mail N); sysop: read user N"},
     {"unread", "unread N — mark message unread"},
     {"delete", "delete N — delete message from inbox"},
     {"send", "send user message... — send mail"},

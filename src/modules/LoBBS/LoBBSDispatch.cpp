@@ -58,10 +58,10 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
 
     meshtastic_LoBBSUser existingUser = meshtastic_LoBBSUser_init_zero;
     bool isAuthenticated = auth.loadUserByNodeId(sessionNodeId, &existingUser);
-    const bool isAdmin = isAuthenticated && existingUser.is_admin;
+    const bool isSysop = isAuthenticated && existingUser.is_sysop;
     const meshtastic_LoBBSUser *userPtr = isAuthenticated ? &existingUser : nullptr;
 
-    lobbsCommandsHandle(mod, mp, sessionNodeId, isAuthenticated, userPtr, isAdmin, mod->msgBuffer);
+    lobbsCommandsHandle(mod, mp, sessionNodeId, isAuthenticated, userPtr, isSysop, mod->msgBuffer);
     return ProcessMessage::CONTINUE;
 }
 

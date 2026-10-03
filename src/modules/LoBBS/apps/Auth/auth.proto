@@ -24,9 +24,9 @@ message LoBBSUser {
   uint64 uuid = 3;
 
   /*
-   * Whether this user is an administrator
+   * Whether this user is a SysOp (system operator)
    */
-  bool is_admin = 4;
+  bool is_sysop = 4;
 }
 
 /*

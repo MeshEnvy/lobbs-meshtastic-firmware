@@ -22,7 +22,7 @@ class WallDal
     uint32_t canvasCrc32();
     bool markSeen(uint64_t userUuid, uint32_t crc32);
     bool isDirtyForUser(uint64_t userUuid);
-    bool applyPaintTokens(uint64_t userUuid, bool isAdmin, const char *const *tokens, int count, char *err, size_t errCap);
+    bool applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count, char *err, size_t errCap);
     bool setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle, char *err, size_t errCap);
 
   private:
@@ -30,7 +30,7 @@ class WallDal
     bool saveCanvas(meshtastic_LoBBSWallCanvas &canvas);
     bool loadConfig(meshtastic_LoBBSWallConfig &out);
     bool saveQuota(meshtastic_LoBBSWallQuota &quota);
-    bool checkPaintQuota(uint64_t userUuid, bool isAdmin, int tokenCount, char *err, size_t errCap);
+    bool checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, char *err, size_t errCap);
     bool recordPaintQuota(uint64_t userUuid, int tokenCount);
     uint32_t computeCrc32(const uint8_t *data, size_t len);
     uint32_t getLastSeenCrc(uint64_t userUuid);

@@ -21,8 +21,8 @@ typedef struct _meshtastic_LoBBSUser {
     meshtastic_LoBBSUser_password_hash_t password_hash;
     /* User UUID - deterministic hash derived from username */
     uint64_t uuid;
-    /* Whether this user is an administrator */
-    bool is_admin;
+    /* Whether this user is a SysOp (system operator) */
+    bool is_sysop;
 } meshtastic_LoBBSUser;
 
 /* LoBBS Session Record
@@ -52,7 +52,7 @@ extern "C" {
 #define meshtastic_LoBBSUser_username_tag        1
 #define meshtastic_LoBBSUser_password_hash_tag   2
 #define meshtastic_LoBBSUser_uuid_tag            3
-#define meshtastic_LoBBSUser_is_admin_tag        4
+#define meshtastic_LoBBSUser_is_sysop_tag        4
 #define meshtastic_LoBBSSession_user_uuid_tag    1
 #define meshtastic_LoBBSSession_last_login_time_tag 2
 #define meshtastic_LoBBSSession_node_id_tag      3
@@ -62,7 +62,7 @@ extern "C" {
 X(a, STATIC,   SINGULAR, STRING,   username,          1) \
 X(a, STATIC,   SINGULAR, BYTES,    password_hash,     2) \
 X(a, STATIC,   SINGULAR, UINT64,   uuid,              3) \
-X(a, STATIC,   SINGULAR, BOOL,     is_admin,          4)
+X(a, STATIC,   SINGULAR, BOOL,     is_sysop,          4)
 #define meshtastic_LoBBSUser_CALLBACK NULL
 #define meshtastic_LoBBSUser_DEFAULT NULL
 

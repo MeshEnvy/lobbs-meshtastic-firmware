@@ -18,9 +18,9 @@ static void handleWhoami(LoBBSCommandCtx &ctx)
     }
     char buf[96];
     snprintf(buf, sizeof(buf), "Logged in as %s.", ctx.user->username);
-    if (ctx.user->is_admin) {
+    if (ctx.user->is_sysop) {
         size_t len = strlen(buf);
-        snprintf(buf + len, sizeof(buf) - len, "\nYou are the admin.");
+        snprintf(buf + len, sizeof(buf) - len, "\nYou are the SysOp.");
     }
     lobbsCommandReply(ctx, buf);
 }
@@ -66,9 +66,9 @@ static void handleLogin(LoBBSCommandCtx &ctx)
     }
     char buf[96];
     snprintf(buf, sizeof(buf), "Welcome %s!", username);
-    if (dbUser.is_admin) {
+    if (dbUser.is_sysop) {
         size_t len = strlen(buf);
-        snprintf(buf + len, sizeof(buf) - len, "\nYou are the admin.");
+        snprintf(buf + len, sizeof(buf) - len, "\nYou are the SysOp.");
     }
     lobbsCommandReply(ctx, buf);
 }
@@ -101,7 +101,7 @@ static void handlePasswd(LoBBSCommandCtx &ctx)
         return;
     }
     if (ctx.argc == 4) {
-        if (!lobbsCommandRequireAdmin(ctx))
+        if (!lobbsCommandRequireSysop(ctx))
             return;
         if (!auth.isValidUsername(ctx.argv[1])) {
             lobbsCommandReply(ctx, "Invalid username.");
@@ -115,7 +115,7 @@ static void handlePasswd(LoBBSCommandCtx &ctx)
         passwdApply(auth, ctx.argv[1], ctx.argv[2], ctx.argv[3], ctx);
         return;
     }
-    lobbsCommandReply(ctx, "Usage: /passwd new confirm\nUsage: /passwd user new confirm (admin)");
+    lobbsCommandReply(ctx, "Usage: /passwd new confirm\nUsage: /passwd user new confirm (sysop)");
 }
 
 static void usersSubList(LoBBSCommandCtx &ctx)
@@ -150,7 +150,7 @@ static void usersSubFind(LoBBSCommandCtx &ctx)
 
 static void usersSubKick(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireAdmin(ctx))
+    if (!lobbsCommandRequireSysop(ctx))
         return;
     if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /users kick user"))
         return;
@@ -159,16 +159,16 @@ static void usersSubKick(LoBBSCommandCtx &ctx)
 
 static void usersSubPromote(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireAdmin(ctx))
+    if (!lobbsCommandRequireSysop(ctx))
         return;
     if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /users promote user"))
         return;
-    lobbsCommandReply(ctx, ctx.mod->auth().dal().setUserAdminByUsername(ctx.argv[2], true) ? "Promoted." : "User not found.");
+    lobbsCommandReply(ctx, ctx.mod->auth().dal().setUserSysopByUsername(ctx.argv[2], true) ? "Promoted." : "User not found.");
 }
 
 static void usersSubDemote(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireAdmin(ctx))
+    if (!lobbsCommandRequireSysop(ctx))
         return;
     if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /users demote user"))
         return;
@@ -178,11 +178,11 @@ static void usersSubDemote(LoBBSCommandCtx &ctx)
         lobbsCommandReply(ctx, "User not found.");
         return;
     }
-    if (target.is_admin && auth.countAdminUsers() <= 1) {
-        lobbsCommandReply(ctx, "Cannot demote last admin.");
+    if (target.is_sysop && auth.countSysopUsers() <= 1) {
+        lobbsCommandReply(ctx, "Cannot demote last SysOp.");
         return;
     }
-    lobbsCommandReply(ctx, auth.setUserAdminByUsername(ctx.argv[2], false) ? "Demoted." : "Failed.");
+    lobbsCommandReply(ctx, auth.setUserSysopByUsername(ctx.argv[2], false) ? "Demoted." : "Failed.");
 }
 
 static const LoBBSSubcommand usersSubs[] = {
@@ -196,9 +196,9 @@ static const LoBBSSubcommand usersSubs[] = {
 static const LoBBSSubHelpEntry usersHelp[] = {
     {"list", "list [pN] — all users"},
     {"find", "find text [pN] — filter by username"},
-    {"kick", "kick user — admin: clear sessions"},
-    {"promote", "promote user — admin: grant admin"},
-    {"demote", "demote user — admin: revoke admin"},
+    {"kick", "kick user — sysop: clear sessions"},
+    {"promote", "promote user — sysop: grant sysop"},
+    {"demote", "demote user — sysop: revoke sysop"},
 };
 
 static const LoBBSSubHelpEntry whoamiHelp[] = {
@@ -215,7 +215,7 @@ static const LoBBSSubHelpEntry logoutHelp[] = {
 
 static const LoBBSSubHelpEntry passwdHelp[] = {
     {"passwd", "passwd new confirm — change your password"},
-    {"passwd", "passwd user new confirm — admin: reset user password"},
+    {"passwd", "passwd user new confirm — sysop: reset user password"},
 };
 
 static void handleUsers(LoBBSCommandCtx &ctx)

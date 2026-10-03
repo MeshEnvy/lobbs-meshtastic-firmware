@@ -13,7 +13,7 @@
 static const LoBBSSubHelpEntry wallHelp[] = {
     {"view", "view — /wall shows 12x12 grid (no login)"},
     {"paint", "paint — a4x set; -a4 blank; 1/cycle default"},
-    {"limit", "limit — admin: /wall limit SEC CELLS"},
+    {"limit", "limit — sysop: /wall limit SEC CELLS"},
 };
 
 static void replyGrid(LoBBSCommandCtx &ctx, bool markSeen)
@@ -31,7 +31,7 @@ static void replyGrid(LoBBSCommandCtx &ctx, bool markSeen)
 
 static void wallSubLimit(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireAdmin(ctx))
+    if (!lobbsCommandRequireSysop(ctx))
         return;
     if (!lobbsCommandNeedArgc(ctx, 4, "Usage: /wall limit SEC CELLS"))
         return;
@@ -67,7 +67,7 @@ static void handleWall(LoBBSCommandCtx &ctx)
         return;
 
     char err[48];
-    if (!ctx.mod->wall().dal().applyPaintTokens(ctx.user->uuid, ctx.isAdmin, (const char *const *)&ctx.argv[1],
+    if (!ctx.mod->wall().dal().applyPaintTokens(ctx.user->uuid, ctx.isSysop, (const char *const *)&ctx.argv[1],
                                                 ctx.argc - 1, err, sizeof(err))) {
         lobbsCommandReply(ctx, err[0] ? err : "Paint failed.");
         return;

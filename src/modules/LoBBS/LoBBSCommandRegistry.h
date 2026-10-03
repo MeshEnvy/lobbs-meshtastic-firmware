@@ -21,7 +21,7 @@ bool lobbsCommandTrySubHelp(LoBBSCommandCtx &ctx, const char *title, const LoBBS
 
 void lobbsCommandReply(LoBBSCommandCtx &ctx, const char *body);
 bool lobbsCommandRequireLogin(LoBBSCommandCtx &ctx);
-bool lobbsCommandRequireAdmin(LoBBSCommandCtx &ctx);
+bool lobbsCommandRequireSysop(LoBBSCommandCtx &ctx);
 bool lobbsCommandNeedArgc(LoBBSCommandCtx &ctx, int min, const char *usage);
 void lobbsCommandDispatchSub(LoBBSCommandCtx &ctx, const LoBBSSubcommand *subs, size_t count, const char *defaultName,
                              const char *unknownReply);
@@ -36,6 +36,6 @@ bool lobbsPagerFormatItems(char *out, size_t outCap, uint32_t page1, uint32_t it
 
 void lobbsCommandsInstall(const LoBBSFilterCommands &cmds);
 void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, bool isAuth,
-                         const meshtastic_LoBBSUser *user, bool isAdmin, char *line);
+                         const meshtastic_LoBBSUser *user, bool isSysop, char *line);
 
 #endif

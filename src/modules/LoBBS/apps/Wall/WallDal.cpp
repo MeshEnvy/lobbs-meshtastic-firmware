@@ -125,9 +125,9 @@ bool WallDal::saveQuota(meshtastic_LoBBSWallQuota &quota)
     return lodb_.insert("wall_quota", id, &quota) == LODB_OK;
 }
 
-bool WallDal::checkPaintQuota(uint64_t userUuid, bool isAdmin, int tokenCount, char *err, size_t errCap)
+bool WallDal::checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, char *err, size_t errCap)
 {
-    if (isAdmin)
+    if (isSysop)
         return true;
     if (tokenCount <= 0) {
         if (err && errCap)
@@ -290,7 +290,7 @@ static bool parseWallToken(const char *tok, int &rowOut, int &colOut, char &chOu
     return true;
 }
 
-bool WallDal::applyPaintTokens(uint64_t userUuid, bool isAdmin, const char *const *tokens, int count, char *err,
+bool WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count, char *err,
                                  size_t errCap)
 {
     if (count <= 0) {
@@ -316,14 +316,14 @@ bool WallDal::applyPaintTokens(uint64_t userUuid, bool isAdmin, const char *cons
         canvas.cells[row * LOBBS_WALL_COLS + (col - 1)] = ch;
     }
     wallSealCanvas(canvas);
-    if (!checkPaintQuota(userUuid, isAdmin, count, err, errCap))
+    if (!checkPaintQuota(userUuid, isSysop, count, err, errCap))
         return false;
     if (!saveCanvas(canvas)) {
         if (err && errCap)
             snprintf(err, errCap, "Save failed.");
         return false;
     }
-    if (!isAdmin && !recordPaintQuota(userUuid, count)) {
+    if (!isSysop && !recordPaintQuota(userUuid, count)) {
         if (err && errCap)
             snprintf(err, errCap, "Quota save.");
         return false;

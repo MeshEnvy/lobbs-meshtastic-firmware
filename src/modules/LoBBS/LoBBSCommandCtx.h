@@ -16,7 +16,7 @@ struct LoBBSCommandCtx {
     uint32_t sessionNodeId = 0;
     bool isAuth = false;
     const meshtastic_LoBBSUser *user = nullptr;
-    bool isAdmin = false;
+    bool isSysop = false;
     uint32_t page = 1;
     int argc = 0;
     char *argv[LOBBS_CMD_MAX_ARGC];

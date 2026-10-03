@@ -141,10 +141,10 @@ static void newsSubDelete(LoBBSCommandCtx &ctx)
         return;
     }
     const meshtastic_LoBBSNews *item = newsItems[idx - 1].news;
-    if (!ctx.isAdmin) {
+    if (!ctx.isSysop) {
         for (auto &e : newsItems)
             delete[] (uint8_t *)e.news;
-        lobbsCommandReply(ctx, "Admin only.");
+        lobbsCommandReply(ctx, "SysOp only.");
         return;
     }
     uint64_t uuid = item->uuid;
@@ -178,7 +178,7 @@ static const LoBBSSubHelpEntry newsHelp[] = {
     {"list", "list [pN] — news index"},
     {"read", "read N — read and mark read"},
     {"unread", "unread N — mark unread"},
-    {"delete", "delete N — delete (admin)"},
+    {"delete", "delete N — delete (sysop)"},
     {"post", "post message... — post news"},
 };
 

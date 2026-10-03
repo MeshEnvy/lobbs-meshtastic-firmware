@@ -28,9 +28,9 @@ class AuthDal
     bool logoutUser(uint32_t nodeId);
     uint64_t getUserUuidByUsername(const char *username);
 
-    bool setUserAdminByUsername(const char *username, bool isAdmin);
+    bool setUserSysopByUsername(const char *username, bool isSysop);
     bool setPasswordByUsername(const char *username, const char *password);
-    uint32_t countAdminUsers();
+    uint32_t countSysopUsers();
     uint32_t countAllUsers();
     bool kickUserByUsername(const char *username);
 

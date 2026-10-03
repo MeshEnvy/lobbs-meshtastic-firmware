@@ -13,7 +13,7 @@
 static const LoBBSSubHelpEntry yarnHelp[] = {
     {"view", "view — /yarn shows the tail (no login)"},
     {"add", "add — /yarn word … (login, quota)"},
-    {"limit", "limit — admin: /yarn limit SEC WORDS CHARS"},
+    {"limit", "limit — sysop: /yarn limit SEC WORDS CHARS"},
 };
 
 static void replyYarnView(LoBBSCommandCtx &ctx, bool markSeen)
@@ -30,7 +30,7 @@ static void replyYarnView(LoBBSCommandCtx &ctx, bool markSeen)
 
 static void yarnSubLimit(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireAdmin(ctx))
+    if (!lobbsCommandRequireSysop(ctx))
         return;
     if (!lobbsCommandNeedArgc(ctx, 5, "Usage: /yarn limit SEC WORDS CHARS"))
         return;
@@ -66,7 +66,7 @@ static void handleYarn(LoBBSCommandCtx &ctx)
         return;
 
     char err[48];
-    if (!ctx.mod->yarn().dal().appendWords(ctx.user->uuid, ctx.isAdmin, (const char *const *)&ctx.argv[1], ctx.argc - 1,
+    if (!ctx.mod->yarn().dal().appendWords(ctx.user->uuid, ctx.isSysop, (const char *const *)&ctx.argv[1], ctx.argc - 1,
                                            err, sizeof(err))) {
         lobbsCommandReply(ctx, err[0] ? err : "Failed.");
         return;

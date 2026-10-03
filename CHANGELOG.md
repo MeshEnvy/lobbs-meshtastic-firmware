@@ -20,14 +20,15 @@ Planned major release **2.0.0** (not tagged yet).
 - Plugin command IoC: Auth, Mail, News, Help, Status, Wall, Yarn apps register via filters.
 - Lists paginate with `pN` (re-query offset/limit).
 - `/wall`: shared 12×12 ASCII canvas, batch paint, erase tokens, paint quota, new/seen on `/status` when logged in.
-- `/news`: announcement feed (list, read, post, unread, admin delete).
-- `/yarn`: collaborative word tail and admin quotas.
+- `/news`: announcement feed (list, read, post, unread, sysop delete).
+- `/yarn`: collaborative word tail and sysop quotas.
 - Public `/status` and `/hi`; all-time totals when logged out; unread mail/news when logged in.
-- `/passwd` (self and admin reset) and `/time` (show Unix time; admin set clock).
+- `/passwd` (self and sysop reset) and `/time` (show Unix time; sysop set clock).
 - Ignore non-slash DMs and self-originated loopback (`from` = local node).
 
 ### Changed
 
+- Operator role renamed from admin to SysOp in CLI text, help, and user records (`is_sysop` in auth proto, field 4 unchanged).
 - LoBBS protos and DALs split into per-app modules; LoDB hardening for nRF52.
 - `/login` for sign-in; build-time LoBBS versioning from `version.properties`.
 - Topic commands for mail, news, and users (development on branch; superseded by stateless CLI for 2.0.0).

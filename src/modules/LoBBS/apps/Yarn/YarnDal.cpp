@@ -110,10 +110,10 @@ bool YarnDal::saveQuota(meshtastic_LoBBSYarnQuota &quota)
     return lodb_.insert("yarn_quota", id, &quota) == LODB_OK;
 }
 
-bool YarnDal::checkAppendQuota(uint64_t userUuid, bool isAdmin, uint32_t wordCount, uint32_t charCost, char *err,
+bool YarnDal::checkAppendQuota(uint64_t userUuid, bool isSysop, uint32_t wordCount, uint32_t charCost, char *err,
                                size_t errCap)
 {
-    if (isAdmin)
+    if (isSysop)
         return true;
     if (wordCount == 0)
         return true;
@@ -260,7 +260,7 @@ bool YarnDal::markYarnSeen(uint64_t userUuid)
     return lodb_.insert("yarn_seen", id, &seen) == LODB_OK;
 }
 
-bool YarnDal::appendWords(uint64_t userUuid, bool isAdmin, const char *const *words, int wordCount, char *err,
+bool YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount, char *err,
                           size_t errCap)
 {
     if (!words || wordCount <= 0) {
@@ -295,7 +295,7 @@ bool YarnDal::appendWords(uint64_t userUuid, bool isAdmin, const char *const *wo
         charCost += (uint32_t)strlen(words[i]);
         needSpace = true;
     }
-    if (!checkAppendQuota(userUuid, isAdmin, (uint32_t)wordCount, charCost, err, errCap))
+    if (!checkAppendQuota(userUuid, isSysop, (uint32_t)wordCount, charCost, err, errCap))
         return false;
 
     char candidate[LOBBS_YARN_BODY_MAX + 64];
@@ -332,7 +332,7 @@ bool YarnDal::appendWords(uint64_t userUuid, bool isAdmin, const char *const *wo
             snprintf(err, errCap, "Save failed.");
         return false;
     }
-    if (!isAdmin && !recordAppendQuota(userUuid, (uint32_t)wordCount, charCost)) {
+    if (!isSysop && !recordAppendQuota(userUuid, (uint32_t)wordCount, charCost)) {
         if (err && errCap)
             snprintf(err, errCap, "Quota save.");
         return false;

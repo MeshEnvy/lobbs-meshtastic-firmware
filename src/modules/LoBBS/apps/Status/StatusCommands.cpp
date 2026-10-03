@@ -57,7 +57,7 @@ static void handleTime(LoBBSCommandCtx &ctx)
         return;
     }
     if (ctx.argc == 2) {
-        if (!lobbsCommandRequireAdmin(ctx))
+        if (!lobbsCommandRequireSysop(ctx))
             return;
         char *end = nullptr;
         unsigned long sec = strtoul(ctx.argv[1], &end, 10);
@@ -77,12 +77,12 @@ static void handleTime(LoBBSCommandCtx &ctx)
             lobbsCommandReply(ctx, "Could not set time.");
         return;
     }
-    lobbsCommandReply(ctx, "Usage: /time\nUsage: /time unix (admin)");
+    lobbsCommandReply(ctx, "Usage: /time\nUsage: /time unix (sysop)");
 }
 
 static const LoBBSSubHelpEntry timeHelp[] = {
     {"time", "time — show Unix time and source"},
-    {"time", "time unix — admin: set clock to Unix epoch"},
+    {"time", "time unix — sysop: set clock to Unix epoch"},
 };
 
 static void filterStatusCommands(void *value, LoBBSCommandCtx *ctx)
