@@ -1,7 +1,6 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "wall.pb.h"
 #include <lodb/LoDB.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -26,10 +25,24 @@ class WallDal
     bool setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle, char *err, size_t errCap);
 
   private:
-    bool loadCanvas(meshtastic_LoBBSWallCanvas &out);
-    bool saveCanvas(meshtastic_LoBBSWallCanvas &canvas);
-    bool loadConfig(meshtastic_LoBBSWallConfig &out);
-    bool saveQuota(meshtastic_LoBBSWallQuota &quota);
+    struct CanvasState {
+        char cells[LOBBS_WALL_CELLS + 1];
+        uint32_t crc32;
+    };
+    struct ConfigState {
+        uint32_t period_seconds;
+        uint32_t max_cells_per_cycle;
+    };
+    struct QuotaState {
+        uint64_t user_uuid;
+        uint32_t cycle_start;
+        uint32_t cells_used;
+    };
+
+    bool loadCanvas(CanvasState &out);
+    bool saveCanvas(CanvasState &canvas);
+    bool loadConfig(ConfigState &out);
+    bool saveQuota(QuotaState &quota);
     bool checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, char *err, size_t errCap);
     bool recordPaintQuota(uint64_t userUuid, int tokenCount);
     uint32_t computeCrc32(const uint8_t *data, size_t len);

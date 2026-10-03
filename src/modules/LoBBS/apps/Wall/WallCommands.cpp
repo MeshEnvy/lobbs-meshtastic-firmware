@@ -24,8 +24,8 @@ static void replyGrid(LoBBSCommandCtx &ctx, bool markSeen)
         lobbsCommandReply(ctx, "Canvas error.");
         return;
     }
-    if (markSeen && ctx.user)
-        wall.markSeen(ctx.user->uuid, wall.canvasCrc32());
+    if (markSeen && lobbsCtxLoggedIn(ctx))
+        wall.markSeen(lobbsCtxUserUuid(ctx), wall.canvasCrc32());
     lobbsCommandReply(ctx, buf);
 }
 
@@ -67,7 +67,7 @@ static void handleWall(LoBBSCommandCtx &ctx)
         return;
 
     char err[48];
-    if (!ctx.mod->wall().dal().applyPaintTokens(ctx.user->uuid, ctx.isSysop, (const char *const *)&ctx.argv[1],
+    if (!ctx.mod->wall().dal().applyPaintTokens(lobbsCtxUserUuid(ctx), ctx.session.isSysop, (const char *const *)&ctx.argv[1],
                                                 ctx.argc - 1, err, sizeof(err))) {
         lobbsCommandReply(ctx, err[0] ? err : "Paint failed.");
         return;
@@ -83,10 +83,10 @@ static void filterWallCommands(void *value, LoBBSCommandCtx *ctx)
 
 static void filterWallStatusLines(void *value, LoBBSCommandCtx *ctx)
 {
-    if (!ctx || !ctx->mod || !ctx->isAuth || !ctx->user)
+    if (!ctx || !ctx->mod || !lobbsCtxLoggedIn(*ctx))
         return;
     char line[LOBBS_FILTER_LINE_BYTES];
-    bool dirty = ctx->mod->wall().dal().isDirtyForUser(ctx->user->uuid);
+    bool dirty = ctx->mod->wall().dal().isDirtyForUser(lobbsCtxUserUuid(*ctx));
     snprintf(line, sizeof(line), "Wall: %s", dirty ? "new" : "seen");
     lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
 }

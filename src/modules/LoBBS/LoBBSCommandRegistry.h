@@ -3,7 +3,6 @@
 
 #include "LoBBSHooks.h"
 #include "LoBBSCommandCtx.h"
-#include "apps/Auth/auth.pb.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -20,6 +19,9 @@ void lobbsCommandReplySubHelpTopic(LoBBSCommandCtx &ctx, const char *title, cons
 bool lobbsCommandTrySubHelp(LoBBSCommandCtx &ctx, const char *title, const LoBBSSubHelpEntry *entries, size_t count);
 
 void lobbsCommandReply(LoBBSCommandCtx &ctx, const char *body);
+bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx);
+uint64_t lobbsCtxUserUuid(const LoBBSCommandCtx &ctx);
+bool lobbsCtxUsername(const LoBBSCommandCtx &ctx, char *buf, size_t bufCap);
 bool lobbsCommandRequireLogin(LoBBSCommandCtx &ctx);
 bool lobbsCommandRequireSysop(LoBBSCommandCtx &ctx);
 bool lobbsCommandNeedArgc(LoBBSCommandCtx &ctx, int min, const char *usage);
@@ -35,7 +37,6 @@ bool lobbsPagerFormatItems(char *out, size_t outCap, uint32_t page1, uint32_t it
                            void *fnCtx, const char **errEmpty, const char **errBadPage);
 
 void lobbsCommandsInstall(const LoBBSFilterCommands &cmds);
-void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, bool isAuth,
-                         const meshtastic_LoBBSUser *user, bool isSysop, char *line);
+void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, const LoBBSSession &session, char *line);
 
 #endif

@@ -1,43 +1,90 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "MailDal.h"
-#include "mail.pb.h"
 #include "configuration.h"
 #include "gps/RTC.h"
 #include <cstring>
 
 MailDal::MailDal(LoDb &lodb) : lodb_(lodb)
 {
-    lodb_.registerTable("mail", &meshtastic_LoBBSMail_msg, sizeof(meshtastic_LoBBSMail));
+    lodb_.registerTable("mail");
 }
 
-static int compareMailByTimestamp(const void *a, const void *b)
+uint64_t MailDal::mailUuid(const LoScalar &m)
 {
-    const meshtastic_LoBBSMail *m1 = (const meshtastic_LoBBSMail *)a;
-    const meshtastic_LoBBSMail *m2 = (const meshtastic_LoBBSMail *)b;
-    if (m2->timestamp > m1->timestamp)
+    uint64_t v = 0;
+    m.getUint64(1, v);
+    return v;
+}
+
+bool MailDal::mailMessage(const LoScalar &m, char *buf, size_t bufCap)
+{
+    std::string s;
+    if (!m.getString(3, s) || bufCap == 0)
+        return false;
+    strncpy(buf, s.c_str(), bufCap - 1);
+    buf[bufCap - 1] = '\0';
+    return true;
+}
+
+bool MailDal::mailRead(const LoScalar &m)
+{
+    bool v = false;
+    m.getBool(4, v);
+    return v;
+}
+
+uint32_t MailDal::mailTimestamp(const LoScalar &m)
+{
+    uint32_t v = 0;
+    m.getUint32(5, v);
+    return v;
+}
+
+uint64_t MailDal::mailFromUuid(const LoScalar &m)
+{
+    uint64_t v = 0;
+    m.getUint64(6, v);
+    return v;
+}
+
+uint64_t MailDal::mailToUuid(const LoScalar &m)
+{
+    uint64_t v = 0;
+    m.getUint64(7, v);
+    return v;
+}
+
+static int compareMailByTimestamp(const LoScalar &a, const LoScalar &b)
+{
+    uint32_t t1 = MailDal::mailTimestamp(a);
+    uint32_t t2 = MailDal::mailTimestamp(b);
+    if (t2 > t1)
         return 1;
-    if (m2->timestamp < m1->timestamp)
+    if (t2 < t1)
         return -1;
     return 0;
 }
 
 static constexpr uint32_t LOBBS_MAX_LIST_ROWS = 256;
+static constexpr size_t LOBBS_MAIL_MSG_MAX = 200;
 
 bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *message)
 {
-    lodb_uuid_t mailUuid = lodb_new_uuid((const char *)&toUserUuid, getTime());
+    lodb_uuid_t mailUuidVal = lodb_new_uuid((const char *)&toUserUuid, getTime());
 
-    meshtastic_LoBBSMail mail = meshtastic_LoBBSMail_init_zero;
-    mail.uuid = mailUuid;
-    mail.from_user_uuid = fromUserUuid;
-    mail.to_user_uuid = toUserUuid;
-    strncpy(mail.message, message, sizeof(mail.message) - 1);
-    mail.message[sizeof(mail.message) - 1] = '\0';
-    mail.timestamp = getTime();
-    mail.read = false;
+    LoScalar mail;
+    mail.setUint64(1, mailUuidVal);
+    char msgBuf[LOBBS_MAIL_MSG_MAX + 1];
+    strncpy(msgBuf, message, LOBBS_MAIL_MSG_MAX);
+    msgBuf[LOBBS_MAIL_MSG_MAX] = '\0';
+    mail.setString(3, msgBuf);
+    mail.setBool(4, false);
+    mail.setUint32(5, getTime());
+    mail.setUint64(6, fromUserUuid);
+    mail.setUint64(7, toUserUuid);
 
-    LoDbError err = lodb_.insert("mail", mailUuid, &mail);
+    LoDbError err = lodb_.insert("mail", mailUuidVal, mail);
     if (err != LODB_OK) {
         LOG_ERROR("Failed to send mail");
         return false;
@@ -45,54 +92,46 @@ bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *m
     return true;
 }
 
-std::vector<void *> MailDal::getMailForUser(uint64_t userUuid, uint32_t offset, uint32_t limit)
+std::vector<LoScalar> MailDal::getMailForUser(uint64_t userUuid, uint32_t offset, uint32_t limit)
 {
-    auto mail_filter = [userUuid](const void *rec) -> bool {
-        const meshtastic_LoBBSMail *m = (const meshtastic_LoBBSMail *)rec;
-        return m->to_user_uuid == userUuid;
-    };
+    auto mail_filter = [userUuid](const LoScalar &rec) -> bool { return MailDal::mailToUuid(rec) == userUuid; };
 
     auto allMail = lodb_.select("mail", mail_filter, compareMailByTimestamp);
 
-    std::vector<void *> result;
+    std::vector<LoScalar> result;
     for (size_t i = offset; i < allMail.size() && i < offset + limit; i++)
         result.push_back(allMail[i]);
-
-    for (size_t i = 0; i < allMail.size(); i++) {
-        if (i < offset || i >= offset + limit)
-            delete[] (uint8_t *)allMail[i];
-    }
     return result;
 }
 
-std::vector<void *> MailDal::getAllMailForUser(uint64_t userUuid)
+std::vector<LoScalar> MailDal::getAllMailForUser(uint64_t userUuid)
 {
     return getMailForUser(userUuid, 0, LOBBS_MAX_LIST_ROWS);
 }
 
-bool MailDal::markMailAsRead(uint64_t mailUuid)
+bool MailDal::markMailAsRead(uint64_t mailUuidVal)
 {
-    meshtastic_LoBBSMail mail = meshtastic_LoBBSMail_init_zero;
-    LoDbError err = lodb_.get("mail", mailUuid, &mail);
+    LoScalar mail;
+    LoDbError err = lodb_.get("mail", mailUuidVal, mail);
     if (err != LODB_OK)
         return false;
 
-    mail.read = true;
-    lodb_.deleteRecord("mail", mailUuid);
-    err = lodb_.insert("mail", mailUuid, &mail);
+    mail.setBool(4, true);
+    lodb_.deleteRecord("mail", mailUuidVal);
+    err = lodb_.insert("mail", mailUuidVal, mail);
     return err == LODB_OK;
 }
 
-bool MailDal::markMailAsUnread(uint64_t mailUuid)
+bool MailDal::markMailAsUnread(uint64_t mailUuidVal)
 {
-    meshtastic_LoBBSMail mail = meshtastic_LoBBSMail_init_zero;
-    LoDbError err = lodb_.get("mail", mailUuid, &mail);
+    LoScalar mail;
+    LoDbError err = lodb_.get("mail", mailUuidVal, mail);
     if (err != LODB_OK)
         return false;
 
-    mail.read = false;
-    lodb_.deleteRecord("mail", mailUuid);
-    err = lodb_.insert("mail", mailUuid, &mail);
+    mail.setBool(4, false);
+    lodb_.deleteRecord("mail", mailUuidVal);
+    err = lodb_.insert("mail", mailUuidVal, mail);
     return err == LODB_OK;
 }
 
@@ -104,19 +143,17 @@ uint32_t MailDal::countAllMail()
 
 uint16_t MailDal::countUnreadMail(uint64_t userUuid)
 {
-    auto mail_filter = [userUuid](const void *rec) -> bool {
-        const meshtastic_LoBBSMail *m = (const meshtastic_LoBBSMail *)rec;
-        return m->to_user_uuid == userUuid && !m->read;
+    auto mail_filter = [userUuid](const LoScalar &rec) -> bool {
+        return MailDal::mailToUuid(rec) == userUuid && !MailDal::mailRead(rec);
     };
-    auto rows = lodb_.select("mail", mail_filter, nullptr);
+    auto rows = lodb_.select("mail", mail_filter, LoDbComparator());
     uint16_t count = (uint16_t)(rows.size() > 0xffff ? 0xffff : rows.size());
-    LoDb::freeRecords(rows);
     return count;
 }
 
-bool MailDal::deleteMailUuid(uint64_t mailUuid)
+bool MailDal::deleteMailUuid(uint64_t mailUuidVal)
 {
-    return lodb_.deleteRecord("mail", mailUuid) == LODB_OK;
+    return lodb_.deleteRecord("mail", mailUuidVal) == LODB_OK;
 }
 
 bool MailDal::deleteMailInboxIndex(uint64_t inboxOwnerUuid, uint32_t oneBasedIndex)
@@ -124,13 +161,9 @@ bool MailDal::deleteMailInboxIndex(uint64_t inboxOwnerUuid, uint32_t oneBasedInd
     if (oneBasedIndex == 0)
         return false;
     auto mail = getAllMailForUser(inboxOwnerUuid);
-    if (oneBasedIndex > mail.size()) {
-        LoDb::freeRecords(mail);
+    if (oneBasedIndex > mail.size())
         return false;
-    }
-    const meshtastic_LoBBSMail *m = (const meshtastic_LoBBSMail *)mail[oneBasedIndex - 1];
-    uint64_t uuid = m->uuid;
-    LoDb::freeRecords(mail);
+    uint64_t uuid = mailUuid(mail[oneBasedIndex - 1]);
     return deleteMailUuid(uuid);
 }
 

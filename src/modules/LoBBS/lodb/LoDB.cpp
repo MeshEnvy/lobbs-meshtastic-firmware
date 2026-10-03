@@ -16,8 +16,6 @@
 #include <cstring>
 #include <memory>
 #include <new>
-#include <pb_decode.h>
-#include <pb_encode.h>
 
 static_assert(LODB_FILE_IO_BUFFER_SIZE <= LODB_MAX_RECORD_FILE_BYTES,
               "encode buffer cannot exceed max on-disk record (get would reject writes)");
@@ -97,16 +95,21 @@ LoDb::LoDb(const char *db_name, LoFS::FSType filesystem) : db_name(db_name)
 
 LoDb::~LoDb() {}
 
-LoDbError LoDb::registerTable(const char *table_name, const pb_msgdesc_t *pb_descriptor, size_t record_size)
+bool LoDb::isLsRecordFile(const std::string &filename)
 {
-    if (!table_name || !pb_descriptor || record_size == 0) {
+    if (filename.size() < 4)
+        return false;
+    return filename.compare(filename.size() - 3, 3, ".ls") == 0;
+}
+
+LoDbError LoDb::registerTable(const char *table_name)
+{
+    if (!table_name) {
         return LODB_ERR_INVALID;
     }
 
     TableMetadata metadata;
     metadata.table_name = table_name;
-    metadata.pb_descriptor = pb_descriptor;
-    metadata.record_size = record_size;
 
     snprintf(metadata.table_path, sizeof(metadata.table_path), "%s/%s", db_path, table_name);
 
@@ -129,9 +132,38 @@ LoDb::TableMetadata *LoDb::getTable(const char *table_name)
     return &it->second;
 }
 
-LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const void *record)
+static LoDbError writeRecordFile(const char *file_path, const LoScalar &record)
 {
-    if (!table_name || !record) {
+    std::string line;
+    if (!record.encode(line, LODB_FILE_IO_BUFFER_SIZE)) {
+        LODB_LOG_ERROR("Failed to encode LoScalar record");
+        return LODB_ERR_ENCODE;
+    }
+
+    auto file = LoFS::open(file_path, FILE_O_WRITE);
+    if (!file) {
+        LODB_LOG_ERROR("Failed to open file for writing: %s", file_path);
+        LoFS::remove(file_path);
+        return LODB_ERR_IO;
+    }
+
+    size_t encoded_size = line.size();
+    size_t written = file.write((const uint8_t *)line.data(), encoded_size);
+    file.flush();
+    file.close();
+    if (written != encoded_size) {
+        LODB_LOG_ERROR("Failed to write file, wrote %u of %u bytes", (unsigned)written, (unsigned)encoded_size);
+        LoFS::remove(file_path);
+        return LODB_ERR_IO;
+    }
+
+    LODB_LOG_DEBUG("Wrote record to: %s (%u bytes)", file_path, (unsigned)encoded_size);
+    return LODB_OK;
+}
+
+LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record)
+{
+    if (!table_name) {
         return LODB_ERR_INVALID;
     }
 
@@ -144,7 +176,7 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const void *rec
     lodb_uuid_to_hex(uuid, uuid_hex);
 
     char file_path[192];
-    snprintf(file_path, sizeof(file_path), "%s/%s.pr", table->table_path, uuid_hex);
+    snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
 
     {
         auto existing = LoFS::open(file_path, FILE_O_READ);
@@ -160,46 +192,17 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const void *rec
         }
     }
 
-    std::unique_ptr<uint8_t[]> buffer(new (std::nothrow) uint8_t[LODB_FILE_IO_BUFFER_SIZE]);
-    if (!buffer) {
-        LODB_LOG_ERROR("LoDB insert: buffer alloc failed");
-        return LODB_ERR_IO;
-    }
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer.get(), LODB_FILE_IO_BUFFER_SIZE);
-
-    if (!pb_encode(&stream, table->pb_descriptor, record)) {
-        LODB_LOG_ERROR("Failed to encode protobuf for insert");
-        return LODB_ERR_ENCODE;
-    }
-
-    size_t encoded_size = stream.bytes_written;
-    LODB_LOG_DEBUG("Encoded record: %u bytes", (unsigned)encoded_size);
-
-    auto file = LoFS::open(file_path, FILE_O_WRITE);
-    if (!file) {
-        LODB_LOG_ERROR("Failed to open file for writing: %s", file_path);
-        LoFS::remove(file_path);
-        return LODB_ERR_IO;
-    }
-
-    size_t written = file.write(buffer.get(), encoded_size);
-    file.flush();
-    file.close();
-    if (written != encoded_size) {
-        LODB_LOG_ERROR("Failed to write file, wrote %u of %u bytes", (unsigned)written, (unsigned)encoded_size);
-        LoFS::remove(file_path);
-        return LODB_ERR_IO;
-    }
-
-    LODB_LOG_DEBUG("Wrote record to: %s (%u bytes)", file_path, (unsigned)encoded_size);
+    LoDbError err = writeRecordFile(file_path, record);
+    if (err != LODB_OK)
+        return err;
 
     LODB_LOG_INFO("Inserted record with custom UUID: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
     return LODB_OK;
 }
 
-LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
+LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_out)
 {
-    if (!table_name || !record_out) {
+    if (!table_name) {
         return LODB_ERR_INVALID;
     }
 
@@ -212,10 +215,8 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
     lodb_uuid_to_hex(uuid, uuid_hex);
 
     char file_path[192];
-    snprintf(file_path, sizeof(file_path), "%s/%s.pr", table->table_path, uuid_hex);
+    snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
     LODB_LOG_DEBUG("file_path: %s", file_path);
-
-    size_t file_size = 0;
 
     auto file = LoFS::open(file_path, FILE_O_READ);
     if (!file) {
@@ -238,14 +239,14 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
         return LODB_ERR_IO;
     }
 
-    std::unique_ptr<uint8_t[]> buffer(new (std::nothrow) uint8_t[total_size]);
+    std::unique_ptr<char[]> buffer(new (std::nothrow) char[total_size + 1]);
     if (!buffer) {
         LODB_LOG_ERROR("LoDB get: buffer alloc failed (%u bytes)", (unsigned)total_size);
         file.close();
         return LODB_ERR_IO;
     }
 
-    file_size = file.read(buffer.get(), total_size);
+    size_t file_size = file.read((uint8_t *)buffer.get(), total_size);
     file.close();
 
     if (file_size == 0 || file_size != total_size) {
@@ -254,13 +255,13 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
         return LODB_ERR_NOT_FOUND;
     }
 
-    LODB_LOG_DEBUG("Read record file: %s (%u bytes)", file_path, (unsigned)file_size);
+    buffer[file_size] = '\0';
+    while (file_size > 0 && (buffer[file_size - 1] == '\n' || buffer[file_size - 1] == '\r'))
+        file_size--;
 
-    pb_istream_t stream = pb_istream_from_buffer(buffer.get(), file_size);
-    memset(record_out, 0, table->record_size);
-
-    if (!pb_decode(&stream, table->pb_descriptor, record_out)) {
-        LODB_LOG_ERROR("Failed to decode protobuf from " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
+    record_out.clear();
+    if (!record_out.decode(buffer.get(), file_size)) {
+        LODB_LOG_ERROR("Failed to decode LoScalar from " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
         LoFS::remove(file_path);
         return LODB_ERR_DECODE;
     }
@@ -269,9 +270,9 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, void *record_out)
     return LODB_OK;
 }
 
-LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const void *record)
+LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const LoScalar &record)
 {
-    if (!table_name || !record) {
+    if (!table_name) {
         return LODB_ERR_INVALID;
     }
 
@@ -284,7 +285,7 @@ LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const void *rec
     lodb_uuid_to_hex(uuid, uuid_hex);
 
     char file_path[192];
-    snprintf(file_path, sizeof(file_path), "%s/%s.pr", table->table_path, uuid_hex);
+    snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
 
     {
         auto file = LoFS::open(file_path, FILE_O_READ);
@@ -295,19 +296,11 @@ LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const void *rec
         file.close();
     }
 
-    std::unique_ptr<uint8_t[]> buffer(new (std::nothrow) uint8_t[LODB_FILE_IO_BUFFER_SIZE]);
-    if (!buffer) {
-        LODB_LOG_ERROR("LoDB update: buffer alloc failed");
-        return LODB_ERR_IO;
-    }
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer.get(), LODB_FILE_IO_BUFFER_SIZE);
-
-    if (!pb_encode(&stream, table->pb_descriptor, record)) {
+    std::string line;
+    if (!record.encode(line, LODB_FILE_IO_BUFFER_SIZE)) {
         LODB_LOG_ERROR("Failed to encode updated record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
         return LODB_ERR_ENCODE;
     }
-
-    size_t encoded_size = stream.bytes_written;
 
     char tmp_path[196];
     if (snprintf(tmp_path, sizeof(tmp_path), "%s.w", file_path) >= (int)sizeof(tmp_path)) {
@@ -322,7 +315,8 @@ LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const void *rec
         return LODB_ERR_IO;
     }
 
-    size_t written = file.write(buffer.get(), encoded_size);
+    size_t encoded_size = line.size();
+    size_t written = file.write((const uint8_t *)line.data(), encoded_size);
     file.flush();
     file.close();
     if (written != encoded_size) {
@@ -356,7 +350,7 @@ LoDbError LoDb::deleteRecord(const char *table_name, lodb_uuid_t uuid)
     lodb_uuid_to_hex(uuid, uuid_hex);
 
     char file_path[192];
-    snprintf(file_path, sizeof(file_path), "%s/%s.pr", table->table_path, uuid_hex);
+    snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
 
     if (LoFS::remove(file_path)) {
         LODB_LOG_DEBUG("Deleted record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
@@ -366,9 +360,9 @@ LoDbError LoDb::deleteRecord(const char *table_name, lodb_uuid_t uuid)
     return LODB_ERR_NOT_FOUND;
 }
 
-std::vector<void *> LoDb::select(const char *table_name, LoDbFilter filter, LoDbComparator comparator, size_t limit)
+std::vector<LoScalar> LoDb::select(const char *table_name, LoDbFilter filter, LoDbComparator comparator, size_t limit)
 {
-    std::vector<void *> results;
+    std::vector<LoScalar> results;
 
     if (!table_name) {
         LODB_LOG_ERROR("Invalid table_name");
@@ -410,13 +404,12 @@ std::vector<void *> LoDb::select(const char *table_name, LoDbFilter filter, LoDb
         size_t lastSlash = pathStr.rfind('/');
         std::string filename = (lastSlash != std::string::npos) ? pathStr.substr(lastSlash + 1) : pathStr;
 
-        size_t prPos = filename.find(".pr");
-        if (prPos == std::string::npos) {
-            LODB_LOG_DEBUG("Skipped non-.pr file: %s", filename.c_str());
+        if (!isLsRecordFile(filename)) {
+            LODB_LOG_DEBUG("Skipped non-.ls file: %s", filename.c_str());
             continue;
         }
 
-        std::string uuid_hex_str = filename.substr(0, prPos);
+        std::string uuid_hex_str = filename.substr(0, filename.size() - 3);
 
         lodb_uuid_t uuid;
         uint32_t high, low;
@@ -426,28 +419,20 @@ std::vector<void *> LoDb::select(const char *table_name, LoDbFilter filter, LoDb
         }
         uuid = ((uint64_t)high << 32) | (uint64_t)low;
 
-        uint8_t *record_buffer = new uint8_t[table->record_size];
-        if (!record_buffer) {
-            LODB_LOG_ERROR("Failed to allocate record buffer");
-            continue;
-        }
-
-        memset(record_buffer, 0, table->record_size);
-        LoDbError err = get(table_name, uuid, record_buffer);
+        LoScalar record;
+        LoDbError err = get(table_name, uuid, record);
 
         if (err != LODB_OK) {
             LODB_LOG_WARN("Failed to read record " LODB_UUID_FMT " during select", LODB_UUID_ARGS(uuid));
-            delete[] record_buffer;
             continue;
         }
 
-        if (filter && !filter(record_buffer)) {
+        if (filter && !filter(record)) {
             LODB_LOG_DEBUG("Record " LODB_UUID_FMT " filtered out", LODB_UUID_ARGS(uuid));
-            delete[] record_buffer;
             continue;
         }
 
-        results.push_back(record_buffer);
+        results.push_back(record);
         LODB_LOG_DEBUG("Added record " LODB_UUID_FMT " to results", LODB_UUID_ARGS(uuid));
     }
 
@@ -456,29 +441,19 @@ std::vector<void *> LoDb::select(const char *table_name, LoDbFilter filter, LoDb
     LODB_LOG_INFO("Select from %s: %u records after filtering", table_name, (unsigned)results.size());
 
     if (comparator && !results.empty()) {
-        std::sort(results.begin(), results.end(),
-                  [comparator](const void *a, const void *b) { return comparator(a, b) < 0; });
+        std::sort(results.begin(), results.end(), [&comparator](const LoScalar &a, const LoScalar &b) {
+            return comparator(a, b) < 0;
+        });
         LODB_LOG_DEBUG("Sorted %u records", (unsigned)results.size());
     }
 
     if (limit > 0 && results.size() > limit) {
-        for (size_t i = limit; i < results.size(); i++) {
-            delete[] (uint8_t *)results[i];
-        }
         results.resize(limit);
         LODB_LOG_DEBUG("Limited results to %u records", (unsigned)limit);
     }
 
     LODB_LOG_INFO("Select from %s complete: %u records returned", table_name, (unsigned)results.size());
     return results;
-}
-
-void LoDb::freeRecords(std::vector<void *> &records)
-{
-    for (auto *recordPtr : records) {
-        delete[] (uint8_t *)recordPtr;
-    }
-    records.clear();
 }
 
 int LoDb::count(const char *table_name, LoDbFilter filter)
@@ -526,7 +501,7 @@ int LoDb::count(const char *table_name, LoDbFilter filter)
             size_t lastSlash = pathStr.rfind('/');
             std::string filename = (lastSlash != std::string::npos) ? pathStr.substr(lastSlash + 1) : pathStr;
 
-            if (filename.find(".pr") != std::string::npos) {
+            if (isLsRecordFile(filename)) {
                 cnt++;
             }
         }
@@ -538,7 +513,6 @@ int LoDb::count(const char *table_name, LoDbFilter filter)
 
     auto results = select(table_name, filter, LoDbComparator(), 0);
     cnt = (int)results.size();
-    freeRecords(results);
 
     LODB_LOG_DEBUG("Counted %d records in %s (with filter)", cnt, table_name);
     return cnt;

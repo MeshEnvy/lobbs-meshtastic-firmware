@@ -15,10 +15,12 @@
 static void handleHi(LoBBSCommandCtx &ctx)
 {
     char buf[LOBBS_REPLY_BYTES + 1];
-    if (ctx.isAuth && ctx.user) {
+    if (lobbsCtxLoggedIn(ctx)) {
+        char uname[LOBBS_USERNAME_BUFFER_SIZE];
+        lobbsCtxUsername(ctx, uname, sizeof(uname));
         snprintf(buf, sizeof(buf),
                  "LoBBS v%s\nWelcome back, %s!\nUse /help for general help\nUse /help <cmd> for help with a command\nUse /status to see what's happening",
-                 LOBBS_VERSION_SHORT, ctx.user->username);
+                 LOBBS_VERSION_SHORT, uname);
     } else {
         snprintf(buf, sizeof(buf),
                  "LoBBS v%s\nWelcome!\nUse /help for general help\nUse /help <cmd> for help with a command\nUse /status to see what's happening\nUse /login to sign in",

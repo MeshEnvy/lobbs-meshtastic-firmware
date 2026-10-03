@@ -213,9 +213,31 @@ void lobbsCommandJoinArgs(const LoBBSCommandCtx &ctx, int from, int to, char *ou
     out[n] = '\0';
 }
 
+bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx)
+{
+    return ctx.session.userUuid != 0;
+}
+
+uint64_t lobbsCtxUserUuid(const LoBBSCommandCtx &ctx)
+{
+    return ctx.session.userUuid;
+}
+
+bool lobbsCtxUsername(const LoBBSCommandCtx &ctx, char *buf, size_t bufCap)
+{
+    if (!buf || bufCap == 0)
+        return false;
+    buf[0] = '\0';
+    if (!lobbsCtxLoggedIn(ctx))
+        return false;
+    strncpy(buf, ctx.session.username, bufCap - 1);
+    buf[bufCap - 1] = '\0';
+    return buf[0] != '\0';
+}
+
 bool lobbsCommandRequireLogin(LoBBSCommandCtx &ctx)
 {
-    if (ctx.isAuth && ctx.user)
+    if (lobbsCtxLoggedIn(ctx))
         return true;
     lobbsCommandReply(ctx, "Login required.");
     return false;
@@ -223,7 +245,7 @@ bool lobbsCommandRequireLogin(LoBBSCommandCtx &ctx)
 
 bool lobbsCommandRequireSysop(LoBBSCommandCtx &ctx)
 {
-    if (ctx.isSysop)
+    if (lobbsCtxLoggedIn(ctx) && ctx.session.isSysop)
         return true;
     lobbsCommandReply(ctx, "SysOp only.");
     return false;
@@ -369,16 +391,12 @@ static bool lobbsParseSlash(char *line, LoBBSCommandCtx &ctx)
     return lobbsTokenize(p, ctx);
 }
 
-void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, uint32_t sessionNodeId, bool isAuth,
-                         const meshtastic_LoBBSUser *user, bool isSysop, char *line)
+void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, const LoBBSSession &session, char *line)
 {
     LoBBSCommandCtx ctx;
     ctx.mod = mod;
     ctx.mp = &mp;
-    ctx.sessionNodeId = sessionNodeId;
-    ctx.isAuth = isAuth;
-    ctx.user = user;
-    ctx.isSysop = isSysop;
+    ctx.session = session;
 
     if (!lobbsParseSlash(line, ctx))
         return;

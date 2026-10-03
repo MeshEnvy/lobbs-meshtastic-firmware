@@ -7,10 +7,10 @@
 
 YarnDal::YarnDal(LoDb &lodb) : lodb_(lodb)
 {
-    lodb_.registerTable("yarn_current", &meshtastic_LoBBSYarnCurrent_msg, sizeof(meshtastic_LoBBSYarnCurrent));
-    lodb_.registerTable("yarn_seen", &meshtastic_LoBBSYarnSeen_msg, sizeof(meshtastic_LoBBSYarnSeen));
-    lodb_.registerTable("yarn_config", &meshtastic_LoBBSYarnConfig_msg, sizeof(meshtastic_LoBBSYarnConfig));
-    lodb_.registerTable("yarn_quota", &meshtastic_LoBBSYarnQuota_msg, sizeof(meshtastic_LoBBSYarnQuota));
+    lodb_.registerTable("yarn_current");
+    lodb_.registerTable("yarn_seen");
+    lodb_.registerTable("yarn_config");
+    lodb_.registerTable("yarn_quota");
 }
 
 static lodb_uuid_t yarnCurrentRecordUuid()
@@ -39,39 +39,61 @@ static lodb_uuid_t yarnQuotaRecordUuid(uint64_t userUuid)
     return lodb_new_uuid(key, 0);
 }
 
-bool YarnDal::loadCurrent(meshtastic_LoBBSYarnCurrent &out)
+bool YarnDal::loadCurrent(CurrentState &out)
 {
     lodb_uuid_t id = yarnCurrentRecordUuid();
-    if (lodb_.get("yarn_current", id, &out) == LODB_OK)
+    LoScalar rec;
+    if (lodb_.get("yarn_current", id, rec) == LODB_OK) {
+        std::string text;
+        if (rec.getString(3, text))
+            strncpy(out.text, text.c_str(), LOBBS_YARN_BODY_MAX);
+        else
+            out.text[0] = '\0';
+        out.text[LOBBS_YARN_BODY_MAX] = '\0';
+        rec.getUint32(4, out.total_words_appended);
         return true;
-    meshtastic_LoBBSYarnCurrent fresh = meshtastic_LoBBSYarnCurrent_init_zero;
+    }
+    out.text[0] = '\0';
+    out.total_words_appended = 0;
     lodb_.deleteRecord("yarn_current", id);
-    if (lodb_.insert("yarn_current", id, &fresh) != LODB_OK)
+    LoScalar fresh;
+    fresh.setString(3, "");
+    fresh.setUint32(4, 0);
+    if (lodb_.insert("yarn_current", id, fresh) != LODB_OK)
         return false;
-    out = fresh;
     return true;
 }
 
-bool YarnDal::saveCurrent(meshtastic_LoBBSYarnCurrent &cur)
+bool YarnDal::saveCurrent(CurrentState &cur)
 {
     lodb_uuid_t id = yarnCurrentRecordUuid();
     lodb_.deleteRecord("yarn_current", id);
-    return lodb_.insert("yarn_current", id, &cur) == LODB_OK;
+    LoScalar rec;
+    rec.setString(3, cur.text);
+    rec.setUint32(4, cur.total_words_appended);
+    return lodb_.insert("yarn_current", id, rec) == LODB_OK;
 }
 
-bool YarnDal::loadConfig(meshtastic_LoBBSYarnConfig &out)
+bool YarnDal::loadConfig(ConfigState &out)
 {
     lodb_uuid_t id = yarnConfigRecordUuid();
-    if (lodb_.get("yarn_config", id, &out) == LODB_OK)
+    LoScalar rec;
+    if (lodb_.get("yarn_config", id, rec) == LODB_OK) {
+        rec.getUint32(4, out.period_seconds);
+        rec.getUint32(5, out.max_words_per_interval);
+        rec.getUint32(6, out.max_chars_per_interval);
         return true;
-    meshtastic_LoBBSYarnConfig fresh = meshtastic_LoBBSYarnConfig_init_zero;
-    fresh.period_seconds = LOBBS_YARN_DEFAULT_PERIOD_SEC;
-    fresh.max_words_per_interval = LOBBS_YARN_DEFAULT_MAX_WORDS;
-    fresh.max_chars_per_interval = LOBBS_YARN_DEFAULT_MAX_CHARS;
+    }
+    out.period_seconds = LOBBS_YARN_DEFAULT_PERIOD_SEC;
+    out.max_words_per_interval = LOBBS_YARN_DEFAULT_MAX_WORDS;
+    out.max_chars_per_interval = LOBBS_YARN_DEFAULT_MAX_CHARS;
     lodb_.deleteRecord("yarn_config", id);
-    if (lodb_.insert("yarn_config", id, &fresh) != LODB_OK)
+    LoScalar fresh;
+    fresh.setUint32(4, out.period_seconds);
+    fresh.setUint32(5, out.max_words_per_interval);
+    fresh.setUint32(6, out.max_chars_per_interval);
+    if (lodb_.insert("yarn_config", id, fresh) != LODB_OK)
         return false;
-    out = fresh;
     return true;
 }
 
@@ -92,22 +114,25 @@ bool YarnDal::setConfig(uint32_t periodSeconds, uint32_t maxWords, uint32_t maxC
             snprintf(err, errCap, "Bad char max.");
         return false;
     }
-    meshtastic_LoBBSYarnConfig cfg = meshtastic_LoBBSYarnConfig_init_zero;
     lodb_uuid_t id = yarnConfigRecordUuid();
-    bool exists = lodb_.get("yarn_config", id, &cfg) == LODB_OK;
-    cfg.period_seconds = periodSeconds;
-    cfg.max_words_per_interval = maxWords;
-    cfg.max_chars_per_interval = maxChars;
-    if (exists)
-        return lodb_.update("yarn_config", id, &cfg) == LODB_OK;
-    return lodb_.insert("yarn_config", id, &cfg) == LODB_OK;
+    LoScalar cfg;
+    cfg.setUint32(4, periodSeconds);
+    cfg.setUint32(5, maxWords);
+    cfg.setUint32(6, maxChars);
+    lodb_.deleteRecord("yarn_config", id);
+    return lodb_.insert("yarn_config", id, cfg) == LODB_OK;
 }
 
-bool YarnDal::saveQuota(meshtastic_LoBBSYarnQuota &quota)
+bool YarnDal::saveQuota(QuotaState &quota)
 {
     lodb_uuid_t id = yarnQuotaRecordUuid(quota.user_uuid);
     lodb_.deleteRecord("yarn_quota", id);
-    return lodb_.insert("yarn_quota", id, &quota) == LODB_OK;
+    LoScalar rec;
+    rec.setUint64(1, quota.user_uuid);
+    rec.setUint32(4, quota.cycle_start);
+    rec.setUint32(5, quota.words_used);
+    rec.setUint32(6, quota.chars_used);
+    return lodb_.insert("yarn_quota", id, rec) == LODB_OK;
 }
 
 bool YarnDal::checkAppendQuota(uint64_t userUuid, bool isSysop, uint32_t wordCount, uint32_t charCost, char *err,
@@ -117,7 +142,7 @@ bool YarnDal::checkAppendQuota(uint64_t userUuid, bool isSysop, uint32_t wordCou
         return true;
     if (wordCount == 0)
         return true;
-    meshtastic_LoBBSYarnConfig cfg = meshtastic_LoBBSYarnConfig_init_zero;
+    ConfigState cfg = {};
     if (!loadConfig(cfg)) {
         if (err && errCap)
             snprintf(err, errCap, "Config error.");
@@ -128,9 +153,15 @@ bool YarnDal::checkAppendQuota(uint64_t userUuid, bool isSysop, uint32_t wordCou
             snprintf(err, errCap, "Too many words.");
         return false;
     }
-    meshtastic_LoBBSYarnQuota quota = meshtastic_LoBBSYarnQuota_init_zero;
+    QuotaState quota = {};
     lodb_uuid_t id = yarnQuotaRecordUuid(userUuid);
-    if (lodb_.get("yarn_quota", id, &quota) != LODB_OK) {
+    LoScalar qrec;
+    if (lodb_.get("yarn_quota", id, qrec) == LODB_OK) {
+        qrec.getUint64(1, quota.user_uuid);
+        qrec.getUint32(4, quota.cycle_start);
+        qrec.getUint32(5, quota.words_used);
+        qrec.getUint32(6, quota.chars_used);
+    } else {
         quota.user_uuid = userUuid;
         quota.cycle_start = 0;
         quota.words_used = 0;
@@ -160,12 +191,18 @@ bool YarnDal::recordAppendQuota(uint64_t userUuid, uint32_t wordCount, uint32_t 
 {
     if (wordCount == 0)
         return true;
-    meshtastic_LoBBSYarnConfig cfg = meshtastic_LoBBSYarnConfig_init_zero;
+    ConfigState cfg = {};
     if (!loadConfig(cfg))
         return false;
-    meshtastic_LoBBSYarnQuota quota = meshtastic_LoBBSYarnQuota_init_zero;
+    QuotaState quota = {};
     lodb_uuid_t id = yarnQuotaRecordUuid(userUuid);
-    if (lodb_.get("yarn_quota", id, &quota) != LODB_OK) {
+    LoScalar qrec;
+    if (lodb_.get("yarn_quota", id, qrec) == LODB_OK) {
+        qrec.getUint64(1, quota.user_uuid);
+        qrec.getUint32(4, quota.cycle_start);
+        qrec.getUint32(5, quota.words_used);
+        qrec.getUint32(6, quota.chars_used);
+    } else {
         quota.user_uuid = userUuid;
         quota.cycle_start = 0;
         quota.words_used = 0;
@@ -213,7 +250,7 @@ bool YarnDal::formatYarnView(char *out, size_t outCap)
 {
     if (!out || outCap == 0)
         return false;
-    meshtastic_LoBBSYarnCurrent cur = meshtastic_LoBBSYarnCurrent_init_zero;
+    CurrentState cur = {};
     if (!loadCurrent(cur))
         return false;
     if (!cur.text[0]) {
@@ -226,7 +263,7 @@ bool YarnDal::formatYarnView(char *out, size_t outCap)
 
 uint32_t YarnDal::totalWordsAppended()
 {
-    meshtastic_LoBBSYarnCurrent cur = meshtastic_LoBBSYarnCurrent_init_zero;
+    CurrentState cur = {};
     if (!loadCurrent(cur))
         return 0;
     return cur.total_words_appended;
@@ -234,30 +271,32 @@ uint32_t YarnDal::totalWordsAppended()
 
 uint32_t YarnDal::newWordsForUser(uint64_t userUuid)
 {
-    meshtastic_LoBBSYarnCurrent cur = meshtastic_LoBBSYarnCurrent_init_zero;
+    CurrentState cur = {};
     if (!loadCurrent(cur))
         return 0;
-    meshtastic_LoBBSYarnSeen seen = meshtastic_LoBBSYarnSeen_init_zero;
-    if (lodb_.get("yarn_seen", yarnSeenRecordUuid(userUuid), &seen) != LODB_OK)
+    LoScalar seen;
+    if (lodb_.get("yarn_seen", yarnSeenRecordUuid(userUuid), seen) != LODB_OK)
         return cur.total_words_appended;
-    if (cur.total_words_appended <= seen.last_seen_total_words)
+    uint32_t lastSeen = 0;
+    seen.getUint32(4, lastSeen);
+    if (cur.total_words_appended <= lastSeen)
         return 0;
-    return cur.total_words_appended - seen.last_seen_total_words;
+    return cur.total_words_appended - lastSeen;
 }
 
 bool YarnDal::markYarnSeen(uint64_t userUuid)
 {
-    meshtastic_LoBBSYarnCurrent cur = meshtastic_LoBBSYarnCurrent_init_zero;
+    CurrentState cur = {};
     if (!loadCurrent(cur))
         return false;
-    meshtastic_LoBBSYarnSeen seen = meshtastic_LoBBSYarnSeen_init_zero;
-    seen.user_uuid = userUuid;
-    seen.last_seen_total_words = cur.total_words_appended;
+    LoScalar seen;
+    seen.setUint64(1, userUuid);
+    seen.setUint32(4, cur.total_words_appended);
     lodb_uuid_t id = yarnSeenRecordUuid(userUuid);
-    meshtastic_LoBBSYarnSeen existing = meshtastic_LoBBSYarnSeen_init_zero;
-    if (lodb_.get("yarn_seen", id, &existing) == LODB_OK)
-        return lodb_.update("yarn_seen", id, &seen) == LODB_OK;
-    return lodb_.insert("yarn_seen", id, &seen) == LODB_OK;
+    LoScalar existing;
+    if (lodb_.get("yarn_seen", id, existing) == LODB_OK)
+        return lodb_.update("yarn_seen", id, seen) == LODB_OK;
+    return lodb_.insert("yarn_seen", id, seen) == LODB_OK;
 }
 
 bool YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount, char *err,
@@ -280,7 +319,7 @@ bool YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *wo
             return false;
         }
     }
-    meshtastic_LoBBSYarnCurrent cur = meshtastic_LoBBSYarnCurrent_init_zero;
+    CurrentState cur = {};
     if (!loadCurrent(cur)) {
         if (err && errCap)
             snprintf(err, errCap, "Yarn error.");
@@ -324,8 +363,8 @@ bool YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *wo
             snprintf(err, errCap, "Too many chars.");
         return false;
     }
-    strncpy(cur.text, candidate, sizeof(cur.text) - 1);
-    cur.text[sizeof(cur.text) - 1] = '\0';
+    strncpy(cur.text, candidate, LOBBS_YARN_BODY_MAX);
+    cur.text[LOBBS_YARN_BODY_MAX] = '\0';
     cur.total_words_appended += (uint32_t)wordCount;
     if (!saveCurrent(cur)) {
         if (err && errCap)

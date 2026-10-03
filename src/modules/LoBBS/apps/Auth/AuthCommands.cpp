@@ -5,20 +5,19 @@
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSModule.h"
 #include "AuthDal.h"
-#include "auth.pb.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
 
 static void handleWhoami(LoBBSCommandCtx &ctx)
 {
-    if (!ctx.isAuth || !ctx.user) {
-        lobbsCommandReply(ctx, "Not logged in.");
+    if (!lobbsCommandRequireLogin(ctx))
         return;
-    }
     char buf[96];
-    snprintf(buf, sizeof(buf), "Logged in as %s.", ctx.user->username);
-    if (ctx.user->is_sysop) {
+    char uname[LOBBS_USERNAME_BUFFER_SIZE];
+    lobbsCtxUsername(ctx, uname, sizeof(uname));
+    snprintf(buf, sizeof(buf), "Logged in as %s.", uname);
+    if (ctx.session.isSysop) {
         size_t len = strlen(buf);
         snprintf(buf + len, sizeof(buf) - len, "\nYou are the SysOp.");
     }
@@ -27,7 +26,7 @@ static void handleWhoami(LoBBSCommandCtx &ctx)
 
 static void handleLogout(LoBBSCommandCtx &ctx)
 {
-    ctx.mod->auth().dal().logoutUser(ctx.sessionNodeId);
+    ctx.mod->auth().dal().logoutUser(ctx.session.nodeId);
     lobbsCommandReply(ctx, "Goodbye!");
 }
 
@@ -48,17 +47,17 @@ static void handleLogin(LoBBSCommandCtx &ctx)
         lobbsCommandReply(ctx, "Password too short.");
         return;
     }
-    meshtastic_LoBBSUser dbUser = meshtastic_LoBBSUser_init_zero;
+    LoScalar dbUser;
     if (auth.loadUserByUsername(username, &dbUser)) {
         if (!auth.verifyPassword(&dbUser, password)) {
             lobbsCommandReply(ctx, "Invalid password");
             return;
         }
-        if (!auth.loginUser(username, ctx.sessionNodeId)) {
+        if (!auth.loginUser(username, ctx.session.nodeId)) {
             lobbsCommandReply(ctx, "Error creating session");
             return;
         }
-    } else if (!auth.createUser(username, password, ctx.sessionNodeId)) {
+    } else if (!auth.createUser(username, password, ctx.session.nodeId)) {
         lobbsCommandReply(ctx, "Error creating account");
         return;
     } else {
@@ -66,7 +65,7 @@ static void handleLogin(LoBBSCommandCtx &ctx)
     }
     char buf[96];
     snprintf(buf, sizeof(buf), "Welcome %s!", username);
-    if (dbUser.is_sysop) {
+    if (AuthDal::userIsSysop(dbUser)) {
         size_t len = strlen(buf);
         snprintf(buf + len, sizeof(buf) - len, "\nYou are the SysOp.");
     }
@@ -97,7 +96,9 @@ static void handlePasswd(LoBBSCommandCtx &ctx)
     if (ctx.argc == 3) {
         if (!lobbsCommandRequireLogin(ctx))
             return;
-        passwdApply(auth, ctx.user->username, ctx.argv[1], ctx.argv[2], ctx);
+        char uname[LOBBS_USERNAME_BUFFER_SIZE];
+        lobbsCtxUsername(ctx, uname, sizeof(uname));
+        passwdApply(auth, uname, ctx.argv[1], ctx.argv[2], ctx);
         return;
     }
     if (ctx.argc == 4) {
@@ -107,7 +108,7 @@ static void handlePasswd(LoBBSCommandCtx &ctx)
             lobbsCommandReply(ctx, "Invalid username.");
             return;
         }
-        meshtastic_LoBBSUser dbUser = meshtastic_LoBBSUser_init_zero;
+        LoScalar dbUser;
         if (!auth.loadUserByUsername(ctx.argv[1], &dbUser)) {
             lobbsCommandReply(ctx, "User not found.");
             return;
@@ -173,12 +174,12 @@ static void usersSubDemote(LoBBSCommandCtx &ctx)
     if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /users demote user"))
         return;
     AuthDal &auth = ctx.mod->auth().dal();
-    meshtastic_LoBBSUser target = meshtastic_LoBBSUser_init_zero;
+    LoScalar target;
     if (!auth.loadUserByUsername(ctx.argv[2], &target)) {
         lobbsCommandReply(ctx, "User not found.");
         return;
     }
-    if (target.is_sysop && auth.countSysopUsers() <= 1) {
+    if (AuthDal::userIsSysop(target) && auth.countSysopUsers() <= 1) {
         lobbsCommandReply(ctx, "Cannot demote last SysOp.");
         return;
     }
@@ -262,7 +263,7 @@ static void filterAuthStatusLines(void *value, LoBBSCommandCtx *ctx)
         return;
     char line[LOBBS_FILTER_LINE_BYTES];
     uint32_t n = ctx->mod->auth().dal().countAllUsers();
-    if (ctx->isAuth)
+    if (ctx && lobbsCtxLoggedIn(*ctx))
         snprintf(line, sizeof(line), "Users: %u", (unsigned)n);
     else
         snprintf(line, sizeof(line), "Users: %u (all time)", (unsigned)n);
@@ -274,7 +275,7 @@ static void filterAuthHelpIndexEarly(void *value, LoBBSCommandCtx *ctx)
     if (!ctx)
         return;
     auto *index = (LoBBSFilterLines *)value;
-    if (ctx->isAuth) {
+    if (lobbsCtxLoggedIn(*ctx)) {
         lobbsFilterLinesPush(*index, "whoami");
         lobbsFilterLinesPush(*index, "logout");
         lobbsFilterLinesPush(*index, "passwd");
@@ -285,7 +286,7 @@ static void filterAuthHelpIndexEarly(void *value, LoBBSCommandCtx *ctx)
 
 static void filterAuthHelpIndexUsers(void *value, LoBBSCommandCtx *ctx)
 {
-    if (ctx && ctx->isAuth)
+    if (ctx && lobbsCtxLoggedIn(*ctx))
         lobbsFilterLinesPush(*(LoBBSFilterLines *)value, "users");
 }
 

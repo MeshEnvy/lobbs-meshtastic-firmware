@@ -8,10 +8,10 @@
 
 WallDal::WallDal(LoDb &lodb) : lodb_(lodb)
 {
-    lodb_.registerTable("wall_canvas", &meshtastic_LoBBSWallCanvas_msg, sizeof(meshtastic_LoBBSWallCanvas));
-    lodb_.registerTable("wall_seen", &meshtastic_LoBBSWallSeen_msg, sizeof(meshtastic_LoBBSWallSeen));
-    lodb_.registerTable("wall_config", &meshtastic_LoBBSWallConfig_msg, sizeof(meshtastic_LoBBSWallConfig));
-    lodb_.registerTable("wall_quota", &meshtastic_LoBBSWallQuota_msg, sizeof(meshtastic_LoBBSWallQuota));
+    lodb_.registerTable("wall_canvas");
+    lodb_.registerTable("wall_seen");
+    lodb_.registerTable("wall_config");
+    lodb_.registerTable("wall_quota");
 }
 
 static lodb_uuid_t wallCanvasRecordUuid()
@@ -40,9 +40,9 @@ static lodb_uuid_t wallQuotaRecordUuid(uint64_t userUuid)
     return lodb_new_uuid(key, 0);
 }
 
-static void wallSealCanvas(meshtastic_LoBBSWallCanvas &canvas)
+static void wallSealCells(char *cells)
 {
-    canvas.cells[LOBBS_WALL_CELLS] = '\0';
+    cells[LOBBS_WALL_CELLS] = '\0';
 }
 
 uint32_t WallDal::computeCrc32(const uint8_t *data, size_t len)
@@ -56,45 +56,65 @@ uint32_t WallDal::computeCrc32(const uint8_t *data, size_t len)
     return ~crc;
 }
 
-bool WallDal::loadCanvas(meshtastic_LoBBSWallCanvas &out)
+bool WallDal::loadCanvas(CanvasState &out)
 {
     lodb_uuid_t id = wallCanvasRecordUuid();
-    if (lodb_.get("wall_canvas", id, &out) == LODB_OK) {
-        wallSealCanvas(out);
+    LoScalar rec;
+    if (lodb_.get("wall_canvas", id, rec) == LODB_OK) {
+        std::string cells;
+        if (rec.getString(3, cells)) {
+            strncpy(out.cells, cells.c_str(), LOBBS_WALL_CELLS);
+            out.cells[LOBBS_WALL_CELLS] = '\0';
+        } else {
+            memset(out.cells, ' ', LOBBS_WALL_CELLS);
+            out.cells[LOBBS_WALL_CELLS] = '\0';
+        }
+        rec.getUint32(4, out.crc32);
+        wallSealCells(out.cells);
         return true;
     }
-    out = meshtastic_LoBBSWallCanvas_init_zero;
-    for (int i = 0; i < LOBBS_WALL_CELLS; i++)
-        out.cells[i] = ' ';
-    wallSealCanvas(out);
+    memset(out.cells, ' ', LOBBS_WALL_CELLS);
+    out.cells[LOBBS_WALL_CELLS] = '\0';
+    wallSealCells(out.cells);
     out.crc32 = computeCrc32((const uint8_t *)out.cells, LOBBS_WALL_CELLS);
     lodb_.deleteRecord("wall_canvas", id);
-    if (lodb_.insert("wall_canvas", id, &out) != LODB_OK)
+    LoScalar fresh;
+    fresh.setString(3, out.cells);
+    fresh.setUint32(4, out.crc32);
+    if (lodb_.insert("wall_canvas", id, fresh) != LODB_OK)
         return false;
     return true;
 }
 
-bool WallDal::saveCanvas(meshtastic_LoBBSWallCanvas &canvas)
+bool WallDal::saveCanvas(CanvasState &canvas)
 {
-    wallSealCanvas(canvas);
+    wallSealCells(canvas.cells);
     canvas.crc32 = computeCrc32((const uint8_t *)canvas.cells, LOBBS_WALL_CELLS);
     lodb_uuid_t id = wallCanvasRecordUuid();
     lodb_.deleteRecord("wall_canvas", id);
-    return lodb_.insert("wall_canvas", id, &canvas) == LODB_OK;
+    LoScalar rec;
+    rec.setString(3, canvas.cells);
+    rec.setUint32(4, canvas.crc32);
+    return lodb_.insert("wall_canvas", id, rec) == LODB_OK;
 }
 
-bool WallDal::loadConfig(meshtastic_LoBBSWallConfig &out)
+bool WallDal::loadConfig(ConfigState &out)
 {
     lodb_uuid_t id = wallConfigRecordUuid();
-    if (lodb_.get("wall_config", id, &out) == LODB_OK)
+    LoScalar rec;
+    if (lodb_.get("wall_config", id, rec) == LODB_OK) {
+        rec.getUint32(4, out.period_seconds);
+        rec.getUint32(5, out.max_cells_per_cycle);
         return true;
-    meshtastic_LoBBSWallConfig fresh = meshtastic_LoBBSWallConfig_init_zero;
-    fresh.period_seconds = LOBBS_WALL_DEFAULT_PERIOD_SEC;
-    fresh.max_cells_per_cycle = LOBBS_WALL_DEFAULT_MAX_CELLS;
+    }
+    out.period_seconds = LOBBS_WALL_DEFAULT_PERIOD_SEC;
+    out.max_cells_per_cycle = LOBBS_WALL_DEFAULT_MAX_CELLS;
     lodb_.deleteRecord("wall_config", id);
-    if (lodb_.insert("wall_config", id, &fresh) != LODB_OK)
+    LoScalar fresh;
+    fresh.setUint32(4, out.period_seconds);
+    fresh.setUint32(5, out.max_cells_per_cycle);
+    if (lodb_.insert("wall_config", id, fresh) != LODB_OK)
         return false;
-    out = fresh;
     return true;
 }
 
@@ -110,19 +130,23 @@ bool WallDal::setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle, char 
             snprintf(err, errCap, "Bad cell max.");
         return false;
     }
-    meshtastic_LoBBSWallConfig cfg = meshtastic_LoBBSWallConfig_init_zero;
     lodb_uuid_t id = wallConfigRecordUuid();
-    cfg.period_seconds = periodSeconds;
-    cfg.max_cells_per_cycle = maxCellsPerCycle;
+    LoScalar cfg;
+    cfg.setUint32(4, periodSeconds);
+    cfg.setUint32(5, maxCellsPerCycle);
     lodb_.deleteRecord("wall_config", id);
-    return lodb_.insert("wall_config", id, &cfg) == LODB_OK;
+    return lodb_.insert("wall_config", id, cfg) == LODB_OK;
 }
 
-bool WallDal::saveQuota(meshtastic_LoBBSWallQuota &quota)
+bool WallDal::saveQuota(QuotaState &quota)
 {
     lodb_uuid_t id = wallQuotaRecordUuid(quota.user_uuid);
     lodb_.deleteRecord("wall_quota", id);
-    return lodb_.insert("wall_quota", id, &quota) == LODB_OK;
+    LoScalar rec;
+    rec.setUint64(1, quota.user_uuid);
+    rec.setUint32(4, quota.cycle_start);
+    rec.setUint32(5, quota.cells_used);
+    return lodb_.insert("wall_quota", id, rec) == LODB_OK;
 }
 
 bool WallDal::checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, char *err, size_t errCap)
@@ -134,7 +158,7 @@ bool WallDal::checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, c
             snprintf(err, errCap, "No paint tokens.");
         return false;
     }
-    meshtastic_LoBBSWallConfig cfg = meshtastic_LoBBSWallConfig_init_zero;
+    ConfigState cfg = {};
     if (!loadConfig(cfg)) {
         if (err && errCap)
             snprintf(err, errCap, "Config error.");
@@ -145,9 +169,14 @@ bool WallDal::checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, c
             snprintf(err, errCap, "Too many cells.");
         return false;
     }
-    meshtastic_LoBBSWallQuota quota = meshtastic_LoBBSWallQuota_init_zero;
+    QuotaState quota = {};
     lodb_uuid_t id = wallQuotaRecordUuid(userUuid);
-    if (lodb_.get("wall_quota", id, &quota) != LODB_OK) {
+    LoScalar qrec;
+    if (lodb_.get("wall_quota", id, qrec) == LODB_OK) {
+        qrec.getUint64(1, quota.user_uuid);
+        qrec.getUint32(4, quota.cycle_start);
+        qrec.getUint32(5, quota.cells_used);
+    } else {
         quota.user_uuid = userUuid;
         quota.cycle_start = 0;
         quota.cells_used = 0;
@@ -166,12 +195,17 @@ bool WallDal::checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, c
 
 bool WallDal::recordPaintQuota(uint64_t userUuid, int tokenCount)
 {
-    meshtastic_LoBBSWallConfig cfg = meshtastic_LoBBSWallConfig_init_zero;
+    ConfigState cfg = {};
     if (!loadConfig(cfg))
         return false;
-    meshtastic_LoBBSWallQuota quota = meshtastic_LoBBSWallQuota_init_zero;
+    QuotaState quota = {};
     lodb_uuid_t id = wallQuotaRecordUuid(userUuid);
-    if (lodb_.get("wall_quota", id, &quota) != LODB_OK) {
+    LoScalar qrec;
+    if (lodb_.get("wall_quota", id, qrec) == LODB_OK) {
+        qrec.getUint64(1, quota.user_uuid);
+        qrec.getUint32(4, quota.cycle_start);
+        qrec.getUint32(5, quota.cells_used);
+    } else {
         quota.user_uuid = userUuid;
         quota.cycle_start = 0;
         quota.cells_used = 0;
@@ -188,7 +222,7 @@ bool WallDal::recordPaintQuota(uint64_t userUuid, int tokenCount)
 
 bool WallDal::formatGridLines(char *out, size_t outCap)
 {
-    meshtastic_LoBBSWallCanvas canvas = meshtastic_LoBBSWallCanvas_init_zero;
+    CanvasState canvas = {};
     if (!loadCanvas(canvas))
         return false;
     size_t n = 0;
@@ -209,7 +243,7 @@ bool WallDal::formatGridLines(char *out, size_t outCap)
 
 uint32_t WallDal::canvasCrc32()
 {
-    meshtastic_LoBBSWallCanvas canvas = meshtastic_LoBBSWallCanvas_init_zero;
+    CanvasState canvas = {};
     if (!loadCanvas(canvas))
         return 0;
     return canvas.crc32;
@@ -217,20 +251,22 @@ uint32_t WallDal::canvasCrc32()
 
 uint32_t WallDal::getLastSeenCrc(uint64_t userUuid)
 {
-    meshtastic_LoBBSWallSeen seen = meshtastic_LoBBSWallSeen_init_zero;
-    if (lodb_.get("wall_seen", wallSeenRecordUuid(userUuid), &seen) != LODB_OK)
+    LoScalar seen;
+    if (lodb_.get("wall_seen", wallSeenRecordUuid(userUuid), seen) != LODB_OK)
         return 0xffffffff;
-    return seen.last_crc32;
+    uint32_t crc = 0;
+    seen.getUint32(4, crc);
+    return crc;
 }
 
-bool WallDal::markSeen(uint64_t userUuid, uint32_t crc32)
+bool WallDal::markSeen(uint64_t userUuid, uint32_t crc32Val)
 {
-    meshtastic_LoBBSWallSeen seen = meshtastic_LoBBSWallSeen_init_zero;
-    seen.user_uuid = userUuid;
-    seen.last_crc32 = crc32;
+    LoScalar seen;
+    seen.setUint64(1, userUuid);
+    seen.setUint32(4, crc32Val);
     lodb_uuid_t id = wallSeenRecordUuid(userUuid);
     lodb_.deleteRecord("wall_seen", id);
-    return lodb_.insert("wall_seen", id, &seen) == LODB_OK;
+    return lodb_.insert("wall_seen", id, seen) == LODB_OK;
 }
 
 bool WallDal::isDirtyForUser(uint64_t userUuid)
@@ -291,14 +327,14 @@ static bool parseWallToken(const char *tok, int &rowOut, int &colOut, char &chOu
 }
 
 bool WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count, char *err,
-                                 size_t errCap)
+                               size_t errCap)
 {
     if (count <= 0) {
         if (err && errCap)
             snprintf(err, errCap, "No paint tokens.");
         return false;
     }
-    meshtastic_LoBBSWallCanvas canvas = meshtastic_LoBBSWallCanvas_init_zero;
+    CanvasState canvas = {};
     if (!loadCanvas(canvas)) {
         if (err && errCap)
             snprintf(err, errCap, "Canvas error.");
@@ -315,7 +351,7 @@ bool WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *cons
         }
         canvas.cells[row * LOBBS_WALL_COLS + (col - 1)] = ch;
     }
-    wallSealCanvas(canvas);
+    wallSealCells(canvas.cells);
     if (!checkPaintQuota(userUuid, isSysop, count, err, errCap))
         return false;
     if (!saveCanvas(canvas)) {

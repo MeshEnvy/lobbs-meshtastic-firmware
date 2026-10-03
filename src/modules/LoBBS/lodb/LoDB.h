@@ -1,16 +1,16 @@
 #pragma once
 
+#include <loscalar/LoScalar.h>
 #include <lofs/LoFS.h>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
-#include <pb.h>
 #include <string>
 #include <vector>
 
 /**
- * LoDB - Synchronous Protobuf Database
+ * LoDB - Synchronous LoScalar Database
  *
  * Filesystem-backed records under a configurable prefix (default `/lodb/...` for
  * compatibility with older installs; use `LoFS::FSType::INTERNAL` or `SD` for explicit
@@ -18,13 +18,11 @@
  */
 
 #ifndef LODB_VERSION
-#define LODB_VERSION "1.4.0"
+#define LODB_VERSION "2.0.0"
 #endif
 
 /**
  * Max encoded record size (single knob): insert/update encode buffer and get() read cap.
- * Override this alone to keep read/write symmetric; override the others only if you need
- * an asymmetric setup.
  */
 #ifndef LODB_MAX_RECORD_BYTES
 #define LODB_MAX_RECORD_BYTES 1024
@@ -63,8 +61,8 @@ typedef enum {
     LODB_ERR_INVALID
 } LoDbError;
 
-typedef std::function<bool(const void *)> LoDbFilter;
-typedef std::function<int(const void *, const void *)> LoDbComparator;
+typedef std::function<bool(const LoScalar &)> LoDbFilter;
+typedef std::function<int(const LoScalar &, const LoScalar &)> LoDbComparator;
 
 void lodb_uuid_to_hex(lodb_uuid_t uuid, char hex_out[17]);
 lodb_uuid_t lodb_new_uuid(const char *str, uint64_t salt);
@@ -75,22 +73,16 @@ uint32_t lodb_now_ms(void);
 class LoDb
 {
   public:
-    /**
-     * @param db_name Database directory name under the LoDB root for this filesystem choice.
-     * @param filesystem AUTO uses legacy `/lodb/...` (internal via LoFS). INTERNAL → `/internal/lodb/...`,
-     *        SD → `/sd/lodb/...` when SD is available (otherwise internal with warn).
-     */
     LoDb(const char *db_name, LoFS::FSType filesystem = LoFS::FSType::AUTO);
     ~LoDb();
 
-    LoDbError registerTable(const char *table_name, const pb_msgdesc_t *pb_descriptor, size_t record_size);
-    LoDbError insert(const char *table_name, lodb_uuid_t uuid, const void *record);
-    LoDbError get(const char *table_name, lodb_uuid_t uuid, void *record_out);
-    LoDbError update(const char *table_name, lodb_uuid_t uuid, const void *record);
+    LoDbError registerTable(const char *table_name);
+    LoDbError insert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record);
+    LoDbError get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_out);
+    LoDbError update(const char *table_name, lodb_uuid_t uuid, const LoScalar &record);
     LoDbError deleteRecord(const char *table_name, lodb_uuid_t uuid);
-    std::vector<void *> select(const char *table_name, LoDbFilter filter = LoDbFilter(),
-                               LoDbComparator comparator = LoDbComparator(), size_t limit = 0);
-    static void freeRecords(std::vector<void *> &records);
+    std::vector<LoScalar> select(const char *table_name, LoDbFilter filter = LoDbFilter(),
+                                 LoDbComparator comparator = LoDbComparator(), size_t limit = 0);
     int count(const char *table_name, LoDbFilter filter = LoDbFilter());
     LoDbError truncate(const char *table_name);
     LoDbError drop(const char *table_name);
@@ -98,8 +90,6 @@ class LoDb
   private:
     struct TableMetadata {
         std::string table_name;
-        const pb_msgdesc_t *pb_descriptor;
-        size_t record_size;
         char table_path[160];
     };
 
@@ -108,4 +98,5 @@ class LoDb
     std::map<std::string, TableMetadata> tables;
 
     TableMetadata *getTable(const char *table_name);
+    static bool isLsRecordFile(const std::string &filename);
 };

@@ -23,8 +23,8 @@ static void replyYarnView(LoBBSCommandCtx &ctx, bool markSeen)
         lobbsCommandReply(ctx, "Yarn error.");
         return;
     }
-    if (markSeen && ctx.user)
-        ctx.mod->yarn().dal().markYarnSeen(ctx.user->uuid);
+    if (markSeen && lobbsCtxLoggedIn(ctx))
+        ctx.mod->yarn().dal().markYarnSeen(lobbsCtxUserUuid(ctx));
     lobbsCommandReply(ctx, buf);
 }
 
@@ -66,8 +66,8 @@ static void handleYarn(LoBBSCommandCtx &ctx)
         return;
 
     char err[48];
-    if (!ctx.mod->yarn().dal().appendWords(ctx.user->uuid, ctx.isSysop, (const char *const *)&ctx.argv[1], ctx.argc - 1,
-                                           err, sizeof(err))) {
+    if (!ctx.mod->yarn().dal().appendWords(lobbsCtxUserUuid(ctx), ctx.session.isSysop, (const char *const *)&ctx.argv[1],
+                                           ctx.argc - 1, err, sizeof(err))) {
         lobbsCommandReply(ctx, err[0] ? err : "Failed.");
         return;
     }
@@ -85,10 +85,8 @@ static void filterYarnStatusLines(void *value, LoBBSCommandCtx *ctx)
     if (!ctx || !ctx->mod)
         return;
     char line[LOBBS_FILTER_LINE_BYTES];
-    if (ctx->isAuth) {
-        if (!ctx->user)
-            return;
-        uint32_t n = ctx->mod->yarn().dal().newWordsForUser(ctx->user->uuid);
+    if (lobbsCtxLoggedIn(*ctx)) {
+        uint32_t n = ctx->mod->yarn().dal().newWordsForUser(lobbsCtxUserUuid(*ctx));
         snprintf(line, sizeof(line), "Yarn: %u", (unsigned)n);
     } else {
         uint32_t n = ctx->mod->yarn().dal().totalWordsAppended();

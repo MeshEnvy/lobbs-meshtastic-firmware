@@ -1,13 +1,12 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
-#include "news.pb.h"
 #include <lodb/LoDB.h>
 #include <stdint.h>
 #include <vector>
 
 struct LoBBSNewsEntry {
-    meshtastic_LoBBSNews *news;
+    LoScalar news;
     bool isRead;
 };
 
@@ -15,6 +14,11 @@ class NewsDal
 {
   public:
     explicit NewsDal(LoDb &lodb);
+
+    static uint64_t newsUuid(const LoScalar &n);
+    static bool newsMessage(const LoScalar &n, char *buf, size_t bufCap);
+    static uint64_t newsAuthorUuid(const LoScalar &n);
+    static uint32_t newsTimestamp(const LoScalar &n);
 
     bool postNews(uint64_t authorUserUuid, const char *message);
     std::vector<LoBBSNewsEntry> getNewsForUser(uint64_t userUuid, uint32_t offset, uint32_t limit);

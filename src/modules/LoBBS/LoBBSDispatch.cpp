@@ -4,7 +4,6 @@
 #include "LoBBSCommandRegistry.h"
 #include "LoBBSModule.h"
 #include "apps/Auth/AuthDal.h"
-#include "apps/Auth/auth.pb.h"
 #include "mesh/NodeDB.h"
 #include <cstring>
 
@@ -32,6 +31,20 @@ static bool lobbsIgnoreLoopbackPacket(const meshtastic_MeshPacket &mp)
     return mp.from == nodeDB->getNodeNum();
 }
 
+static LoBBSSession lobbsResolveSession(LoBBSModule *mod, uint32_t nodeId)
+{
+    LoBBSSession session;
+    session.nodeId = nodeId;
+    AuthDal &auth = mod->auth().dal();
+    LoScalar userRow;
+    if (!auth.loadUserByNodeId(nodeId, &userRow))
+        return session;
+    session.userUuid = AuthDal::userUuid(userRow);
+    AuthDal::userUsername(userRow, session.username, sizeof(session.username));
+    session.isSysop = AuthDal::userIsSysop(userRow);
+    return session;
+}
+
 ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPacket &mp)
 {
     if (!isToUs(&mp))
@@ -53,15 +66,8 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
     if (mod->msgBuffer[0] == '\0' || mod->msgBuffer[0] != '/')
         return ProcessMessage::CONTINUE;
 
-    const uint32_t sessionNodeId = lobbsSessionNodeId(mp);
-    AuthDal &auth = mod->auth().dal();
-
-    meshtastic_LoBBSUser existingUser = meshtastic_LoBBSUser_init_zero;
-    bool isAuthenticated = auth.loadUserByNodeId(sessionNodeId, &existingUser);
-    const bool isSysop = isAuthenticated && existingUser.is_sysop;
-    const meshtastic_LoBBSUser *userPtr = isAuthenticated ? &existingUser : nullptr;
-
-    lobbsCommandsHandle(mod, mp, sessionNodeId, isAuthenticated, userPtr, isSysop, mod->msgBuffer);
+    const LoBBSSession session = lobbsResolveSession(mod, lobbsSessionNodeId(mp));
+    lobbsCommandsHandle(mod, mp, session, mod->msgBuffer);
     return ProcessMessage::CONTINUE;
 }
 

@@ -1,6 +1,9 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "AppUtil.h"
+#include "../LoBBSCommandCtx.h"
+#include "../LoBBSCommandRegistry.h"
+#include "../LoBBSModule.h"
 #include "Auth/AuthDal.h"
 #include "gps/RTC.h"
 #include <cstdio>
@@ -50,9 +53,39 @@ void lobbsAppTruncMsg(const char *message, char *buffer, size_t bufferSize, size
     }
 }
 
-bool lobbsAppLoadUser(AuthDal &auth, uint64_t uuid, meshtastic_LoBBSUser *outUser)
+bool lobbsAppLoadUser(LoBBSModule *mod, uint64_t uuid, LoScalar *outUser)
 {
-    return auth.loadUserByUuid(uuid, outUser);
+    if (!mod || !outUser || uuid == 0)
+        return false;
+    return mod->auth().dal().loadUserByUuid(uuid, outUser);
+}
+
+void lobbsAppUsernameForUuid(LoBBSModule *mod, uint64_t uuid, char *buf, size_t bufCap)
+{
+    if (!buf || bufCap == 0)
+        return;
+    buf[0] = '\0';
+    LoScalar user;
+    if (!lobbsAppLoadUser(mod, uuid, &user) || !AuthDal::userUsername(user, buf, bufCap) || !buf[0])
+        lobbsAppCopyCapped(buf, bufCap, "unknown", 7);
+}
+
+uint64_t lobbsAppUuidForUsername(LoBBSModule *mod, const char *username)
+{
+    if (!mod || !username || !username[0])
+        return 0;
+    return mod->auth().dal().getUserUuidByUsername(username);
+}
+
+bool lobbsAppResolveUsername(LoBBSCommandCtx &ctx, const char *username, uint64_t &uuidOut)
+{
+    uuidOut = lobbsAppUuidForUsername(ctx.mod, username);
+    if (uuidOut != 0)
+        return true;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "User '%s' not found.", username ? username : "");
+    lobbsCommandReply(ctx, buf);
+    return false;
 }
 
 #endif

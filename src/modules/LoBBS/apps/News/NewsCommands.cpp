@@ -6,17 +6,15 @@
 #include "../../LoBBSModule.h"
 #include "../../LoBBSReply.h"
 #include "../AppUtil.h"
-#include "../Auth/AuthDal.h"
 #include "NewsDal.h"
 #include <vector>
-#include "news.pb.h"
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 struct NewsListPagerCtx {
-    AuthDal *auth;
+    LoBBSModule *mod;
     const std::vector<LoBBSNewsEntry> *entries;
 };
 
@@ -24,54 +22,42 @@ static void formatNewsListLine(void *ctx, uint32_t itemIndex, char *line, size_t
 {
     auto *p = (NewsListPagerCtx *)ctx;
     const LoBBSNewsEntry &entry = (*p->entries)[itemIndex];
-    const meshtastic_LoBBSNews *news = entry.news;
-    meshtastic_LoBBSUser author = meshtastic_LoBBSUser_init_zero;
-    lobbsAppLoadUser(*p->auth, news->author_user_uuid, &author);
+    const LoScalar &news = entry.news;
     char name[32];
     char when[32];
     char trunc[50];
-    lobbsAppCopyCapped(name, sizeof(name), author.username, sizeof(author.username));
-    if (!name[0])
-        lobbsAppCopyCapped(name, sizeof(name), "unknown", 7);
-    lobbsAppTimeAgo(news->timestamp, when, sizeof(when));
-    lobbsAppTruncMsg(news->message, trunc, sizeof(trunc), 25);
+    char msg[201];
+    lobbsAppUsernameForUuid(p->mod, NewsDal::newsAuthorUuid(news), name, sizeof(name));
+    lobbsAppTimeAgo(NewsDal::newsTimestamp(news), when, sizeof(when));
+    NewsDal::newsMessage(news, msg, sizeof(msg));
+    lobbsAppTruncMsg(msg, trunc, sizeof(trunc), 25);
     snprintf(line, lineCap, "[%u]%s @%s: %s (%s)", (unsigned)(itemIndex + 1), entry.isRead ? "" : "*", name, trunc, when);
 }
 
-static void freeNewsEntries(std::vector<LoBBSNewsEntry> &all)
-{
-    for (auto &e : all)
-        delete[] (uint8_t *)e.news;
-}
-
-static void formatNewsList(LoBBSCommandCtx &ctx, AuthDal &auth, uint64_t readerUuid, uint32_t page1, char *out, size_t outCap,
+static void formatNewsList(LoBBSCommandCtx &ctx, uint64_t readerUuid, uint32_t page1, char *out, size_t outCap,
                            const char **errMsg)
 {
     auto all = ctx.mod->news().dal().getAllNewsForUser(readerUuid);
     uint32_t total = (uint32_t)all.size();
     if (total == 0) {
-        freeNewsEntries(all);
         *errMsg = "No news";
         return;
     }
-    NewsListPagerCtx pagerCtx{&auth, &all};
+    NewsListPagerCtx pagerCtx{ctx.mod, &all};
     const char *errEmpty = nullptr;
     const char *errBadPage = nullptr;
     if (!lobbsPagerFormatItems(out, outCap, page1, total, formatNewsListLine, &pagerCtx, &errEmpty, &errBadPage)) {
-        freeNewsEntries(all);
         *errMsg = errBadPage ? errBadPage : (errEmpty ? errEmpty : "No news");
         return;
     }
-    freeNewsEntries(all);
     *errMsg = nullptr;
 }
 
 static void newsSubList(LoBBSCommandCtx &ctx)
 {
-    AuthDal &auth = ctx.mod->auth().dal();
     char buf[LOBBS_REPLY_BYTES + 1];
     const char *err = nullptr;
-    formatNewsList(ctx, auth, ctx.user->uuid, ctx.page, buf, sizeof(buf), &err);
+    formatNewsList(ctx, lobbsCtxUserUuid(ctx), ctx.page, buf, sizeof(buf), &err);
     lobbsCommandReply(ctx, err ? err : buf);
 }
 
@@ -79,32 +65,23 @@ static void newsSubRead(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /news read N"))
         return;
-    AuthDal &auth = ctx.mod->auth().dal();
     NewsDal &news = ctx.mod->news().dal();
     uint32_t idx = (uint32_t)atoi(ctx.argv[2]);
-    auto newsItems = news.getAllNewsForUser(ctx.user->uuid);
+    auto newsItems = news.getAllNewsForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > newsItems.size()) {
-        for (auto &e : newsItems)
-            delete[] (uint8_t *)e.news;
         lobbsCommandReply(ctx, "Invalid news number");
         return;
     }
-    const meshtastic_LoBBSNews *item = newsItems[idx - 1].news;
-    meshtastic_LoBBSUser author = meshtastic_LoBBSUser_init_zero;
-    lobbsAppLoadUser(auth, item->author_user_uuid, &author);
+    const LoScalar &item = newsItems[idx - 1].news;
     char name[32];
     char when[32];
     char body[120];
-    lobbsAppCopyCapped(name, sizeof(name), author.username, sizeof(author.username));
-    if (!name[0])
-        lobbsAppCopyCapped(name, sizeof(name), "unknown", 7);
-    lobbsAppCopyCapped(body, sizeof(body), item->message, sizeof(item->message));
-    lobbsAppTimeAgo(item->timestamp, when, sizeof(when));
+    lobbsAppUsernameForUuid(ctx.mod, NewsDal::newsAuthorUuid(item), name, sizeof(name));
+    NewsDal::newsMessage(item, body, sizeof(body));
+    lobbsAppTimeAgo(NewsDal::newsTimestamp(item), when, sizeof(when));
     char reply[LOBBS_REPLY_BYTES + 1];
     snprintf(reply, sizeof(reply), "From: @%s (%s)\n%s", name, when, body);
-    news.markNewsAsRead(item->uuid, ctx.user->uuid);
-    for (auto &e : newsItems)
-        delete[] (uint8_t *)e.news;
+    news.markNewsAsRead(NewsDal::newsUuid(item), lobbsCtxUserUuid(ctx));
     lobbsCommandReply(ctx, reply);
 }
 
@@ -114,17 +91,13 @@ static void newsSubUnread(LoBBSCommandCtx &ctx)
         return;
     NewsDal &news = ctx.mod->news().dal();
     uint32_t idx = (uint32_t)atoi(ctx.argv[2]);
-    auto newsItems = news.getAllNewsForUser(ctx.user->uuid);
+    auto newsItems = news.getAllNewsForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > newsItems.size()) {
-        for (auto &e : newsItems)
-            delete[] (uint8_t *)e.news;
         lobbsCommandReply(ctx, "Invalid news number");
         return;
     }
-    uint64_t uuid = newsItems[idx - 1].news->uuid;
-    for (auto &e : newsItems)
-        delete[] (uint8_t *)e.news;
-    lobbsCommandReply(ctx, news.markNewsAsUnread(uuid, ctx.user->uuid) ? "Marked unread." : "Failed.");
+    uint64_t uuid = NewsDal::newsUuid(newsItems[idx - 1].news);
+    lobbsCommandReply(ctx, news.markNewsAsUnread(uuid, lobbsCtxUserUuid(ctx)) ? "Marked unread." : "Failed.");
 }
 
 static void newsSubDelete(LoBBSCommandCtx &ctx)
@@ -133,23 +106,16 @@ static void newsSubDelete(LoBBSCommandCtx &ctx)
         return;
     NewsDal &news = ctx.mod->news().dal();
     uint32_t idx = (uint32_t)atoi(ctx.argv[2]);
-    auto newsItems = news.getAllNewsForUser(ctx.user->uuid);
+    auto newsItems = news.getAllNewsForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > newsItems.size()) {
-        for (auto &e : newsItems)
-            delete[] (uint8_t *)e.news;
         lobbsCommandReply(ctx, "Invalid news number");
         return;
     }
-    const meshtastic_LoBBSNews *item = newsItems[idx - 1].news;
-    if (!ctx.isSysop) {
-        for (auto &e : newsItems)
-            delete[] (uint8_t *)e.news;
+    if (!ctx.session.isSysop) {
         lobbsCommandReply(ctx, "SysOp only.");
         return;
     }
-    uint64_t uuid = item->uuid;
-    for (auto &e : newsItems)
-        delete[] (uint8_t *)e.news;
+    uint64_t uuid = NewsDal::newsUuid(newsItems[idx - 1].news);
     lobbsCommandReply(ctx, news.deleteNewsUuid(uuid) ? "Deleted." : "Failed.");
 }
 
@@ -163,7 +129,8 @@ static void newsSubPost(LoBBSCommandCtx &ctx)
         lobbsCommandReply(ctx, "Start with a letter.");
         return;
     }
-    lobbsCommandReply(ctx, ctx.mod->news().dal().postNews(ctx.user->uuid, msgBody) ? "News posted." : "Failed to post news.");
+    lobbsCommandReply(ctx, ctx.mod->news().dal().postNews(lobbsCtxUserUuid(ctx), msgBody) ? "News posted."
+                                                                                                 : "Failed to post news.");
 }
 
 static const LoBBSSubcommand newsSubs[] = {
@@ -224,10 +191,8 @@ static void filterNewsStatusLines(void *value, LoBBSCommandCtx *ctx)
     if (!ctx || !ctx->mod)
         return;
     char line[LOBBS_FILTER_LINE_BYTES];
-    if (ctx->isAuth) {
-        if (!ctx->user)
-            return;
-        uint32_t n = ctx->mod->news().dal().countUnreadNews(ctx->user->uuid);
+    if (lobbsCtxLoggedIn(*ctx)) {
+        uint32_t n = ctx->mod->news().dal().countUnreadNews(lobbsCtxUserUuid(*ctx));
         snprintf(line, sizeof(line), "News: %u", (unsigned)n);
     } else {
         uint32_t n = ctx->mod->news().dal().countAllNews();
@@ -245,7 +210,7 @@ static void filterNewsHelpTopics(void *value, LoBBSCommandCtx *ctx)
 
 static void filterNewsHelpIndex(void *value, LoBBSCommandCtx *ctx)
 {
-    if (ctx && ctx->isAuth)
+    if (ctx && lobbsCtxLoggedIn(*ctx))
         lobbsFilterLinesPush(*(LoBBSFilterLines *)value, "news");
 }
 

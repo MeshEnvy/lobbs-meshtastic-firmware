@@ -3,7 +3,6 @@
 #include "AuthDal.h"
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSReply.h"
-#include "auth.pb.h"
 #include "configuration.h"
 #include "gps/RTC.h"
 #include "mesh/NodeDB.h"
@@ -25,8 +24,31 @@ static void normalizeUsername(const char *username, char *normalized)
 
 AuthDal::AuthDal(LoDb &lodb) : lodb_(lodb)
 {
-    lodb_.registerTable("users", &meshtastic_LoBBSUser_msg, sizeof(meshtastic_LoBBSUser));
-    lodb_.registerTable("sessions", &meshtastic_LoBBSSession_msg, sizeof(meshtastic_LoBBSSession));
+    lodb_.registerTable("users");
+    lodb_.registerTable("sessions");
+}
+
+uint64_t AuthDal::userUuid(const LoScalar &user)
+{
+    uint64_t v = 0;
+    user.getUint64(1, v);
+    return v;
+}
+
+bool AuthDal::userUsername(const LoScalar &user, char *buf, size_t bufCap)
+{
+    std::string name;
+    if (!user.getString(2, name) || bufCap == 0)
+        return false;
+    strncpy(buf, name.c_str(), bufCap - 1);
+    buf[bufCap - 1] = '\0';
+    return true;
+}
+
+bool AuthDal::userIsSysop(const LoScalar &user)
+{
+    bool v = false;
+    return user.getBool(4, v) && v;
 }
 
 static lodb_uuid_t usernameToUuid(const char *username)
@@ -53,14 +75,18 @@ static const char *stristrLocal(const char *haystack, const char *needle)
     return nullptr;
 }
 
-static int compareUsersByName(const void *a, const void *b)
+static int compareUsersByName(const LoScalar &a, const LoScalar &b)
 {
-    return strcasecmp(((const meshtastic_LoBBSUser *)a)->username, ((const meshtastic_LoBBSUser *)b)->username);
+    char na[LOBBS_USERNAME_BUFFER_SIZE];
+    char nb[LOBBS_USERNAME_BUFFER_SIZE];
+    AuthDal::userUsername(a, na, sizeof(na));
+    AuthDal::userUsername(b, nb, sizeof(nb));
+    return strcasecmp(na, nb);
 }
 
-bool AuthDal::loadUserByUuid(uint64_t uuid, meshtastic_LoBBSUser *user)
+bool AuthDal::loadUserByUuid(uint64_t uuid, LoScalar *user)
 {
-    return lodb_.get("users", uuid, user) == LODB_OK;
+    return lodb_.get("users", uuid, *user) == LODB_OK;
 }
 
 bool AuthDal::buildUserList(const char *filterSubstr, std::string &msg, const char **emptyReply)
@@ -68,28 +94,28 @@ bool AuthDal::buildUserList(const char *filterSubstr, std::string &msg, const ch
     const bool hasFilter = filterSubstr && filterSubstr[0];
     auto users = lodb_.select(
         "users",
-        [filterSubstr, hasFilter](const void *rec) -> bool {
-            const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
+        [filterSubstr, hasFilter](const LoScalar &rec) -> bool {
             if (!hasFilter)
                 return true;
-            return stristrLocal(u->username, filterSubstr) != nullptr;
+            char name[LOBBS_USERNAME_BUFFER_SIZE];
+            AuthDal::userUsername(rec, name, sizeof(name));
+            return stristrLocal(name, filterSubstr) != nullptr;
         },
         compareUsersByName);
     if (users.empty()) {
-        LoDb::freeRecords(users);
         *emptyReply = hasFilter ? "No users match filter." : "No users found";
         return false;
     }
     msg = "Users:\n";
     for (size_t i = 0; i < users.size(); i++) {
-        const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)users[i];
+        char name[LOBBS_USERNAME_BUFFER_SIZE];
+        AuthDal::userUsername(users[i], name, sizeof(name));
         if (i > 0)
             msg += ", ";
-        msg += u->username;
-        if (u->is_sysop)
+        msg += name;
+        if (AuthDal::userIsSysop(users[i]))
             msg += "*";
     }
-    LoDb::freeRecords(users);
     return true;
 }
 
@@ -99,15 +125,15 @@ bool AuthDal::formatUserListPage(const char *filterSubstr, uint32_t page1Based, 
     const bool hasFilter = filterSubstr && filterSubstr[0];
     auto users = lodb_.select(
         "users",
-        [filterSubstr, hasFilter](const void *rec) -> bool {
-            const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
+        [filterSubstr, hasFilter](const LoScalar &rec) -> bool {
             if (!hasFilter)
                 return true;
-            return stristrLocal(u->username, filterSubstr) != nullptr;
+            char name[LOBBS_USERNAME_BUFFER_SIZE];
+            AuthDal::userUsername(rec, name, sizeof(name));
+            return stristrLocal(name, filterSubstr) != nullptr;
         },
         compareUsersByName);
     if (users.empty()) {
-        LoDb::freeRecords(users);
         *emptyReply = hasFilter ? "No users match filter." : "No users found";
         totalCount = 0;
         return false;
@@ -116,13 +142,13 @@ bool AuthDal::formatUserListPage(const char *filterSubstr, uint32_t page1Based, 
     std::vector<std::string> lines;
     lines.reserve(users.size());
     for (size_t i = 0; i < users.size(); i++) {
-        const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)users[i];
-        std::string line = u->username;
-        if (u->is_sysop)
+        char name[LOBBS_USERNAME_BUFFER_SIZE];
+        AuthDal::userUsername(users[i], name, sizeof(name));
+        std::string line = name;
+        if (AuthDal::userIsSysop(users[i]))
             line += "*";
         lines.push_back(line);
     }
-    LoDb::freeRecords(users);
 
     std::vector<const char *> ptrs;
     ptrs.reserve(lines.size());
@@ -172,10 +198,10 @@ void AuthDal::hashPassword(const char *password, uint8_t *hash)
     sha256.finalize(hash, 32);
 }
 
-bool AuthDal::loadUserByUsername(const char *username, meshtastic_LoBBSUser *user)
+bool AuthDal::loadUserByUsername(const char *username, LoScalar *user)
 {
     lodb_uuid_t userUuid = usernameToUuid(username);
-    LoDbError err = lodb_.get("users", userUuid, user);
+    LoDbError err = lodb_.get("users", userUuid, *user);
     if (err == LODB_OK) {
         LOG_DEBUG("Loaded user by username: %s", username);
         return true;
@@ -184,18 +210,22 @@ bool AuthDal::loadUserByUsername(const char *username, meshtastic_LoBBSUser *use
     return false;
 }
 
-bool AuthDal::loadUserByNodeId(uint32_t nodeId, meshtastic_LoBBSUser *user)
+bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user)
 {
     lodb_uuid_t sessionUuid = (lodb_uuid_t)nodeId;
-    meshtastic_LoBBSSession session = meshtastic_LoBBSSession_init_zero;
-    LoDbError err = lodb_.get("sessions", sessionUuid, &session);
+    LoScalar session;
+    LoDbError err = lodb_.get("sessions", sessionUuid, session);
     if (err != LODB_OK) {
         LOG_DEBUG("No session found for node 0x%08x", nodeId);
         return false;
     }
-    err = lodb_.get("users", session.user_uuid, user);
+    uint64_t userUuid = 0;
+    if (!session.getUint64(1, userUuid)) {
+        return false;
+    }
+    err = lodb_.get("users", userUuid, *user);
     if (err == LODB_OK) {
-        LOG_DEBUG("Loaded user by node ID: 0x%08x -> UUID: " LODB_UUID_FMT, nodeId, LODB_UUID_ARGS(session.user_uuid));
+        LOG_DEBUG("Loaded user by node ID: 0x%08x -> UUID: " LODB_UUID_FMT, nodeId, LODB_UUID_ARGS(userUuid));
         return true;
     }
     return false;
@@ -206,13 +236,14 @@ bool AuthDal::createUser(const char *username, const char *password, uint32_t no
     lodb_uuid_t userUuid = usernameToUuid(username);
     bool isFirstUser = (lodb_.count("users") == 0);
 
-    meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
-    strncpy(user.username, username, sizeof(user.username) - 1);
-    user.uuid = userUuid;
-    user.password_hash.size = 32;
-    hashPassword(password, user.password_hash.bytes);
-    user.is_sysop = isFirstUser;
-    LoDbError err = lodb_.insert("users", userUuid, &user);
+    LoScalar user;
+    user.setUint64(1, userUuid);
+    user.setString(2, username);
+    uint8_t hash[32];
+    hashPassword(password, hash);
+    user.setBytesHex(5, hash, 32);
+    user.setBool(4, isFirstUser);
+    LoDbError err = lodb_.insert("users", userUuid, user);
     if (err != LODB_OK) {
         LOG_ERROR("Failed to create user: %s", username);
         return false;
@@ -222,24 +253,28 @@ bool AuthDal::createUser(const char *username, const char *password, uint32_t no
     return loginUser(username, nodeId);
 }
 
-bool AuthDal::verifyPassword(const meshtastic_LoBBSUser *user, const char *password)
+bool AuthDal::verifyPassword(const LoScalar *user, const char *password)
 {
+    uint8_t stored[32];
+    size_t n = 0;
+    if (!user->getBytesHex(5, stored, sizeof(stored), n) || n != 32)
+        return false;
     uint8_t providedHash[32];
     hashPassword(password, providedHash);
-    return memcmp(user->password_hash.bytes, providedHash, 32) == 0;
+    return memcmp(stored, providedHash, 32) == 0;
 }
 
 bool AuthDal::loginUser(const char *username, uint32_t nodeId)
 {
-    meshtastic_LoBBSSession session = meshtastic_LoBBSSession_init_zero;
-    session.user_uuid = usernameToUuid(username);
-    session.node_id = nodeId;
-    session.last_login_time = getTime();
+    LoScalar session;
+    session.setUint64(1, usernameToUuid(username));
+    session.setUint32(4, getTime());
+    session.setUint32(5, nodeId);
 
     lodb_uuid_t sessionUuid = (lodb_uuid_t)nodeId;
     lodb_.deleteRecord("sessions", sessionUuid);
 
-    LoDbError err = lodb_.insert("sessions", sessionUuid, &session);
+    LoDbError err = lodb_.insert("sessions", sessionUuid, session);
     if (err != LODB_OK) {
         LOG_ERROR("Failed to create session for node 0x%08x", nodeId);
         return false;
@@ -264,8 +299,8 @@ bool AuthDal::logoutUser(uint32_t nodeId)
 uint64_t AuthDal::getUserUuidByUsername(const char *username)
 {
     uint64_t userUuid = usernameToUuid(username);
-    meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
-    LoDbError err = lodb_.get("users", userUuid, &user);
+    LoScalar user;
+    LoDbError err = lodb_.get("users", userUuid, user);
     if (err == LODB_OK)
         return userUuid;
     return 0;
@@ -273,31 +308,31 @@ uint64_t AuthDal::getUserUuidByUsername(const char *username)
 
 bool AuthDal::setUserSysopByUsername(const char *username, bool isSysop)
 {
-    meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
+    LoScalar user;
     if (!loadUserByUsername(username, &user))
         return false;
-    user.is_sysop = isSysop;
-    lodb_.deleteRecord("users", user.uuid);
-    return lodb_.insert("users", user.uuid, &user) == LODB_OK;
+    uint64_t uuid = userUuid(user);
+    user.setBool(4, isSysop);
+    lodb_.deleteRecord("users", uuid);
+    return lodb_.insert("users", uuid, user) == LODB_OK;
 }
 
 bool AuthDal::setPasswordByUsername(const char *username, const char *password)
 {
-    meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
+    LoScalar user;
     if (!loadUserByUsername(username, &user))
         return false;
-    user.password_hash.size = 32;
-    hashPassword(password, user.password_hash.bytes);
-    lodb_.deleteRecord("users", user.uuid);
-    return lodb_.insert("users", user.uuid, &user) == LODB_OK;
+    uint64_t uuid = userUuid(user);
+    uint8_t hash[32];
+    hashPassword(password, hash);
+    user.setBytesHex(5, hash, 32);
+    lodb_.deleteRecord("users", uuid);
+    return lodb_.insert("users", uuid, user) == LODB_OK;
 }
 
 uint32_t AuthDal::countSysopUsers()
 {
-    return (uint32_t)lodb_.count("users", [](const void *rec) -> bool {
-        const meshtastic_LoBBSUser *u = (const meshtastic_LoBBSUser *)rec;
-        return u->is_sysop;
-    });
+    return (uint32_t)lodb_.count("users", [](const LoScalar &rec) -> bool { return AuthDal::userIsSysop(rec); });
 }
 
 uint32_t AuthDal::countAllUsers()
@@ -308,24 +343,24 @@ uint32_t AuthDal::countAllUsers()
 
 bool AuthDal::kickUserByUsername(const char *username)
 {
-    meshtastic_LoBBSUser user = meshtastic_LoBBSUser_init_zero;
+    LoScalar user;
     if (!loadUserByUsername(username, &user))
         return false;
-    uint64_t userUuid = user.uuid;
+    uint64_t userUuidVal = userUuid(user);
 
     auto sessions = lodb_.select(
         "sessions",
-        [userUuid](const void *rec) -> bool {
-            const meshtastic_LoBBSSession *s = (const meshtastic_LoBBSSession *)rec;
-            return s->user_uuid == userUuid;
+        [userUuidVal](const LoScalar &rec) -> bool {
+            uint64_t u = 0;
+            return rec.getUint64(1, u) && u == userUuidVal;
         },
-        nullptr);
+        LoDbComparator());
 
-    for (auto *rec : sessions) {
-        const meshtastic_LoBBSSession *s = (const meshtastic_LoBBSSession *)rec;
-        lodb_.deleteRecord("sessions", (lodb_uuid_t)s->node_id);
+    for (const auto &rec : sessions) {
+        uint32_t nodeId = 0;
+        if (rec.getUint32(5, nodeId))
+            lodb_.deleteRecord("sessions", (lodb_uuid_t)nodeId);
     }
-    LoDb::freeRecords(sessions);
     return true;
 }
 

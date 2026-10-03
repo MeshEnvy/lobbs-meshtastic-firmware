@@ -10,9 +10,16 @@ class MailDal
   public:
     explicit MailDal(LoDb &lodb);
 
+    static uint64_t mailUuid(const LoScalar &m);
+    static bool mailMessage(const LoScalar &m, char *buf, size_t bufCap);
+    static bool mailRead(const LoScalar &m);
+    static uint32_t mailTimestamp(const LoScalar &m);
+    static uint64_t mailFromUuid(const LoScalar &m);
+    static uint64_t mailToUuid(const LoScalar &m);
+
     bool sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *message);
-    std::vector<void *> getMailForUser(uint64_t userUuid, uint32_t offset, uint32_t limit);
-    std::vector<void *> getAllMailForUser(uint64_t userUuid);
+    std::vector<LoScalar> getMailForUser(uint64_t userUuid, uint32_t offset, uint32_t limit);
+    std::vector<LoScalar> getAllMailForUser(uint64_t userUuid);
     bool markMailAsRead(uint64_t mailUuid);
     bool markMailAsUnread(uint64_t mailUuid);
     uint16_t countUnreadMail(uint64_t userUuid);
