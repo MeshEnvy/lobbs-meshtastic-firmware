@@ -6,7 +6,7 @@
 
 ### Watch the Walkthrough
 
-[![LoBBS Walkthrough](https://img.youtube.com/vi/FwtDY1QBXpQ/0.jpg)](https://www.youtube.com/watch?v=FwtDY1QBXpQ)
+[![LoBBS 2.0 walkthrough](.github/lobbs-2.0-walkthrough-youtube-thumb.jpg)](https://www.youtube.com/watch?v=FwtDY1QBXpQ)
 
 -------
 
