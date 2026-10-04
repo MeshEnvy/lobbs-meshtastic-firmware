@@ -120,12 +120,25 @@ static void filterYarnStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &l
     lobbsRecordPush(lines, "Yarn", value);
 }
 
+#if LOBBS_SEED
+#include "YarnSeed.h"
+static void actionYarnSeed(LoBBSCommandCtx *ctx, const LoScalar &args)
+{
+    (void)args;
+    if (ctx && ctx->mod)
+        lobbsSeedYarn(*ctx->mod);
+}
+#endif
+
 void lobbsYarnRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashYarn, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_topics", filterYarnHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_for_topic", filterYarnHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("status_lines", filterYarnStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
+#if LOBBS_SEED
+    lobbsAddAction("seed", actionYarnSeed, LOBBS_HOOK_PRIORITY_FEATURE);
+#endif
 }
 
 #endif

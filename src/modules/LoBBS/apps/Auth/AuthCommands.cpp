@@ -424,6 +424,16 @@ static void displayAuthHuman(LoBBSCommandCtx *ctx, LoScalar &value, const LoScal
         value.setString(LODB_F_TITLE, line);
 }
 
+#if LOBBS_SEED
+#include "AuthSeed.h"
+static void actionAuthSeed(LoBBSCommandCtx *ctx, const LoScalar &args)
+{
+    (void)args;
+    if (ctx && ctx->mod)
+        lobbsSeedAuth(*ctx->mod);
+}
+#endif
+
 void lobbsAuthRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashAuth, LOBBS_HOOK_PRIORITY_AUTH);
@@ -431,6 +441,9 @@ void lobbsAuthRegisterCommands()
     lobbsAddFilter("help_for_topic", filterAuthHelpForTopic, LOBBS_HOOK_PRIORITY_AUTH);
     lobbsAddFilter("status_lines", filterAuthStatusLines, LOBBS_HOOK_PRIORITY_AUTH);
     lobbsAddFilter("display_human", displayAuthHuman, LOBBS_HOOK_PRIORITY_AUTH);
+#if LOBBS_SEED
+    lobbsAddAction("seed", actionAuthSeed, LOBBS_HOOK_PRIORITY_AUTH);
+#endif
 }
 
 #endif

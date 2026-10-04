@@ -201,6 +201,71 @@ void lobbsHelpForTopic(LoScalar &value, const LoScalar &args, const char *topic,
         value.setString(LODB_F_DESCRIPTION, body);
 }
 
+void lobbsHelpForTable(LoScalar &value, const LoScalar &args, const char *topic, const LoBBSVerb *table, size_t count)
+{
+    std::string query;
+    if (!topic || !table || !args.getString(LODB_F_TITLE, query) || !lobbsHelpQueryMatches(query.c_str(), topic))
+        return;
+
+    std::string body;
+    bool whole = strcasecmp(query.c_str(), topic) == 0;
+    for (size_t i = 0; i < count; i++) {
+        if (!table[i].help || !table[i].verb)
+            continue;
+        if (!whole) {
+            char path[80];
+            snprintf(path, sizeof(path), "%s %s", topic, table[i].verb);
+            if (strcasecmp(query.c_str(), path) != 0)
+                continue;
+        }
+        if (!body.empty())
+            body.push_back('\n');
+        body += table[i].help;
+        if (!whole)
+            break;
+    }
+    if (!body.empty())
+        value.setString(LODB_F_DESCRIPTION, body);
+}
+
+bool lobbsDispatchSub(LoBBSCommandCtx &ctx, const char *topic, const LoBBSVerb *table, size_t count)
+{
+    (void)topic;
+    if (!table || count == 0)
+        return false;
+
+    const char *sub = lobbsArgPeek(ctx);
+    if (!sub || strcasecmp(sub, "list") == 0) {
+        for (size_t i = 0; i < count; i++) {
+            if (!table[i].verb || strcasecmp(table[i].verb, "list") != 0)
+                continue;
+            if (sub && strcasecmp(sub, "list") == 0)
+                lobbsArgShift(ctx);
+            if ((table[i].flags & LOBBS_V_LOGIN) && !lobbsCommandRequireLogin(ctx))
+                return true;
+            if ((table[i].flags & LOBBS_V_SYSOP) && !lobbsCommandRequireSysop(ctx))
+                return true;
+            table[i].fn(ctx);
+            return true;
+        }
+    }
+
+    if (!sub)
+        return false;
+
+    for (size_t i = 0; i < count; i++) {
+        if (!table[i].verb || strcasecmp(sub, table[i].verb) != 0)
+            continue;
+        if ((table[i].flags & LOBBS_V_LOGIN) && !lobbsCommandRequireLogin(ctx))
+            return true;
+        if ((table[i].flags & LOBBS_V_SYSOP) && !lobbsCommandRequireSysop(ctx))
+            return true;
+        table[i].fn(ctx);
+        return true;
+    }
+    return false;
+}
+
 bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx)
 {
     return ctx.session.userUuid != 0;

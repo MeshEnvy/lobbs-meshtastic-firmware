@@ -3,21 +3,16 @@
 #include "LoBBSConfig.h"
 #if LOBBS_SEED
 
+#include "LoBBSCommandCtx.h"
+#include "LoBBSHooks.h"
 #include "LoBBSModule.h"
 #include "LoBBSSeed.h"
-#include "apps/Auth/AuthSeed.h"
-#include "apps/Mail/MailSeed.h"
-#include "apps/News/NewsSeed.h"
-#include "apps/Wall/WallSeed.h"
-#include "apps/Yarn/YarnSeed.h"
 
 void lobbsSeedAll(LoBBSModule &mod)
 {
-    lobbsSeedAuth(mod);
-    lobbsSeedMail(mod);
-    lobbsSeedNews(mod);
-    lobbsSeedWall(mod);
-    lobbsSeedYarn(mod);
+    LoBBSCommandCtx ctx;
+    ctx.mod = &mod;
+    lobbsDoAction("seed", ctx, LoScalar());
 }
 
 #endif

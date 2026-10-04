@@ -8,6 +8,7 @@
 #include "../../LoBBSReply.h"
 #include "../../LoBBSResponse.h"
 #include "../AppUtil.h"
+#include "../Msg/MsgCommon.h"
 #include "MailDal.h"
 #include "MailRecords.h"
 #include <cstdio>
@@ -132,18 +133,16 @@ static void mailSubRead(LoBBSCommandCtx &ctx, bool numericShorthand)
     lobbsCommandReplyResponse(ctx, resp);
 }
 
+static void mailSubReadCmd(LoBBSCommandCtx &ctx)
+{
+    mailSubRead(ctx, false);
+}
+
 static void mailSubUnread(LoBBSCommandCtx &ctx)
 {
-    const char *sub = lobbsArgShift(ctx);
-    (void)sub;
-    const char *beforeNum = lobbsArgPeek(ctx);
     uint32_t idx = 0;
-    if (!lobbsArgShiftUint(ctx, idx)) {
-        LoBBSResponse resp;
-        lobbsResponseSetError(resp, beforeNum ? "Invalid message number." : "Usage: /mail unread N");
-        lobbsCommandReplyResponse(ctx, resp);
+    if (!lobbsMsgShiftIndex(ctx, 1, "Usage: /mail unread N", "Invalid message number.", idx))
         return;
-    }
     MailDal &mail = ctx.mod->mail().dal();
     auto mailMessages = mail.getAllMailForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > mailMessages.size()) {
@@ -160,16 +159,9 @@ static void mailSubUnread(LoBBSCommandCtx &ctx)
 
 static void mailSubDelete(LoBBSCommandCtx &ctx)
 {
-    const char *sub = lobbsArgShift(ctx);
-    (void)sub;
-    const char *beforeNum = lobbsArgPeek(ctx);
     uint32_t idx = 0;
-    if (!lobbsArgShiftUint(ctx, idx)) {
-        LoBBSResponse resp;
-        lobbsResponseSetError(resp, beforeNum ? "Invalid message number." : "Usage: /mail delete N");
-        lobbsCommandReplyResponse(ctx, resp);
+    if (!lobbsMsgShiftIndex(ctx, 1, "Usage: /mail delete N", "Invalid message number.", idx))
         return;
-    }
     LoBBSResponse resp;
     lobbsRecordPush(resp.records,
                     ctx.mod->mail().dal().deleteMailInboxIndex(lobbsCtxUserUuid(ctx), idx) ? "Deleted." : "Failed.");
@@ -202,12 +194,12 @@ static void mailSubSend(LoBBSCommandCtx &ctx)
     lobbsCommandReplyResponse(ctx, resp);
 }
 
-static const LoBBSSubHelpEntry mailHelp[] = {
-    {"list", "list — inbox; sysop: list user (then /p2 …)"},
-    {"read", "read N — read message (/mail N); sysop: read user N"},
-    {"unread", "unread N — mark message unread"},
-    {"delete", "delete N — delete message from inbox"},
-    {"send", "send user message... — send mail"},
+static const LoBBSVerb mailVerbs[] = {
+    {"list", mailSubList, LOBBS_V_LOGIN, "list — inbox; sysop: list user (then /p2 …)"},
+    {"read", mailSubReadCmd, LOBBS_V_LOGIN, "read N — read message (/mail N); sysop: read user N"},
+    {"unread", mailSubUnread, LOBBS_V_LOGIN, "unread N — mark message unread"},
+    {"delete", mailSubDelete, LOBBS_V_LOGIN, "delete N — delete message from inbox"},
+    {"send", mailSubSend, LOBBS_V_LOGIN, "send user message... — send mail"},
 };
 
 static void handleMail(LoBBSCommandCtx &ctx)
@@ -220,30 +212,11 @@ static void handleMail(LoBBSCommandCtx &ctx)
         return;
     }
 
-    const char *sub = lobbsArgPeek(ctx);
-    if (!sub || strcasecmp(sub, "list") == 0) {
-        mailSubList(ctx);
-        return;
+    if (!lobbsDispatchSub(ctx, "mail", mailVerbs, sizeof(mailVerbs) / sizeof(mailVerbs[0]))) {
+        LoBBSResponse resp;
+        lobbsResponseSetError(resp, "Unknown command. Try /help mail");
+        lobbsCommandReplyResponse(ctx, resp);
     }
-    if (strcasecmp(sub, "read") == 0) {
-        mailSubRead(ctx, false);
-        return;
-    }
-    if (strcasecmp(sub, "unread") == 0) {
-        mailSubUnread(ctx);
-        return;
-    }
-    if (strcasecmp(sub, "delete") == 0) {
-        mailSubDelete(ctx);
-        return;
-    }
-    if (strcasecmp(sub, "send") == 0) {
-        mailSubSend(ctx);
-        return;
-    }
-    LoBBSResponse resp;
-    lobbsResponseSetError(resp, "Unknown command. Try /help mail");
-    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void slashMail(LoBBSCommandCtx *ctx, const LoScalar &args)
@@ -264,7 +237,7 @@ static void filterMailHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &to
 static void filterMailHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     (void)ctx;
-    lobbsHelpForTopic(value, args, "mail", mailHelp, sizeof(mailHelp) / sizeof(mailHelp[0]));
+    lobbsHelpForTable(value, args, "mail", mailVerbs, sizeof(mailVerbs) / sizeof(mailVerbs[0]));
 }
 
 static void filterMailStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)
@@ -286,33 +259,15 @@ static void filterMailStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &l
     lobbsRecordPush(lines, title, value);
 }
 
-static bool displayMailRecord(const LoScalar &record, std::string &lineOut)
+#if LOBBS_SEED
+#include "MailSeed.h"
+static void actionMailSeed(LoBBSCommandCtx *ctx, const LoScalar &args)
 {
-    if (record.has(MailField::FIELD_READ) && record.has(LODB_F_CREATED)) {
-        std::string title;
-        if (record.getString(LODB_F_TITLE, title)) {
-            lineOut = title;
-            return true;
-        }
-    }
-    if (record.has(LODB_F_DESCRIPTION) && record.has(LODB_F_TITLE)) {
-        std::string title;
-        std::string body;
-        if (record.getString(LODB_F_TITLE, title) && record.getString(LODB_F_DESCRIPTION, body) && title.find("From:") == 0) {
-            lineOut = title + "\n" + body;
-            return true;
-        }
-    }
-    return false;
+    (void)args;
+    if (ctx && ctx->mod)
+        lobbsSeedMail(*ctx->mod);
 }
-
-static void displayMailHuman(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &record)
-{
-    (void)ctx;
-    std::string line;
-    if (displayMailRecord(record, line))
-        value.setString(LODB_F_TITLE, line);
-}
+#endif
 
 void lobbsMailRegisterCommands()
 {
@@ -320,7 +275,9 @@ void lobbsMailRegisterCommands()
     lobbsAddFilter("help_topics", filterMailHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_for_topic", filterMailHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("status_lines", filterMailStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
-    lobbsAddFilter("display_human", displayMailHuman, LOBBS_HOOK_PRIORITY_FEATURE);
+#if LOBBS_SEED
+    lobbsAddAction("seed", actionMailSeed, LOBBS_HOOK_PRIORITY_FEATURE);
+#endif
 }
 
 #endif

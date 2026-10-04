@@ -113,12 +113,25 @@ static void filterWallStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &l
     lobbsRecordPush(lines, "Wall", dirty ? "new" : "seen");
 }
 
+#if LOBBS_SEED
+#include "WallSeed.h"
+static void actionWallSeed(LoBBSCommandCtx *ctx, const LoScalar &args)
+{
+    (void)args;
+    if (ctx && ctx->mod)
+        lobbsSeedWall(*ctx->mod);
+}
+#endif
+
 void lobbsWallRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashWall, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_topics", filterWallHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_for_topic", filterWallHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("status_lines", filterWallStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
+#if LOBBS_SEED
+    lobbsAddAction("seed", actionWallSeed, LOBBS_HOOK_PRIORITY_FEATURE);
+#endif
 }
 
 #endif

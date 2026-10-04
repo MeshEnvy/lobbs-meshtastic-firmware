@@ -8,6 +8,7 @@
 #include "../../LoBBSReply.h"
 #include "../../LoBBSResponse.h"
 #include "../AppUtil.h"
+#include "../Msg/MsgCommon.h"
 #include "NewsDal.h"
 #include "NewsRecords.h"
 #include <cctype>
@@ -102,15 +103,9 @@ static void newsSubRead(LoBBSCommandCtx &ctx, bool numericShorthand)
 
 static void newsSubUnread(LoBBSCommandCtx &ctx)
 {
-    lobbsArgShift(ctx);
-    const char *beforeNum = lobbsArgPeek(ctx);
     uint32_t idx = 0;
-    if (!lobbsArgShiftUint(ctx, idx)) {
-        LoBBSResponse resp;
-        lobbsResponseSetError(resp, beforeNum ? "Invalid news number." : "Usage: /news unread N");
-        lobbsCommandReplyResponse(ctx, resp);
+    if (!lobbsMsgShiftIndex(ctx, 1, "Usage: /news unread N", "Invalid news number.", idx))
         return;
-    }
     NewsDal &news = ctx.mod->news().dal();
     auto newsItems = news.getAllNewsForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > newsItems.size()) {
@@ -127,15 +122,9 @@ static void newsSubUnread(LoBBSCommandCtx &ctx)
 
 static void newsSubDelete(LoBBSCommandCtx &ctx)
 {
-    lobbsArgShift(ctx);
-    const char *beforeNum = lobbsArgPeek(ctx);
     uint32_t idx = 0;
-    if (!lobbsArgShiftUint(ctx, idx)) {
-        LoBBSResponse resp;
-        lobbsResponseSetError(resp, beforeNum ? "Invalid news number." : "Usage: /news delete N");
-        lobbsCommandReplyResponse(ctx, resp);
+    if (!lobbsMsgShiftIndex(ctx, 1, "Usage: /news delete N", "Invalid news number.", idx))
         return;
-    }
     NewsDal &news = ctx.mod->news().dal();
     auto newsItems = news.getAllNewsForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > newsItems.size()) {
@@ -184,9 +173,17 @@ static void newsSubPost(LoBBSCommandCtx &ctx)
     lobbsCommandReplyResponse(ctx, resp);
 }
 
-static const LoBBSSubHelpEntry newsHelp[] = {
-    {"list", "list — news index (/p2 …)"},   {"read", "read N — read and mark read"}, {"unread", "unread N — mark unread"},
-    {"delete", "delete N — delete (sysop)"}, {"post", "post message... — post news"},
+static void newsSubReadCmd(LoBBSCommandCtx &ctx)
+{
+    newsSubRead(ctx, false);
+}
+
+static const LoBBSVerb newsVerbs[] = {
+    {"list", newsSubList, LOBBS_V_LOGIN, "list — news index (/p2 …)"},
+    {"read", newsSubReadCmd, LOBBS_V_LOGIN, "read N — read and mark read"},
+    {"unread", newsSubUnread, LOBBS_V_LOGIN, "unread N — mark unread"},
+    {"delete", newsSubDelete, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "delete N — delete (sysop)"},
+    {"post", newsSubPost, LOBBS_V_LOGIN, "post message... — post news"},
 };
 
 static void handleNews(LoBBSCommandCtx &ctx)
@@ -199,30 +196,11 @@ static void handleNews(LoBBSCommandCtx &ctx)
         return;
     }
 
-    const char *sub = lobbsArgPeek(ctx);
-    if (!sub || strcasecmp(sub, "list") == 0) {
-        newsSubList(ctx);
-        return;
+    if (!lobbsDispatchSub(ctx, "news", newsVerbs, sizeof(newsVerbs) / sizeof(newsVerbs[0]))) {
+        LoBBSResponse resp;
+        lobbsResponseSetError(resp, "Unknown command. Try /help news");
+        lobbsCommandReplyResponse(ctx, resp);
     }
-    if (strcasecmp(sub, "read") == 0) {
-        newsSubRead(ctx, false);
-        return;
-    }
-    if (strcasecmp(sub, "unread") == 0) {
-        newsSubUnread(ctx);
-        return;
-    }
-    if (strcasecmp(sub, "delete") == 0) {
-        newsSubDelete(ctx);
-        return;
-    }
-    if (strcasecmp(sub, "post") == 0) {
-        newsSubPost(ctx);
-        return;
-    }
-    LoBBSResponse resp;
-    lobbsResponseSetError(resp, "Unknown command. Try /help news");
-    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void slashNews(LoBBSCommandCtx *ctx, const LoScalar &args)
@@ -243,7 +221,7 @@ static void filterNewsHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &to
 static void filterNewsHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     (void)ctx;
-    lobbsHelpForTopic(value, args, "news", newsHelp, sizeof(newsHelp) / sizeof(newsHelp[0]));
+    lobbsHelpForTable(value, args, "news", newsVerbs, sizeof(newsVerbs) / sizeof(newsVerbs[0]));
 }
 
 static void filterNewsStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)
@@ -265,33 +243,15 @@ static void filterNewsStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &l
     lobbsRecordPush(lines, title, value);
 }
 
-static bool displayNewsRecord(const LoScalar &record, std::string &lineOut)
+#if LOBBS_SEED
+#include "NewsSeed.h"
+static void actionNewsSeed(LoBBSCommandCtx *ctx, const LoScalar &args)
 {
-    if (record.has(NewsField::FIELD_LIST_READ) && record.has(LODB_F_CREATED)) {
-        std::string title;
-        if (record.getString(LODB_F_TITLE, title)) {
-            lineOut = title;
-            return true;
-        }
-    }
-    if (record.has(LODB_F_DESCRIPTION) && record.has(LODB_F_TITLE)) {
-        std::string title;
-        std::string body;
-        if (record.getString(LODB_F_TITLE, title) && record.getString(LODB_F_DESCRIPTION, body) && title.find("From:") == 0) {
-            lineOut = title + "\n" + body;
-            return true;
-        }
-    }
-    return false;
+    (void)args;
+    if (ctx && ctx->mod)
+        lobbsSeedNews(*ctx->mod);
 }
-
-static void displayNewsHuman(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &record)
-{
-    (void)ctx;
-    std::string line;
-    if (displayNewsRecord(record, line))
-        value.setString(LODB_F_TITLE, line);
-}
+#endif
 
 void lobbsNewsRegisterCommands()
 {
@@ -299,7 +259,9 @@ void lobbsNewsRegisterCommands()
     lobbsAddFilter("help_topics", filterNewsHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_for_topic", filterNewsHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("status_lines", filterNewsStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
-    lobbsAddFilter("display_human", displayNewsHuman, LOBBS_HOOK_PRIORITY_FEATURE);
+#if LOBBS_SEED
+    lobbsAddAction("seed", actionNewsSeed, LOBBS_HOOK_PRIORITY_FEATURE);
+#endif
 }
 
 #endif

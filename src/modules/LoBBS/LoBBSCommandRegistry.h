@@ -9,6 +9,16 @@
 class LoBBSModule;
 typedef struct _meshtastic_MeshPacket meshtastic_MeshPacket;
 
+static constexpr uint8_t LOBBS_V_LOGIN = 1;
+static constexpr uint8_t LOBBS_V_SYSOP = 2;
+
+struct LoBBSVerb {
+    const char *verb;
+    void (*fn)(LoBBSCommandCtx &);
+    uint8_t flags;
+    const char *help;
+};
+
 void lobbsCommandReply(LoBBSCommandCtx &ctx, const char *body);
 void lobbsCommandReplyError(LoBBSCommandCtx &ctx, const char *message);
 bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx);
@@ -27,6 +37,8 @@ bool lobbsArgShiftUint(LoBBSCommandCtx &ctx, uint32_t &out);
 bool lobbsSlashVerbIs(const LoScalar &args, const char *verb);
 /** help_for_topic helper: sets value's description when args' query is `topic` or `topic <verb>`. */
 void lobbsHelpForTopic(LoScalar &value, const LoScalar &args, const char *topic, const LoBBSSubHelpEntry *entries, size_t count);
+void lobbsHelpForTable(LoScalar &value, const LoScalar &args, const char *topic, const LoBBSVerb *table, size_t count);
+bool lobbsDispatchSub(LoBBSCommandCtx &ctx, const char *topic, const LoBBSVerb *table, size_t count);
 int lobbsArgShiftMany(LoBBSCommandCtx &ctx, const char *out[], int maxOut);
 
 void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, const LoBBSSession &session, char *line);

@@ -39,6 +39,7 @@ static constexpr int LOBBS_HOOK_PRIORITY_HELP = 0;
 static constexpr int LOBBS_HOOK_PRIORITY_AUTH = 10;
 static constexpr int LOBBS_HOOK_PRIORITY_FEATURE = 20;
 static constexpr int LOBBS_HOOK_PRIORITY_STATUS = 30;
+static constexpr int LOBBS_HOOK_PRIORITY_TIME = 31;
 static constexpr int LOBBS_HOOK_PRIORITY_DEFAULT = 10;
 
 static constexpr uint32_t LOBBS_ARG_VERB = 0;
