@@ -1,0 +1,22 @@
+---
+description: nRF52 newlib-nano drops 64-bit printf; do not use %llu
+globs: src/modules/LoBBS/**/*
+alwaysApply: false
+---
+
+# 64-bit printf on newlib-nano
+
+nRF52 Arduino builds link `--specs=nano.specs`. That libc is built with `_WANT_IO_LONG_LONG` undefined, so `printf` / `snprintf` / `vsnprintf` have no 64-bit conversions. `%llu`, `%lld`, and `%llx` compile cleanly and then emit only the low 32 bits. No warning, no error.
+
+This truncated LoBBS user uuids in `LoScalar::setUint64` after the LoScalar migration. Login wrote a short id into the session row, the next command missed the user file, and the node looked logged out.
+
+## Do
+
+- Format a `uint64_t` by hand (digit loop), or print it as two `uint32_t` values with `LODB_UUID_FMT` / `LODB_UUID_ARGS`.
+- Parse with `strtoull`. That is implemented and is fine.
+- Keep `LoScalar::setUint64` on the hand formatter. `setUint32` goes through it.
+
+## Do not
+
+- `%llu`, `%lld`, `%llx`, `PRIu64`, `PRIx64` in any LoBBS or LoDb string that runs on device.
+- Assume a green build means the formatted number is the full value. Host `c++` and ESP-IDF newlib both support `%llu`, so a native check will not catch this.
