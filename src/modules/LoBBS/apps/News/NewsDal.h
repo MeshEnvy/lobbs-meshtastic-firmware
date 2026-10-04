@@ -28,7 +28,6 @@ class NewsDal
     uint16_t countUnreadNews(uint64_t userUuid);
     uint32_t countAllNews();
     bool deleteNewsUuid(uint64_t newsUuid);
-    bool deleteNewsListIndex(uint64_t readerUuid, uint32_t oneBasedIndex);
 
   private:
     bool isNewsReadByUser(uint64_t newsUuid, uint64_t userUuid);

@@ -90,8 +90,6 @@ class LoDb
     std::vector<LoScalar> select(const char *table_name, LoDbFilter filter = LoDbFilter(),
                                  LoDbComparator comparator = LoDbComparator(), size_t limit = 0);
     int count(const char *table_name, LoDbFilter filter = LoDbFilter());
-    LoDbError truncate(const char *table_name);
-    LoDbError drop(const char *table_name);
 
   private:
     struct TableMetadata {

@@ -84,32 +84,6 @@ const char *lobbsArgPeek(const LoBBSCommandCtx &ctx)
     return tok;
 }
 
-bool lobbsArgTakePage(LoBBSCommandCtx &ctx)
-{
-    if (!ctx.rest)
-        return false;
-    lobbsSkipWs(ctx.rest);
-    if (!ctx.rest[0])
-        return false;
-    char *start = ctx.rest;
-    char *end = start;
-    while (*end && *end != ' ' && *end != '\t')
-        end++;
-    char saved = *end;
-    *end = '\0';
-    uint32_t page = 1;
-    bool ok = lobbsParsePageToken(start, page);
-    *end = saved;
-    if (!ok)
-        return false;
-    ctx.page = page;
-    ctx.rest = end;
-    if (*ctx.rest)
-        ctx.rest++;
-    lobbsSkipWs(ctx.rest);
-    return true;
-}
-
 const char *lobbsArgRest(LoBBSCommandCtx &ctx)
 {
     if (!ctx.rest)
@@ -123,25 +97,7 @@ bool lobbsArgHasMore(const LoBBSCommandCtx &ctx)
     return lobbsArgPeek(ctx) != nullptr;
 }
 
-bool lobbsTokenIsPage(const char *tok)
-{
-    uint32_t page = 1;
-    return lobbsParsePageToken(tok, page);
-}
-
-bool lobbsCommandIsPageOnly(const char *verb, const char *rest, uint32_t &pageOut)
-{
-    pageOut = 1;
-    if (!verb || !verb[0])
-        return false;
-    if (lobbsParsePageToken(verb, pageOut))
-        return !rest || !rest[0];
-    if ((verb[0] == 'p' || verb[0] == 'P') && verb[1] == '\0' && lobbsTokIsUint(rest, pageOut))
-        return true;
-    return false;
-}
-
-bool lobbsTokIsUint(const char *tok, uint32_t &out)
+static bool lobbsTokIsUint(const char *tok, uint32_t &out)
 {
     if (!tok || !tok[0])
         return false;
@@ -155,15 +111,27 @@ bool lobbsTokIsUint(const char *tok, uint32_t &out)
     return true;
 }
 
+static bool lobbsArgPeekUint(const LoBBSCommandCtx &ctx, uint32_t &out)
+{
+    return lobbsTokIsUint(lobbsArgPeek(ctx), out);
+}
+
+static bool lobbsCommandIsPageOnly(const char *verb, const char *rest, uint32_t &pageOut)
+{
+    pageOut = 1;
+    if (!verb || !verb[0])
+        return false;
+    if (lobbsParsePageToken(verb, pageOut))
+        return !rest || !rest[0];
+    if ((verb[0] == 'p' || verb[0] == 'P') && verb[1] == '\0' && lobbsTokIsUint(rest, pageOut))
+        return true;
+    return false;
+}
+
 bool lobbsArgPeekIsUint(const LoBBSCommandCtx &ctx)
 {
     uint32_t dummy = 0;
     return lobbsArgPeekUint(ctx, dummy);
-}
-
-bool lobbsArgPeekUint(const LoBBSCommandCtx &ctx, uint32_t &out)
-{
-    return lobbsTokIsUint(lobbsArgPeek(ctx), out);
 }
 
 bool lobbsArgShiftUint(LoBBSCommandCtx &ctx, uint32_t &out)
@@ -186,7 +154,7 @@ int lobbsArgShiftMany(LoBBSCommandCtx &ctx, const char *out[], int maxOut)
     return n;
 }
 
-bool lobbsHelpQueryMatches(const char *query, const char *prefix)
+static bool lobbsHelpQueryMatches(const char *query, const char *prefix)
 {
     if (!query || !prefix || !prefix[0])
         return false;
@@ -231,169 +199,6 @@ void lobbsHelpForTopic(LoScalar &value, const LoScalar &args, const char *topic,
     }
     if (!body.empty())
         value.setString(LODB_F_DESCRIPTION, body);
-}
-
-bool lobbsHelpStripTrailingPage(char *query, size_t queryCap, uint32_t &pageOut)
-{
-    (void)queryCap;
-    if (!query || !query[0])
-        return false;
-    char *lastSpace = strrchr(query, ' ');
-    if (!lastSpace) {
-        uint32_t p = 1;
-        if (!lobbsParsePageToken(query, p))
-            return false;
-        pageOut = p;
-        query[0] = '\0';
-        return true;
-    }
-    char *tok = lastSpace + 1;
-    uint32_t p = 1;
-    if (!lobbsParsePageToken(tok, p))
-        return false;
-    *lastSpace = '\0';
-    while (lastSpace > query && (lastSpace[-1] == ' ' || lastSpace[-1] == '\t'))
-        *--lastSpace = '\0';
-    pageOut = p;
-    return true;
-}
-
-static constexpr size_t LOBBS_PAGER_FOOTER_MAX = 16;
-static constexpr int LOBBS_PAGER_MAX_PAGES = 64;
-
-static bool lobbsPagerMeasureLine(LoBBSPagerFormatLineFn fn, void *fnCtx, uint32_t index, char *line, size_t lineCap,
-                                  size_t &lineLenOut)
-{
-    if (fn) {
-        fn(fnCtx, index, line, lineCap);
-        lineLenOut = strlen(line);
-        return true;
-    }
-    lineLenOut = 0;
-    return false;
-}
-
-static bool lobbsPagerPackPages(uint32_t itemCount, LoBBSPagerFormatLineFn fn, void *fnCtx, size_t maxBytes, bool reserveFooter,
-                                uint32_t *pageStarts, int &pageCountOut)
-{
-    char lineBuf[160];
-    pageCountOut = 0;
-    if (itemCount == 0)
-        return false;
-    uint32_t idx = 0;
-    while (idx < itemCount && pageCountOut < LOBBS_PAGER_MAX_PAGES) {
-        pageStarts[pageCountOut] = idx;
-        size_t used = 0;
-        while (idx < itemCount) {
-            size_t lineLen = 0;
-            lobbsPagerMeasureLine(fn, fnCtx, idx, lineBuf, sizeof(lineBuf), lineLen);
-            size_t add = lineLen + (used > 0 ? 1 : 0);
-            size_t footerReserve = reserveFooter ? LOBBS_PAGER_FOOTER_MAX : 0;
-            if (used + add + footerReserve > maxBytes) {
-                if (used > 0)
-                    break;
-                size_t maxLine = maxBytes > footerReserve ? maxBytes - footerReserve : 0;
-                if (lineLen > maxLine)
-                    lineLen = maxLine;
-                lineBuf[lineLen] = '\0';
-                used += lineLen;
-                idx++;
-                break;
-            }
-            used += add;
-            idx++;
-            if (idx < itemCount) {
-                size_t nextLen = 0;
-                lobbsPagerMeasureLine(fn, fnCtx, idx, lineBuf, sizeof(lineBuf), nextLen);
-                size_t nextAdd = nextLen + 1;
-                if (used + nextAdd + footerReserve > maxBytes)
-                    break;
-            }
-        }
-        pageCountOut++;
-    }
-    if (pageCountOut < LOBBS_PAGER_MAX_PAGES)
-        pageStarts[pageCountOut] = itemCount;
-    return pageCountOut > 0;
-}
-
-static bool lobbsPagerRenderPage(char *out, size_t outCap, uint32_t page1, uint32_t itemCount, LoBBSPagerFormatLineFn fn,
-                                 void *fnCtx, const char **errEmpty, const char **errBadPage)
-{
-    if (itemCount == 0) {
-        if (errEmpty)
-            *errEmpty = "Empty.";
-        return false;
-    }
-    if (page1 == 0)
-        page1 = 1;
-    char lineBuf[160];
-    uint32_t pageStarts[LOBBS_PAGER_MAX_PAGES + 1];
-    int pageCount = 0;
-    lobbsPagerPackPages(itemCount, fn, fnCtx, outCap, true, pageStarts, pageCount);
-    if (pageCount <= 0) {
-        if (errEmpty)
-            *errEmpty = "Empty.";
-        return false;
-    }
-    if (pageCount == 1) {
-        lobbsPagerPackPages(itemCount, fn, fnCtx, outCap, false, pageStarts, pageCount);
-        pageStarts[1] = itemCount;
-    }
-    if (page1 > (uint32_t)pageCount) {
-        if (errBadPage)
-            *errBadPage = "No such page.";
-        return false;
-    }
-    uint32_t start = pageStarts[page1 - 1];
-    uint32_t end = pageStarts[page1];
-    size_t n = 0;
-    for (uint32_t i = start; i < end; i++) {
-        size_t lineLen = 0;
-        lobbsPagerMeasureLine(fn, fnCtx, i, lineBuf, sizeof(lineBuf), lineLen);
-        if (i > start && n + 1 < outCap)
-            out[n++] = '\n';
-        for (size_t c = 0; c < lineLen && n + 1 < outCap; c++)
-            out[n++] = lineBuf[c];
-    }
-    if ((uint32_t)pageCount > 1) {
-        char footer[LOBBS_PAGER_FOOTER_MAX];
-        int fw = snprintf(footer, sizeof(footer), "{p %u/%u}", page1, (uint32_t)pageCount);
-        if (fw > 0 && n + 1 < outCap)
-            out[n++] = '\n';
-        for (int c = 0; footer[c] && n + 1 < outCap; c++)
-            out[n++] = footer[c];
-    }
-    out[n] = '\0';
-    return true;
-}
-
-struct LobbsPagerCStringCtx {
-    const char *const *lines;
-};
-
-static void lobbsPagerFormatCStringLine(void *ctx, uint32_t itemIndex, char *line, size_t lineCap)
-{
-    auto *p = (LobbsPagerCStringCtx *)ctx;
-    if (!p->lines || !p->lines[itemIndex]) {
-        line[0] = '\0';
-        return;
-    }
-    strncpy(line, p->lines[itemIndex], lineCap - 1);
-    line[lineCap - 1] = '\0';
-}
-
-bool lobbsPagerFormatLines(char *out, size_t outCap, uint32_t page1, const char *const *lines, uint32_t lineCount,
-                           const char **errEmpty, const char **errBadPage)
-{
-    LobbsPagerCStringCtx ctx{lines};
-    return lobbsPagerRenderPage(out, outCap, page1, lineCount, lobbsPagerFormatCStringLine, &ctx, errEmpty, errBadPage);
-}
-
-bool lobbsPagerFormatItems(char *out, size_t outCap, uint32_t page1, uint32_t itemCount, LoBBSPagerFormatLineFn fn, void *fnCtx,
-                           const char **errEmpty, const char **errBadPage)
-{
-    return lobbsPagerRenderPage(out, outCap, page1, itemCount, fn, fnCtx, errEmpty, errBadPage);
 }
 
 bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx)

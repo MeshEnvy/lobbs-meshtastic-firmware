@@ -7,6 +7,7 @@
 #if LOBBS_SEED
 #include "LoBBSSeed.h"
 #endif
+#include "LoBBSReply.h"
 #include "MeshService.h"
 #include <cstdio>
 #include <cstring>
@@ -81,12 +82,12 @@ void LoBBSModule::sendReply(const meshtastic_MeshPacket &req, const char *msg)
     static constexpr size_t truncMarkerLen = sizeof(truncMarker) - 1;
 
     size_t msgLen = strlen(msg);
-    bool isTruncated = msgLen > MAX_REPLY_BYTES;
-    size_t payloadSize = isTruncated ? MAX_REPLY_BYTES : msgLen;
+    bool isTruncated = msgLen > LOBBS_REPLY_BYTES;
+    size_t payloadSize = isTruncated ? LOBBS_REPLY_BYTES : msgLen;
     reply->decoded.payload.size = payloadSize;
 
     if (isTruncated) {
-        size_t copyLen = MAX_REPLY_BYTES > truncMarkerLen ? MAX_REPLY_BYTES - truncMarkerLen : 0;
+        size_t copyLen = LOBBS_REPLY_BYTES > truncMarkerLen ? LOBBS_REPLY_BYTES - truncMarkerLen : 0;
         memcpy(reply->decoded.payload.bytes, msg, copyLen);
         memcpy(reply->decoded.payload.bytes + copyLen, truncMarker, truncMarkerLen);
     } else {
@@ -101,7 +102,5 @@ void LoBBSModule::sendReply(const meshtastic_MeshPacket &req, const char *msg)
     service->sendToMesh(reply, RX_SRC_LOCAL, ccPhone);
     lobbsBreadcrumb("reply out");
 }
-
-LoBBSModule *lobbsModule;
 
 #endif

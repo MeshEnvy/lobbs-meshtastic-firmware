@@ -24,7 +24,6 @@ class LoBBSModule : public SinglePortModule
     LoBBSModule();
     ~LoBBSModule();
 
-    static constexpr size_t MAX_REPLY_BYTES = 200;
     void sendReply(const meshtastic_MeshPacket &req, const char *msg);
     void sendReply(const meshtastic_MeshPacket &req, const std::string &msg) { sendReply(req, msg.c_str()); }
 
@@ -46,8 +45,6 @@ class LoBBSModule : public SinglePortModule
     WallApp wall_;
     YarnApp yarn_;
 };
-
-extern LoBBSModule *lobbsModule;
 
 #ifdef PIO_UNIT_TESTING
 #include <string>

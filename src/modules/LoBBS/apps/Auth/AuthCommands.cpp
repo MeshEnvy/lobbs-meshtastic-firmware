@@ -21,11 +21,9 @@ static void authAppendUserRecord(LoBBSResponse &resp, const LoScalar &user)
     std::string line = name;
     if (AuthDal::userIsSysop(user))
         line += "*";
-    char idBuf[24];
-    lobbsAppFormatUint64Decimal(idBuf, sizeof(idBuf), AuthDal::userUuid(user));
     LoScalar rec;
     rec.setString(LODB_F_TITLE, line.c_str());
-    rec.setString(LODB_F_ID, idBuf);
+    rec.setUint64(LODB_F_ID, AuthDal::userUuid(user));
     rec.setBool(AuthUser::FIELD_SYSOP, AuthDal::userIsSysop(user));
     lobbsResponseAppendRecord(resp, rec);
 }
@@ -42,9 +40,7 @@ static void handleWhoami(LoBBSCommandCtx &ctx)
     rec.setString(LODB_F_TITLE, title);
     if (ctx.session.isSysop)
         rec.setString(LODB_F_DESCRIPTION, "You are the SysOp.");
-    char idBuf[24];
-    lobbsAppFormatUint64Decimal(idBuf, sizeof(idBuf), lobbsCtxUserUuid(ctx));
-    rec.setString(LODB_F_ID, idBuf);
+    rec.setUint64(LODB_F_ID, lobbsCtxUserUuid(ctx));
     rec.setBool(AuthUser::FIELD_SYSOP, ctx.session.isSysop);
     LoBBSResponse resp;
     lobbsResponseAppendRecord(resp, rec);

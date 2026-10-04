@@ -79,25 +79,6 @@ uint64_t lobbsAppUuidForUsername(LoBBSModule *mod, const char *username)
     return mod->auth().dal().getUserUuidByUsername(username);
 }
 
-void lobbsAppFormatUint64Decimal(char *buf, size_t bufCap, uint64_t value)
-{
-    if (!buf || bufCap == 0)
-        return;
-    char tmp[24];
-    int pos = (int)sizeof(tmp);
-    tmp[--pos] = '\0';
-    if (value == 0) {
-        snprintf(buf, bufCap, "0");
-        return;
-    }
-    while (value > 0 && pos > 0) {
-        tmp[--pos] = (char)('0' + (value % 10));
-        value /= 10;
-    }
-    strncpy(buf, tmp + pos, bufCap - 1);
-    buf[bufCap - 1] = '\0';
-}
-
 bool lobbsAppResolveUsername(LoBBSCommandCtx &ctx, const char *username, uint64_t &uuidOut)
 {
     uuidOut = lobbsAppUuidForUsername(ctx.mod, username);

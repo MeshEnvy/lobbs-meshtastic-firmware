@@ -23,7 +23,6 @@ static void mailAppendListRecord(LoBBSModule *mod, LoBBSResponse &resp, uint32_t
     char trunc[LOBBS_LIST_LINE_TRUNC_BUFFER_SIZE];
     char msg[LOBBS_MESSAGE_BODY_BUFFER_SIZE];
     char line[LOBBS_REPLY_BYTES + 1];
-    char idBuf[24];
     lobbsAppUsernameForUuid(mod, MailDal::mailFromUuid(mail), name, sizeof(name));
     lobbsAppTimeAgo(MailDal::mailTimestamp(mail), when, sizeof(when));
     MailDal::mailMessage(mail, msg, sizeof(msg));
@@ -32,8 +31,7 @@ static void mailAppendListRecord(LoBBSModule *mod, LoBBSResponse &resp, uint32_t
              when);
 
     LoScalar rec;
-    lobbsAppFormatUint64Decimal(idBuf, sizeof(idBuf), MailDal::mailUuid(mail));
-    rec.setString(LODB_F_ID, idBuf);
+    rec.setUint64(LODB_F_ID, MailDal::mailUuid(mail));
     rec.setString(LODB_F_TITLE, line);
     rec.setString(LODB_F_DESCRIPTION, trunc);
     rec.setBool(MailField::FIELD_READ, MailDal::mailRead(mail));
@@ -49,7 +47,7 @@ static void mailSubList(LoBBSCommandCtx &ctx)
 
     uint64_t inboxUuid = lobbsCtxUserUuid(ctx);
     const char *maybeUser = lobbsArgPeek(ctx);
-    if (maybeUser && !lobbsTokenIsPage(maybeUser)) {
+    if (maybeUser) {
         if (!lobbsCommandRequireSysop(ctx))
             return;
         const char *user = lobbsArgShift(ctx);
@@ -116,15 +114,13 @@ static void mailSubRead(LoBBSCommandCtx &ctx, bool numericShorthand)
     char when[LOBBS_TIME_AGO_BUFFER_SIZE];
     char body[LOBBS_MESSAGE_READ_BODY_BUFFER_SIZE];
     char header[LOBBS_REPLY_BYTES + 1];
-    char idBuf[24];
     lobbsAppUsernameForUuid(ctx.mod, MailDal::mailFromUuid(m), name, sizeof(name));
     MailDal::mailMessage(m, body, sizeof(body));
     lobbsAppTimeAgo(MailDal::mailTimestamp(m), when, sizeof(when));
     snprintf(header, sizeof(header), "From: @%s (%s)", name, when);
 
     LoScalar rec;
-    lobbsAppFormatUint64Decimal(idBuf, sizeof(idBuf), MailDal::mailUuid(m));
-    rec.setString(LODB_F_ID, idBuf);
+    rec.setUint64(LODB_F_ID, MailDal::mailUuid(m));
     rec.setString(LODB_F_TITLE, header);
     rec.setString(LODB_F_DESCRIPTION, body);
     rec.setUint32(LODB_F_CREATED, MailDal::mailTimestamp(m));

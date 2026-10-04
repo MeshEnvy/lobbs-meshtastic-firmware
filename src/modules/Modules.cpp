@@ -139,7 +139,7 @@ void setupModules()
     textMessageModule = new TextMessageModule();
 #endif
 #if !MESHTASTIC_EXCLUDE_LOBBS
-    lobbsModule = new LoBBSModule();
+    new LoBBSModule();
 #endif
 #if !MESHTASTIC_EXCLUDE_TRACEROUTE
     traceRouteModule = new TraceRouteModule();

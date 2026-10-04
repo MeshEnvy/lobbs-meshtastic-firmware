@@ -229,7 +229,7 @@ static void handleLs(LoBBSCommandCtx &ctx)
 
     const char *spec = "/";
     const char *pathTok = lobbsArgPeek(ctx);
-    if (pathTok && !lobbsTokenIsPage(pathTok))
+    if (pathTok)
         spec = lobbsArgShift(ctx);
     if (fsGlobBeforeLastName(spec)) {
         lobbsCommandReplyError(ctx, "glob only on the last name");

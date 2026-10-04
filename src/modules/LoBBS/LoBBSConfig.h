@@ -15,9 +15,6 @@
 /** Inbox/news list line: truncated preview of the message. */
 #define LOBBS_LIST_LINE_TRUNC_BUFFER_SIZE 50
 #define LOBBS_LIST_LINE_TRUNC_MAX_CHARS 25
-#define LOBBS_XSTR(x) LOBBS_STR(x)
-#define LOBBS_STR(x) #x
-
 /** Shared in /hi and /help root (omit topic for list, or name a command). */
 #define LOBBS_HELP_HINT "Use /help [topic] for help"
 

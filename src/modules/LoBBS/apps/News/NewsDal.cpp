@@ -161,15 +161,4 @@ bool NewsDal::deleteNewsUuid(uint64_t newsUuidVal)
     return lodb_.deleteRecord("news", newsUuidVal) == LODB_OK;
 }
 
-bool NewsDal::deleteNewsListIndex(uint64_t readerUuid, uint32_t oneBasedIndex)
-{
-    if (oneBasedIndex == 0)
-        return false;
-    auto newsItems = getAllNewsForUser(readerUuid);
-    if (oneBasedIndex > newsItems.size())
-        return false;
-    uint64_t uuid = newsUuid(newsItems[oneBasedIndex - 1].news);
-    return deleteNewsUuid(uuid);
-}
-
 #endif

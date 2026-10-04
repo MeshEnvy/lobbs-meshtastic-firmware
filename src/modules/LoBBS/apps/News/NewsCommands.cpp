@@ -25,7 +25,6 @@ static void newsAppendListRecord(LoBBSModule *mod, LoBBSResponse &resp, uint32_t
     char trunc[LOBBS_LIST_LINE_TRUNC_BUFFER_SIZE];
     char msg[LOBBS_MESSAGE_BODY_BUFFER_SIZE];
     char line[LOBBS_REPLY_BYTES + 1];
-    char idBuf[24];
     lobbsAppUsernameForUuid(mod, NewsDal::newsAuthorUuid(news), name, sizeof(name));
     lobbsAppTimeAgo(NewsDal::newsTimestamp(news), when, sizeof(when));
     NewsDal::newsMessage(news, msg, sizeof(msg));
@@ -33,11 +32,10 @@ static void newsAppendListRecord(LoBBSModule *mod, LoBBSResponse &resp, uint32_t
     snprintf(line, sizeof(line), "[%u]%s @%s: %s (%s)", (unsigned)oneBasedIndex, entry.isRead ? "" : "*", name, trunc, when);
 
     LoScalar rec;
-    lobbsAppFormatUint64Decimal(idBuf, sizeof(idBuf), NewsDal::newsUuid(news));
-    rec.setString(LODB_F_ID, idBuf);
+    rec.setUint64(LODB_F_ID, NewsDal::newsUuid(news));
     rec.setString(LODB_F_TITLE, line);
     rec.setString(LODB_F_DESCRIPTION, trunc);
-    rec.setBool(NewsField::FIELD_AUTHOR, entry.isRead);
+    rec.setBool(NewsField::FIELD_LIST_READ, entry.isRead);
     rec.setUint32(LODB_F_CREATED, NewsDal::newsTimestamp(news));
     lobbsResponseAppendRecord(resp, rec);
 }
@@ -85,15 +83,13 @@ static void newsSubRead(LoBBSCommandCtx &ctx, bool numericShorthand)
     char when[LOBBS_TIME_AGO_BUFFER_SIZE];
     char body[LOBBS_MESSAGE_READ_BODY_BUFFER_SIZE];
     char header[LOBBS_REPLY_BYTES + 1];
-    char idBuf[24];
     lobbsAppUsernameForUuid(ctx.mod, NewsDal::newsAuthorUuid(item), name, sizeof(name));
     NewsDal::newsMessage(item, body, sizeof(body));
     lobbsAppTimeAgo(NewsDal::newsTimestamp(item), when, sizeof(when));
     snprintf(header, sizeof(header), "From: @%s (%s)", name, when);
 
     LoScalar rec;
-    lobbsAppFormatUint64Decimal(idBuf, sizeof(idBuf), NewsDal::newsUuid(item));
-    rec.setString(LODB_F_ID, idBuf);
+    rec.setUint64(LODB_F_ID, NewsDal::newsUuid(item));
     rec.setString(LODB_F_TITLE, header);
     rec.setString(LODB_F_DESCRIPTION, body);
     rec.setUint32(LODB_F_CREATED, NewsDal::newsTimestamp(item));
@@ -271,7 +267,7 @@ static void filterNewsStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &l
 
 static bool displayNewsRecord(const LoScalar &record, std::string &lineOut)
 {
-    if (record.has(NewsField::FIELD_AUTHOR) && record.has(LODB_F_CREATED)) {
+    if (record.has(NewsField::FIELD_LIST_READ) && record.has(LODB_F_CREATED)) {
         std::string title;
         if (record.getString(LODB_F_TITLE, title)) {
             lineOut = title;

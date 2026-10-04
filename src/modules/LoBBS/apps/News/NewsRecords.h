@@ -7,6 +7,8 @@
 namespace NewsField
 {
 inline constexpr uint32_t FIELD_AUTHOR = 0;
+/** Ephemeral list-row flag (not stored on `news` DB rows). */
+inline constexpr uint32_t FIELD_LIST_READ = 1;
 } // namespace NewsField
 
 /** App field slots for `news_reads` rows. */

@@ -1,8 +1,6 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "AuthDal.h"
-#include "../../LoBBSCommandRegistry.h"
-#include "../../LoBBSReply.h"
 #include "AuthRecords.h"
 #include "configuration.h"
 #include "gps/RTC.h"
@@ -103,83 +101,6 @@ std::vector<LoScalar> AuthDal::listUsers(const char *filterSubstr)
             return stristrLocal(name, filterSubstr) != nullptr;
         },
         compareUsersByName);
-}
-
-bool AuthDal::buildUserList(const char *filterSubstr, std::string &msg, const char **emptyReply)
-{
-    const bool hasFilter = filterSubstr && filterSubstr[0];
-    auto users = lodb_.select(
-        "users",
-        [filterSubstr, hasFilter](const LoScalar &rec) -> bool {
-            if (!hasFilter)
-                return true;
-            char name[LOBBS_USERNAME_BUFFER_SIZE];
-            AuthDal::userUsername(rec, name, sizeof(name));
-            return stristrLocal(name, filterSubstr) != nullptr;
-        },
-        compareUsersByName);
-    if (users.empty()) {
-        *emptyReply = hasFilter ? "No users match filter." : "No users found";
-        return false;
-    }
-    msg = "Users:\n";
-    for (size_t i = 0; i < users.size(); i++) {
-        char name[LOBBS_USERNAME_BUFFER_SIZE];
-        AuthDal::userUsername(users[i], name, sizeof(name));
-        if (i > 0)
-            msg += ", ";
-        msg += name;
-        if (AuthDal::userIsSysop(users[i]))
-            msg += "*";
-    }
-    return true;
-}
-
-bool AuthDal::formatUserListPage(const char *filterSubstr, uint32_t page1Based, std::string &msg, uint32_t &totalCount,
-                                 const char **emptyReply)
-{
-    const bool hasFilter = filterSubstr && filterSubstr[0];
-    auto users = lodb_.select(
-        "users",
-        [filterSubstr, hasFilter](const LoScalar &rec) -> bool {
-            if (!hasFilter)
-                return true;
-            char name[LOBBS_USERNAME_BUFFER_SIZE];
-            AuthDal::userUsername(rec, name, sizeof(name));
-            return stristrLocal(name, filterSubstr) != nullptr;
-        },
-        compareUsersByName);
-    if (users.empty()) {
-        *emptyReply = hasFilter ? "No users match filter." : "No users found";
-        totalCount = 0;
-        return false;
-    }
-    totalCount = (uint32_t)users.size();
-    std::vector<std::string> lines;
-    lines.reserve(users.size());
-    for (size_t i = 0; i < users.size(); i++) {
-        char name[LOBBS_USERNAME_BUFFER_SIZE];
-        AuthDal::userUsername(users[i], name, sizeof(name));
-        std::string line = name;
-        if (AuthDal::userIsSysop(users[i]))
-            line += "*";
-        lines.push_back(line);
-    }
-
-    std::vector<const char *> ptrs;
-    ptrs.reserve(lines.size());
-    for (auto &line : lines)
-        ptrs.push_back(line.c_str());
-
-    char buf[LOBBS_REPLY_BYTES + 1];
-    const char *errEmpty = nullptr;
-    const char *errBadPage = nullptr;
-    if (!lobbsPagerFormatLines(buf, sizeof(buf), page1Based, ptrs.data(), (uint32_t)ptrs.size(), &errEmpty, &errBadPage)) {
-        *emptyReply = errBadPage ? errBadPage : (hasFilter ? "No users match filter." : "No users found");
-        return false;
-    }
-    msg = buf;
-    return true;
 }
 
 bool AuthDal::isValidUsername(const char *username)
