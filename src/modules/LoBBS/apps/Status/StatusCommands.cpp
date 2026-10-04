@@ -4,6 +4,7 @@
 #include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSReply.h"
+#include "../../LoBBSConfig.h"
 #include "../../LoBBSVersion.h"
 #include "gps/RTC.h"
 #include <cstdio>
@@ -18,13 +19,12 @@ static void handleHi(LoBBSCommandCtx &ctx)
     if (lobbsCtxLoggedIn(ctx)) {
         char uname[LOBBS_USERNAME_BUFFER_SIZE];
         lobbsCtxUsername(ctx, uname, sizeof(uname));
-        snprintf(buf, sizeof(buf),
-                 "LoBBS v%s\nWelcome back, %s!\nUse /help [topic] for general help\nUse /status to see what's happening",
-                 LOBBS_VERSION_SHORT, uname);
+        snprintf(buf, sizeof(buf), "LoBBS v%s\nWelcome back, %s!\n%s\nUse /status to see what's happening",
+                 LOBBS_VERSION_SHORT, uname, LOBBS_HELP_HINT);
     } else {
         snprintf(buf, sizeof(buf),
-                 "LoBBS v%s\nWelcome!\nUse /help [topic] for general help\nUse /status to see what's happening\nUse /login to sign in",
-                 LOBBS_VERSION_SHORT);
+                 "LoBBS v%s\nWelcome!\n%s\nUse /status to see what's happening\nUse /login to sign in",
+                 LOBBS_VERSION_SHORT, LOBBS_HELP_HINT);
     }
     lobbsCommandReply(ctx, buf);
 }

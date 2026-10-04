@@ -6,4 +6,7 @@
 #define LOBBS_XSTR(x) LOBBS_STR(x)
 #define LOBBS_STR(x) #x
 
+/** Shared in /hi and /help root (omit topic for list, or name a command). */
+#define LOBBS_HELP_HINT "Use /help [topic] for help"
+
 #endif

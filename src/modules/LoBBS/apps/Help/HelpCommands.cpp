@@ -3,6 +3,7 @@
 #include "HelpCommands.h"
 #include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
+#include "../../LoBBSConfig.h"
 #include "../../LoBBSReply.h"
 #include <cstdio>
 #include <cstring>
@@ -14,7 +15,7 @@ static void replyHelpRoot(LoBBSCommandCtx &ctx)
 
     char buf[LOBBS_REPLY_BYTES + 1];
     size_t n = 0;
-    const char *header = "LoBBS Commands\n/<cmd> ...\nAvailable commands: ";
+    const char *header = "LoBBS Commands\n" LOBBS_HELP_HINT "\nAvailable commands: ";
     for (const char *s = header; *s && n + 1 < sizeof(buf); s++)
         buf[n++] = *s;
     bool first = true;
