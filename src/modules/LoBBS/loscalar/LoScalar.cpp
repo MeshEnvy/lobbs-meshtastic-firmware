@@ -248,11 +248,6 @@ void LoScalar::escapeValue(const std::string &raw, std::string &escaped)
     }
 }
 
-bool LoScalar::unescapeValue(const char *in, size_t inLen, std::string &raw)
-{
-    return loscalarUnescapeValue(in, inLen, raw);
-}
-
 bool LoScalar::encode(std::string &line, size_t maxBytes) const
 {
     line.clear();

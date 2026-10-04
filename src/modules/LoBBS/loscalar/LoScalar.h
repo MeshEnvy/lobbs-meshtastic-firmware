@@ -36,13 +36,10 @@ class LoScalar
     /** Decode one line. Returns false on parse error. */
     bool decode(const char *line, size_t lineLen);
 
-    const std::vector<Field> &fields() const { return fields_; }
-
   private:
     Field *findOrInsert(uint32_t field);
     const Field *find(uint32_t field) const;
     static void escapeValue(const std::string &raw, std::string &escaped);
-    static bool unescapeValue(const char *in, size_t inLen, std::string &raw);
 
     std::vector<Field> fields_;
 };

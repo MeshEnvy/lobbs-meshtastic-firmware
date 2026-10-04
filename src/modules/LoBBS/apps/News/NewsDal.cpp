@@ -109,7 +109,7 @@ bool NewsDal::markNewsAsUnread(uint64_t newsUuidVal, uint64_t userUuid)
     return lodb_.deleteRecord("news_reads", readUuid) == LODB_OK;
 }
 
-std::vector<LoBBSNewsEntry> NewsDal::getNewsForUser(uint64_t userUuid, uint32_t offset, uint32_t limit)
+std::vector<LoBBSNewsEntry> NewsDal::getAllNewsForUser(uint64_t userUuid)
 {
     auto allNews = lodb_.select("news", LoDbFilter(), LoDbComparator());
 
@@ -126,15 +126,9 @@ std::vector<LoBBSNewsEntry> NewsDal::getNewsForUser(uint64_t userUuid, uint32_t 
         return newsTimestamp(a.news) > newsTimestamp(b.news);
     });
 
-    std::vector<LoBBSNewsEntry> result;
-    for (size_t i = offset; i < newsWithStatus.size() && i < offset + limit; i++)
-        result.push_back(newsWithStatus[i]);
-    return result;
-}
-
-std::vector<LoBBSNewsEntry> NewsDal::getAllNewsForUser(uint64_t userUuid)
-{
-    return getNewsForUser(userUuid, 0, LOBBS_MAX_LIST_ROWS);
+    if (newsWithStatus.size() > LOBBS_MAX_LIST_ROWS)
+        newsWithStatus.resize(LOBBS_MAX_LIST_ROWS);
+    return newsWithStatus;
 }
 
 uint32_t NewsDal::countAllNews()

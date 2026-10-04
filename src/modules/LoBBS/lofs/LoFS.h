@@ -42,11 +42,6 @@
  *   // Create directory
  *   LoFS::mkdir("/internal/my/directory");
  *
- *   // Copy between filesystems
- *   File src = LoFS::open("/internal/source.txt", FILE_O_READ);
- *   File dst = LoFS::open("/sd/dest.txt", FILE_O_WRITE);
- *   // ... copy data ...
- *
  * Note: Both filesystems use the same File interface, so you can use
  * the returned File objects interchangeably for reading/writing.
  */
@@ -91,14 +86,10 @@ class LoFS
     static bool remove(const char *filepath);
 
     /**
-     * @brief Rename a file (or move between filesystems)
+     * @brief Rename a file within one filesystem
      * @param oldfilepath Source path with prefix
      * @param newfilepath Destination path with prefix
-     * @return true if successful
-     *
-     * If both paths are on the same filesystem, performs a simple rename.
-     * If paths are on different filesystems (e.g., /internal/file -> /sd/file),
-     * performs a copy + delete operation.
+     * @return true if successful; false when the paths are on different filesystems
      */
     static bool rename(const char *oldfilepath, const char *newfilepath);
 
@@ -122,27 +113,6 @@ class LoFS
      * Useful for checking SD card availability before attempting operations.
      */
     static bool isSDCardAvailable();
-
-    /**
-     * @brief Get total space in bytes for the filesystem
-     * @param filepath Path with prefix (/internal/... or /sd/...) - prefix determines filesystem
-     * @return Total space in bytes, or 0 if filesystem is invalid/unavailable
-     */
-    static uint64_t totalBytes(const char *filepath);
-
-    /**
-     * @brief Get used space in bytes for the filesystem
-     * @param filepath Path with prefix (/internal/... or /sd/...) - prefix determines filesystem
-     * @return Used space in bytes, or 0 if filesystem is invalid/unavailable
-     */
-    static uint64_t usedBytes(const char *filepath);
-
-    /**
-     * @brief Get free space in bytes for the filesystem
-     * @param filepath Path with prefix (/internal/... or /sd/...) - prefix determines filesystem
-     * @return Free space in bytes (totalBytes - usedBytes), or 0 if filesystem is invalid/unavailable
-     */
-    static uint64_t freeBytes(const char *filepath);
 
     /**
      * @brief Filesystem type enum for specifying which filesystem to use

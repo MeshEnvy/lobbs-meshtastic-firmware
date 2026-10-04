@@ -21,7 +21,6 @@ class NewsDal
     static uint32_t newsTimestamp(const LoScalar &n);
 
     bool postNews(uint64_t authorUserUuid, const char *message);
-    std::vector<LoBBSNewsEntry> getNewsForUser(uint64_t userUuid, uint32_t offset, uint32_t limit);
     std::vector<LoBBSNewsEntry> getAllNewsForUser(uint64_t userUuid);
     bool markNewsAsRead(uint64_t newsUuid, uint64_t userUuid);
     bool markNewsAsUnread(uint64_t newsUuid, uint64_t userUuid);

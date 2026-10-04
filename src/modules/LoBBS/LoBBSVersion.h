@@ -9,5 +9,3 @@
 #ifndef LOBBS_VERSION
 #error LOBBS_VERSION must be set by the build environment
 #endif
-
-#define LOBBS_HEADER "LoBBS v" LOBBS_VERSION_SHORT "\nCommands:\n"

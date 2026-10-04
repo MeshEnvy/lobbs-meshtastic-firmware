@@ -18,7 +18,6 @@ class MailDal
     static uint64_t mailToUuid(const LoScalar &m);
 
     bool sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *message);
-    std::vector<LoScalar> getMailForUser(uint64_t userUuid, uint32_t offset, uint32_t limit);
     std::vector<LoScalar> getAllMailForUser(uint64_t userUuid);
     bool markMailAsRead(uint64_t mailUuid);
     bool markMailAsUnread(uint64_t mailUuid);

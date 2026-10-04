@@ -4,19 +4,18 @@
 #if LOBBS_SEED
 
 #include "../../LoBBSModule.h"
-#include "../Auth/AuthDal.h"
+#include "../AppUtil.h"
 #include "NewsDal.h"
 #include "NewsSeed.h"
 #include <cstdio>
 
 void lobbsSeedNews(LoBBSModule &mod)
 {
-    AuthDal &auth = mod.auth().dal();
     NewsDal &news = mod.news().dal();
     for (int i = 1; i <= 10; i++) {
         char authorName[16];
         snprintf(authorName, sizeof(authorName), "demo%02d", ((i - 1) % 12) + 1);
-        uint64_t author = auth.getUserUuidByUsername(authorName);
+        uint64_t author = lobbsAppUuidForUsername(&mod, authorName);
         if (!author)
             continue;
         char body[80];

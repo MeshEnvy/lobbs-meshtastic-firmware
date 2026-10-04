@@ -91,21 +91,10 @@ bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *m
     return true;
 }
 
-std::vector<LoScalar> MailDal::getMailForUser(uint64_t userUuid, uint32_t offset, uint32_t limit)
-{
-    auto mail_filter = [userUuid](const LoScalar &rec) -> bool { return MailDal::mailToUuid(rec) == userUuid; };
-
-    auto allMail = lodb_.select("mail", mail_filter, compareMailByTimestamp);
-
-    std::vector<LoScalar> result;
-    for (size_t i = offset; i < allMail.size() && i < offset + limit; i++)
-        result.push_back(allMail[i]);
-    return result;
-}
-
 std::vector<LoScalar> MailDal::getAllMailForUser(uint64_t userUuid)
 {
-    return getMailForUser(userUuid, 0, LOBBS_MAX_LIST_ROWS);
+    auto mail_filter = [userUuid](const LoScalar &rec) -> bool { return MailDal::mailToUuid(rec) == userUuid; };
+    return lodb_.select("mail", mail_filter, compareMailByTimestamp, LOBBS_MAX_LIST_ROWS);
 }
 
 bool MailDal::markMailAsRead(uint64_t mailUuidVal)
