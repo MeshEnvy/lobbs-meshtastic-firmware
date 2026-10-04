@@ -32,11 +32,15 @@ static void yarnSubLimit(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireSysop(ctx))
         return;
-    if (!lobbsCommandNeedArgc(ctx, 5, "Usage: /yarn limit SEC WORDS CHARS"))
+    lobbsArgShift(ctx);
+    uint32_t period = 0;
+    uint32_t words = 0;
+    uint32_t chars = 0;
+    if (!lobbsArgShiftUint(ctx, period) || !lobbsArgShiftUint(ctx, words) || !lobbsArgShiftUint(ctx, chars) ||
+        lobbsArgHasMore(ctx)) {
+        lobbsCommandReply(ctx, "Usage: /yarn limit SEC WORDS CHARS");
         return;
-    uint32_t period = (uint32_t)atoi(ctx.argv[2]);
-    uint32_t words = (uint32_t)atoi(ctx.argv[3]);
-    uint32_t chars = (uint32_t)atoi(ctx.argv[4]);
+    }
     char err[48];
     if (!ctx.mod->yarn().dal().setConfig(period, words, chars, err, sizeof(err))) {
         lobbsCommandReply(ctx, err[0] ? err : "Failed.");
@@ -49,42 +53,65 @@ static void yarnSubLimit(LoBBSCommandCtx &ctx)
 
 static void handleYarn(LoBBSCommandCtx &ctx)
 {
-    if (lobbsCommandTrySubHelp(ctx, "Yarn Help", yarnHelp, sizeof(yarnHelp) / sizeof(yarnHelp[0])))
-        return;
-
-    if (ctx.argc >= 2 && strcasecmp(ctx.argv[1], "limit") == 0) {
-        yarnSubLimit(ctx);
+    const char *peek = lobbsArgPeek(ctx);
+    if (!peek) {
+        replyYarnView(ctx, true);
         return;
     }
 
-    if (ctx.argc < 2) {
-        replyYarnView(ctx, true);
+    if (strcasecmp(peek, "limit") == 0) {
+        yarnSubLimit(ctx);
         return;
     }
 
     if (!lobbsCommandRequireLogin(ctx))
         return;
 
+    const char *toks[32];
+    int n = lobbsArgShiftMany(ctx, toks, 32);
+    if (n <= 0) {
+        replyYarnView(ctx, true);
+        return;
+    }
+
     char err[48];
-    if (!ctx.mod->yarn().dal().appendWords(lobbsCtxUserUuid(ctx), ctx.session.isSysop, (const char *const *)&ctx.argv[1],
-                                           ctx.argc - 1, err, sizeof(err))) {
+    if (!ctx.mod->yarn().dal().appendWords(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n, err, sizeof(err))) {
         lobbsCommandReply(ctx, err[0] ? err : "Failed.");
         return;
     }
     replyYarnView(ctx, true);
 }
 
-static void filterYarnCommands(void *value, LoBBSCommandCtx *ctx)
+static void slashYarn(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
 {
-    (void)ctx;
-    lobbsFilterCommandsAdd(*(LoBBSFilterCommands *)value, "yarn", handleYarn);
+    if (!ctx || !verb || strcasecmp(verb, "yarn") != 0)
+        return;
+    LoBBSCommandCtx &c = *ctx;
+    if (rest)
+        c.rest = (char *)rest;
+    handleYarn(c);
 }
 
-static void filterYarnStatusLines(void *value, LoBBSCommandCtx *ctx)
+static void filterYarnRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
 {
+    (void)ctx;
+    if (query)
+        return;
+    lobbsRootCommandPush(lines, "yarn");
+}
+
+static void filterYarnCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+{
+    (void)ctx;
+    lobbsCommandHelpPush(lines, "yarn", yarnHelp, sizeof(yarnHelp) / sizeof(yarnHelp[0]), query);
+}
+
+static void filterYarnStatusLines(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+{
+    (void)query;
     if (!ctx || !ctx->mod)
         return;
-    char line[LOBBS_FILTER_LINE_BYTES];
+    char line[64];
     if (lobbsCtxLoggedIn(*ctx)) {
         uint32_t n = ctx->mod->yarn().dal().newWordsForUser(lobbsCtxUserUuid(*ctx));
         snprintf(line, sizeof(line), "Yarn: %u", (unsigned)n);
@@ -92,31 +119,15 @@ static void filterYarnStatusLines(void *value, LoBBSCommandCtx *ctx)
         uint32_t n = ctx->mod->yarn().dal().totalWordsAppended();
         snprintf(line, sizeof(line), "Yarn: %u (all time)", (unsigned)n);
     }
-    lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
-}
-
-static void filterYarnHelpTopics(void *value, LoBBSCommandCtx *ctx)
-{
-    (void)ctx;
-    lobbsFilterHelpTopicAdd(*(LoBBSFilterHelpTopics *)value, "yarn", "Yarn Help", yarnHelp,
-                            sizeof(yarnHelp) / sizeof(yarnHelp[0]));
-}
-
-static void filterYarnHelpIndex(void *value, LoBBSCommandCtx *ctx)
-{
-    (void)ctx;
-    lobbsFilterLinesPush(*(LoBBSFilterLines *)value, "yarn");
+    lines.push_back(line);
 }
 
 void lobbsYarnRegisterCommands()
 {
-    LoBBSAppHooks hooks{};
-    hooks.commands = filterYarnCommands;
-    hooks.status_lines = filterYarnStatusLines;
-    hooks.help_topics = filterYarnHelpTopics;
-    hooks.help_index = filterYarnHelpIndex;
-    hooks.priority = LOBBS_FILTER_PRIORITY_FEATURE;
-    lobbsAppRegisterHooks(hooks);
+    lobbsAddAction("slash_cmd", slashYarn, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("root_commands", filterYarnRootCommands, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("command_help", filterYarnCommandHelp, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("status_lines", filterYarnStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
 }
 
 #endif

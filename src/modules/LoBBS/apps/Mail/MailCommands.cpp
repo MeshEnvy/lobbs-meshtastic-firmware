@@ -4,10 +4,10 @@
 #include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSModule.h"
+#include "../../LoBBSConfig.h"
 #include "../../LoBBSReply.h"
 #include "../AppUtil.h"
 #include "MailDal.h"
-#include <cctype>
 #include <cstdio>
 #include <vector>
 #include <cstdlib>
@@ -22,14 +22,14 @@ static void formatMailListLine(void *ctx, uint32_t itemIndex, char *line, size_t
 {
     auto *p = (MailListPagerCtx *)ctx;
     const LoScalar &mail = (*p->records)[itemIndex];
-    char name[32];
-    char when[32];
-    char trunc[50];
-    char msg[201];
+    char name[LOBBS_USERNAME_BUFFER_SIZE];
+    char when[LOBBS_TIME_AGO_BUFFER_SIZE];
+    char trunc[LOBBS_LIST_LINE_TRUNC_BUFFER_SIZE];
+    char msg[LOBBS_MESSAGE_BODY_BUFFER_SIZE];
     lobbsAppUsernameForUuid(p->mod, MailDal::mailFromUuid(mail), name, sizeof(name));
     lobbsAppTimeAgo(MailDal::mailTimestamp(mail), when, sizeof(when));
     MailDal::mailMessage(mail, msg, sizeof(msg));
-    lobbsAppTruncMsg(msg, trunc, sizeof(trunc), 25);
+    lobbsAppTruncMsg(msg, trunc, sizeof(trunc), LOBBS_LIST_LINE_TRUNC_MAX_CHARS);
     snprintf(line, lineCap, "[%u]%s @%s: %s (%s)", (unsigned)(itemIndex + 1), MailDal::mailRead(mail) ? "" : "*", name,
              trunc, when);
 }
@@ -55,46 +55,68 @@ static void formatMailList(LoBBSCommandCtx &ctx, uint64_t inboxUuid, uint32_t pa
 
 static void mailSubList(LoBBSCommandCtx &ctx)
 {
+    const char *sub = lobbsArgPeek(ctx);
+    if (sub && strcasecmp(sub, "list") == 0)
+        lobbsArgShift(ctx);
+    lobbsArgTakePage(ctx);
+
     uint64_t inboxUuid = lobbsCtxUserUuid(ctx);
-    if (ctx.argc >= 3) {
+    const char *maybeUser = lobbsArgPeek(ctx);
+    if (maybeUser && !lobbsTokenIsPage(maybeUser)) {
         if (!lobbsCommandRequireSysop(ctx))
             return;
-        if (!lobbsAppResolveUsername(ctx, ctx.argv[2], inboxUuid))
+        const char *user = lobbsArgShift(ctx);
+        if (!lobbsAppResolveUsername(ctx, user, inboxUuid))
             return;
+        lobbsArgTakePage(ctx);
     }
+
     char buf[LOBBS_REPLY_BYTES + 1];
     const char *err = nullptr;
     formatMailList(ctx, inboxUuid, ctx.page, buf, sizeof(buf), &err);
     lobbsCommandReply(ctx, err ? err : buf);
 }
 
-static void mailSubRead(LoBBSCommandCtx &ctx)
+static void mailSubRead(LoBBSCommandCtx &ctx, bool numericShorthand)
 {
     MailDal &mail = ctx.mod->mail().dal();
-    bool sysopRead = ctx.session.isSysop && ctx.argc >= 4;
+    if (!numericShorthand) {
+        const char *sub = lobbsArgShift(ctx);
+        (void)sub;
+    }
+
     uint32_t idx = 0;
     uint64_t inboxUuid = lobbsCtxUserUuid(ctx);
     bool markRead = true;
+    bool sysopRead = ctx.session.isSysop && lobbsArgPeek(ctx) && !lobbsArgPeekIsUint(ctx);
+
     if (sysopRead) {
-        if (!lobbsAppResolveUsername(ctx, ctx.argv[2], inboxUuid))
+        const char *user = lobbsArgShift(ctx);
+        if (!user || !lobbsAppResolveUsername(ctx, user, inboxUuid))
             return;
-        idx = (uint32_t)atoi(ctx.argv[3]);
+        const char *beforeNum = lobbsArgPeek(ctx);
+        if (!lobbsArgShiftUint(ctx, idx)) {
+            lobbsCommandReply(ctx, beforeNum ? "Invalid message number." : "Usage: /mail read N");
+            return;
+        }
         markRead = false;
-    } else if (ctx.argc >= 3) {
-        idx = (uint32_t)atoi(ctx.argv[2]);
     } else {
-        lobbsCommandReply(ctx, "Usage: /mail read N");
-        return;
+        const char *beforeNum = lobbsArgPeek(ctx);
+        if (!lobbsArgShiftUint(ctx, idx)) {
+            lobbsCommandReply(ctx, beforeNum ? "Invalid message number." : "Usage: /mail read N");
+            return;
+        }
     }
+
     auto mailMessages = mail.getAllMailForUser(inboxUuid);
     if (idx == 0 || idx > mailMessages.size()) {
         lobbsCommandReply(ctx, "Invalid message number");
         return;
     }
     const LoScalar &m = mailMessages[idx - 1];
-    char name[32];
-    char when[32];
-    char body[120];
+    char name[LOBBS_USERNAME_BUFFER_SIZE];
+    char when[LOBBS_TIME_AGO_BUFFER_SIZE];
+    char body[LOBBS_MESSAGE_READ_BODY_BUFFER_SIZE];
     lobbsAppUsernameForUuid(ctx.mod, MailDal::mailFromUuid(m), name, sizeof(name));
     MailDal::mailMessage(m, body, sizeof(body));
     lobbsAppTimeAgo(MailDal::mailTimestamp(m), when, sizeof(when));
@@ -107,10 +129,15 @@ static void mailSubRead(LoBBSCommandCtx &ctx)
 
 static void mailSubUnread(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /mail unread N"))
+    const char *sub = lobbsArgShift(ctx);
+    (void)sub;
+    const char *beforeNum = lobbsArgPeek(ctx);
+    uint32_t idx = 0;
+    if (!lobbsArgShiftUint(ctx, idx)) {
+        lobbsCommandReply(ctx, beforeNum ? "Invalid message number." : "Usage: /mail unread N");
         return;
+    }
     MailDal &mail = ctx.mod->mail().dal();
-    uint32_t idx = (uint32_t)atoi(ctx.argv[2]);
     auto mailMessages = mail.getAllMailForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > mailMessages.size()) {
         lobbsCommandReply(ctx, "Invalid message number");
@@ -122,33 +149,37 @@ static void mailSubUnread(LoBBSCommandCtx &ctx)
 
 static void mailSubDelete(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /mail delete N"))
+    const char *sub = lobbsArgShift(ctx);
+    (void)sub;
+    const char *beforeNum = lobbsArgPeek(ctx);
+    uint32_t idx = 0;
+    if (!lobbsArgShiftUint(ctx, idx)) {
+        lobbsCommandReply(ctx, beforeNum ? "Invalid message number." : "Usage: /mail delete N");
         return;
-    uint32_t idx = (uint32_t)atoi(ctx.argv[2]);
+    }
     lobbsCommandReply(ctx,
                       ctx.mod->mail().dal().deleteMailInboxIndex(lobbsCtxUserUuid(ctx), idx) ? "Deleted." : "Failed.");
 }
 
 static void mailSubSend(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandNeedArgc(ctx, 4, "Usage: /mail send user message..."))
+    const char *sub = lobbsArgShift(ctx);
+    if (!sub || strcasecmp(sub, "send") != 0) {
+        lobbsCommandReply(ctx, "Usage: /mail send user message...");
         return;
+    }
+    const char *user = lobbsArgShift(ctx);
+    const char *body = lobbsArgRest(ctx);
+    if (!user || !body[0]) {
+        lobbsCommandReply(ctx, "Usage: /mail send user message...");
+        return;
+    }
     uint64_t toUuid = 0;
-    if (!lobbsAppResolveUsername(ctx, ctx.argv[2], toUuid))
+    if (!lobbsAppResolveUsername(ctx, user, toUuid))
         return;
-    char msgBody[201];
-    lobbsCommandJoinArgs(ctx, 3, ctx.argc, msgBody, sizeof(msgBody));
-    lobbsCommandReply(ctx, ctx.mod->mail().dal().sendMail(lobbsCtxUserUuid(ctx), toUuid, msgBody) ? "Mail sent."
-                                                                                                         : "Failed to send mail.");
+    lobbsCommandReply(ctx, ctx.mod->mail().dal().sendMail(lobbsCtxUserUuid(ctx), toUuid, body) ? "Mail sent."
+                                                                                                   : "Failed to send mail.");
 }
-
-static const LoBBSSubcommand mailSubs[] = {
-    {"list", mailSubList},
-    {"read", mailSubRead},
-    {"unread", mailSubUnread},
-    {"delete", mailSubDelete},
-    {"send", mailSubSend},
-};
 
 static const LoBBSSubHelpEntry mailHelp[] = {
     {"list", "list [pN] — inbox; sysop: list user [pN]"},
@@ -158,48 +189,69 @@ static const LoBBSSubHelpEntry mailHelp[] = {
     {"send", "send user message... — send mail"},
 };
 
-static bool mailRewriteNumericAsRead(LoBBSCommandCtx &ctx)
-{
-    if (ctx.argc < 2 || !ctx.argv[1])
-        return false;
-    const char *tok = ctx.argv[1];
-    if (!isdigit((unsigned char)tok[0]))
-        return false;
-    for (const char *s = tok; *s; s++) {
-        if (!isdigit((unsigned char)*s))
-            return false;
-    }
-    if (ctx.argc + 1 >= LOBBS_CMD_MAX_ARGC)
-        return false;
-    for (int i = ctx.argc; i >= 2; i--)
-        ctx.argv[i] = ctx.argv[i - 1];
-    ctx.argv[1] = (char *)"read";
-    ctx.argc++;
-    return true;
-}
-
 static void handleMail(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireLogin(ctx))
         return;
-    if (lobbsCommandTrySubHelp(ctx, "Mail Help", mailHelp, sizeof(mailHelp) / sizeof(mailHelp[0])))
+
+    if (lobbsArgPeekIsUint(ctx)) {
+        mailSubRead(ctx, true);
         return;
-    (void)mailRewriteNumericAsRead(ctx);
-    lobbsCommandDispatchSub(ctx, mailSubs, sizeof(mailSubs) / sizeof(mailSubs[0]), "list",
-                            "Unknown command. Try /help mail");
+    }
+
+    const char *sub = lobbsArgPeek(ctx);
+    if (!sub || strcasecmp(sub, "list") == 0) {
+        mailSubList(ctx);
+        return;
+    }
+    if (strcasecmp(sub, "read") == 0) {
+        mailSubRead(ctx, false);
+        return;
+    }
+    if (strcasecmp(sub, "unread") == 0) {
+        mailSubUnread(ctx);
+        return;
+    }
+    if (strcasecmp(sub, "delete") == 0) {
+        mailSubDelete(ctx);
+        return;
+    }
+    if (strcasecmp(sub, "send") == 0) {
+        mailSubSend(ctx);
+        return;
+    }
+    lobbsCommandReply(ctx, "Unknown command. Try /help mail");
 }
 
-static void filterMailCommands(void *value, LoBBSCommandCtx *ctx)
+static void slashMail(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+{
+    if (!ctx || !verb || strcasecmp(verb, "mail") != 0)
+        return;
+    LoBBSCommandCtx &c = *ctx;
+    if (rest)
+        c.rest = (char *)rest;
+    handleMail(c);
+}
+
+static void filterMailRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+{
+    if (query || !ctx || !lobbsCtxLoggedIn(*ctx))
+        return;
+    lobbsRootCommandPush(lines, "mail");
+}
+
+static void filterMailCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
 {
     (void)ctx;
-    lobbsFilterCommandsAdd(*(LoBBSFilterCommands *)value, "mail", handleMail);
+    lobbsCommandHelpPush(lines, "mail", mailHelp, sizeof(mailHelp) / sizeof(mailHelp[0]), query);
 }
 
-static void filterMailStatusLines(void *value, LoBBSCommandCtx *ctx)
+static void filterMailStatusLines(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
 {
+    (void)query;
     if (!ctx || !ctx->mod)
         return;
-    char line[LOBBS_FILTER_LINE_BYTES];
+    char line[64];
     if (lobbsCtxLoggedIn(*ctx)) {
         uint32_t n = ctx->mod->mail().dal().countUnreadMail(lobbsCtxUserUuid(*ctx));
         snprintf(line, sizeof(line), "Mail: %u", (unsigned)n);
@@ -207,31 +259,15 @@ static void filterMailStatusLines(void *value, LoBBSCommandCtx *ctx)
         uint32_t n = ctx->mod->mail().dal().countAllMail();
         snprintf(line, sizeof(line), "Mail: %u (all time)", (unsigned)n);
     }
-    lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
-}
-
-static void filterMailHelpTopics(void *value, LoBBSCommandCtx *ctx)
-{
-    (void)ctx;
-    lobbsFilterHelpTopicAdd(*(LoBBSFilterHelpTopics *)value, "mail", "Mail Help", mailHelp,
-                            sizeof(mailHelp) / sizeof(mailHelp[0]));
-}
-
-static void filterMailHelpIndex(void *value, LoBBSCommandCtx *ctx)
-{
-    if (ctx && lobbsCtxLoggedIn(*ctx))
-        lobbsFilterLinesPush(*(LoBBSFilterLines *)value, "mail");
+    lines.push_back(line);
 }
 
 void lobbsMailRegisterCommands()
 {
-    LoBBSAppHooks hooks{};
-    hooks.commands = filterMailCommands;
-    hooks.status_lines = filterMailStatusLines;
-    hooks.help_topics = filterMailHelpTopics;
-    hooks.help_index = filterMailHelpIndex;
-    hooks.priority = LOBBS_FILTER_PRIORITY_FEATURE;
-    lobbsAppRegisterHooks(hooks);
+    lobbsAddAction("slash_cmd", slashMail, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("root_commands", filterMailRootCommands, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("command_help", filterMailCommandHelp, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("status_lines", filterMailStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
 }
 
 #endif

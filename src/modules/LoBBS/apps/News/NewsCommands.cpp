@@ -4,6 +4,7 @@
 #include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSModule.h"
+#include "../../LoBBSConfig.h"
 #include "../../LoBBSReply.h"
 #include "../AppUtil.h"
 #include "NewsDal.h"
@@ -23,14 +24,14 @@ static void formatNewsListLine(void *ctx, uint32_t itemIndex, char *line, size_t
     auto *p = (NewsListPagerCtx *)ctx;
     const LoBBSNewsEntry &entry = (*p->entries)[itemIndex];
     const LoScalar &news = entry.news;
-    char name[32];
-    char when[32];
-    char trunc[50];
-    char msg[201];
+    char name[LOBBS_USERNAME_BUFFER_SIZE];
+    char when[LOBBS_TIME_AGO_BUFFER_SIZE];
+    char trunc[LOBBS_LIST_LINE_TRUNC_BUFFER_SIZE];
+    char msg[LOBBS_MESSAGE_BODY_BUFFER_SIZE];
     lobbsAppUsernameForUuid(p->mod, NewsDal::newsAuthorUuid(news), name, sizeof(name));
     lobbsAppTimeAgo(NewsDal::newsTimestamp(news), when, sizeof(when));
     NewsDal::newsMessage(news, msg, sizeof(msg));
-    lobbsAppTruncMsg(msg, trunc, sizeof(trunc), 25);
+    lobbsAppTruncMsg(msg, trunc, sizeof(trunc), LOBBS_LIST_LINE_TRUNC_MAX_CHARS);
     snprintf(line, lineCap, "[%u]%s @%s: %s (%s)", (unsigned)(itemIndex + 1), entry.isRead ? "" : "*", name, trunc, when);
 }
 
@@ -55,27 +56,36 @@ static void formatNewsList(LoBBSCommandCtx &ctx, uint64_t readerUuid, uint32_t p
 
 static void newsSubList(LoBBSCommandCtx &ctx)
 {
+    const char *sub = lobbsArgPeek(ctx);
+    if (sub && strcasecmp(sub, "list") == 0)
+        lobbsArgShift(ctx);
+    lobbsArgTakePage(ctx);
     char buf[LOBBS_REPLY_BYTES + 1];
     const char *err = nullptr;
     formatNewsList(ctx, lobbsCtxUserUuid(ctx), ctx.page, buf, sizeof(buf), &err);
     lobbsCommandReply(ctx, err ? err : buf);
 }
 
-static void newsSubRead(LoBBSCommandCtx &ctx)
+static void newsSubRead(LoBBSCommandCtx &ctx, bool numericShorthand)
 {
-    if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /news read N"))
+    if (!numericShorthand)
+        lobbsArgShift(ctx);
+    const char *beforeNum = lobbsArgPeek(ctx);
+    uint32_t idx = 0;
+    if (!lobbsArgShiftUint(ctx, idx)) {
+        lobbsCommandReply(ctx, beforeNum ? "Invalid news number." : "Usage: /news read N");
         return;
+    }
     NewsDal &news = ctx.mod->news().dal();
-    uint32_t idx = (uint32_t)atoi(ctx.argv[2]);
     auto newsItems = news.getAllNewsForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > newsItems.size()) {
         lobbsCommandReply(ctx, "Invalid news number");
         return;
     }
     const LoScalar &item = newsItems[idx - 1].news;
-    char name[32];
-    char when[32];
-    char body[120];
+    char name[LOBBS_USERNAME_BUFFER_SIZE];
+    char when[LOBBS_TIME_AGO_BUFFER_SIZE];
+    char body[LOBBS_MESSAGE_READ_BODY_BUFFER_SIZE];
     lobbsAppUsernameForUuid(ctx.mod, NewsDal::newsAuthorUuid(item), name, sizeof(name));
     NewsDal::newsMessage(item, body, sizeof(body));
     lobbsAppTimeAgo(NewsDal::newsTimestamp(item), when, sizeof(when));
@@ -87,10 +97,14 @@ static void newsSubRead(LoBBSCommandCtx &ctx)
 
 static void newsSubUnread(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /news unread N"))
+    lobbsArgShift(ctx);
+    const char *beforeNum = lobbsArgPeek(ctx);
+    uint32_t idx = 0;
+    if (!lobbsArgShiftUint(ctx, idx)) {
+        lobbsCommandReply(ctx, beforeNum ? "Invalid news number." : "Usage: /news unread N");
         return;
+    }
     NewsDal &news = ctx.mod->news().dal();
-    uint32_t idx = (uint32_t)atoi(ctx.argv[2]);
     auto newsItems = news.getAllNewsForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > newsItems.size()) {
         lobbsCommandReply(ctx, "Invalid news number");
@@ -102,10 +116,14 @@ static void newsSubUnread(LoBBSCommandCtx &ctx)
 
 static void newsSubDelete(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /news delete N"))
+    lobbsArgShift(ctx);
+    const char *beforeNum = lobbsArgPeek(ctx);
+    uint32_t idx = 0;
+    if (!lobbsArgShiftUint(ctx, idx)) {
+        lobbsCommandReply(ctx, beforeNum ? "Invalid news number." : "Usage: /news delete N");
         return;
+    }
     NewsDal &news = ctx.mod->news().dal();
-    uint32_t idx = (uint32_t)atoi(ctx.argv[2]);
     auto newsItems = news.getAllNewsForUser(lobbsCtxUserUuid(ctx));
     if (idx == 0 || idx > newsItems.size()) {
         lobbsCommandReply(ctx, "Invalid news number");
@@ -121,25 +139,23 @@ static void newsSubDelete(LoBBSCommandCtx &ctx)
 
 static void newsSubPost(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandNeedArgc(ctx, 3, "Usage: /news post message..."))
+    const char *sub = lobbsArgShift(ctx);
+    if (!sub || strcasecmp(sub, "post") != 0) {
+        lobbsCommandReply(ctx, "Usage: /news post message...");
         return;
-    char msgBody[201];
-    lobbsCommandJoinArgs(ctx, 2, ctx.argc, msgBody, sizeof(msgBody));
+    }
+    const char *msgBody = lobbsArgRest(ctx);
+    if (!msgBody[0]) {
+        lobbsCommandReply(ctx, "Usage: /news post message...");
+        return;
+    }
     if (!isalpha((unsigned char)msgBody[0])) {
         lobbsCommandReply(ctx, "Start with a letter.");
         return;
     }
     lobbsCommandReply(ctx, ctx.mod->news().dal().postNews(lobbsCtxUserUuid(ctx), msgBody) ? "News posted."
-                                                                                                 : "Failed to post news.");
+                                                                                             : "Failed to post news.");
 }
-
-static const LoBBSSubcommand newsSubs[] = {
-    {"list", newsSubList},
-    {"read", newsSubRead},
-    {"unread", newsSubUnread},
-    {"delete", newsSubDelete},
-    {"post", newsSubPost},
-};
 
 static const LoBBSSubHelpEntry newsHelp[] = {
     {"list", "list [pN] — news index"},
@@ -149,48 +165,69 @@ static const LoBBSSubHelpEntry newsHelp[] = {
     {"post", "post message... — post news"},
 };
 
-static bool newsRewriteNumericAsRead(LoBBSCommandCtx &ctx)
-{
-    if (ctx.argc < 2 || !ctx.argv[1])
-        return false;
-    const char *tok = ctx.argv[1];
-    if (!isdigit((unsigned char)tok[0]))
-        return false;
-    for (const char *s = tok; *s; s++) {
-        if (!isdigit((unsigned char)*s))
-            return false;
-    }
-    if (ctx.argc + 1 >= LOBBS_CMD_MAX_ARGC)
-        return false;
-    for (int i = ctx.argc; i >= 2; i--)
-        ctx.argv[i] = ctx.argv[i - 1];
-    ctx.argv[1] = (char *)"read";
-    ctx.argc++;
-    return true;
-}
-
 static void handleNews(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireLogin(ctx))
         return;
-    if (lobbsCommandTrySubHelp(ctx, "News Help", newsHelp, sizeof(newsHelp) / sizeof(newsHelp[0])))
+
+    if (lobbsArgPeekIsUint(ctx)) {
+        newsSubRead(ctx, true);
         return;
-    (void)newsRewriteNumericAsRead(ctx);
-    lobbsCommandDispatchSub(ctx, newsSubs, sizeof(newsSubs) / sizeof(newsSubs[0]), "list",
-                            "Unknown command. Try /help news");
+    }
+
+    const char *sub = lobbsArgPeek(ctx);
+    if (!sub || strcasecmp(sub, "list") == 0) {
+        newsSubList(ctx);
+        return;
+    }
+    if (strcasecmp(sub, "read") == 0) {
+        newsSubRead(ctx, false);
+        return;
+    }
+    if (strcasecmp(sub, "unread") == 0) {
+        newsSubUnread(ctx);
+        return;
+    }
+    if (strcasecmp(sub, "delete") == 0) {
+        newsSubDelete(ctx);
+        return;
+    }
+    if (strcasecmp(sub, "post") == 0) {
+        newsSubPost(ctx);
+        return;
+    }
+    lobbsCommandReply(ctx, "Unknown command. Try /help news");
 }
 
-static void filterNewsCommands(void *value, LoBBSCommandCtx *ctx)
+static void slashNews(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+{
+    if (!ctx || !verb || strcasecmp(verb, "news") != 0)
+        return;
+    LoBBSCommandCtx &c = *ctx;
+    if (rest)
+        c.rest = (char *)rest;
+    handleNews(c);
+}
+
+static void filterNewsRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+{
+    if (query || !ctx || !lobbsCtxLoggedIn(*ctx))
+        return;
+    lobbsRootCommandPush(lines, "news");
+}
+
+static void filterNewsCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
 {
     (void)ctx;
-    lobbsFilterCommandsAdd(*(LoBBSFilterCommands *)value, "news", handleNews);
+    lobbsCommandHelpPush(lines, "news", newsHelp, sizeof(newsHelp) / sizeof(newsHelp[0]), query);
 }
 
-static void filterNewsStatusLines(void *value, LoBBSCommandCtx *ctx)
+static void filterNewsStatusLines(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
 {
+    (void)query;
     if (!ctx || !ctx->mod)
         return;
-    char line[LOBBS_FILTER_LINE_BYTES];
+    char line[64];
     if (lobbsCtxLoggedIn(*ctx)) {
         uint32_t n = ctx->mod->news().dal().countUnreadNews(lobbsCtxUserUuid(*ctx));
         snprintf(line, sizeof(line), "News: %u", (unsigned)n);
@@ -198,31 +235,15 @@ static void filterNewsStatusLines(void *value, LoBBSCommandCtx *ctx)
         uint32_t n = ctx->mod->news().dal().countAllNews();
         snprintf(line, sizeof(line), "News: %u (all time)", (unsigned)n);
     }
-    lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
-}
-
-static void filterNewsHelpTopics(void *value, LoBBSCommandCtx *ctx)
-{
-    (void)ctx;
-    lobbsFilterHelpTopicAdd(*(LoBBSFilterHelpTopics *)value, "news", "News Help", newsHelp,
-                            sizeof(newsHelp) / sizeof(newsHelp[0]));
-}
-
-static void filterNewsHelpIndex(void *value, LoBBSCommandCtx *ctx)
-{
-    if (ctx && lobbsCtxLoggedIn(*ctx))
-        lobbsFilterLinesPush(*(LoBBSFilterLines *)value, "news");
+    lines.push_back(line);
 }
 
 void lobbsNewsRegisterCommands()
 {
-    LoBBSAppHooks hooks{};
-    hooks.commands = filterNewsCommands;
-    hooks.status_lines = filterNewsStatusLines;
-    hooks.help_topics = filterNewsHelpTopics;
-    hooks.help_index = filterNewsHelpIndex;
-    hooks.priority = LOBBS_FILTER_PRIORITY_FEATURE;
-    lobbsAppRegisterHooks(hooks);
+    lobbsAddAction("slash_cmd", slashNews, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("root_commands", filterNewsRootCommands, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("command_help", filterNewsCommandHelp, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("status_lines", filterNewsStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
 }
 
 #endif

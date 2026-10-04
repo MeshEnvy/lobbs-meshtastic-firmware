@@ -1,6 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "MailDal.h"
+#include "../../LoBBSConfig.h"
 #include "MailRecords.h"
 #include "configuration.h"
 #include "gps/RTC.h"
@@ -68,16 +69,15 @@ static int compareMailByTimestamp(const LoScalar &a, const LoScalar &b)
 }
 
 static constexpr uint32_t LOBBS_MAX_LIST_ROWS = 256;
-static constexpr size_t LOBBS_MAIL_MSG_MAX = 200;
 
 bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *message)
 {
     lodb_uuid_t mailUuidVal = lodb_new_uuid((const char *)&toUserUuid, getTime());
 
     LoScalar mail;
-    char msgBuf[LOBBS_MAIL_MSG_MAX + 1];
-    strncpy(msgBuf, message, LOBBS_MAIL_MSG_MAX);
-    msgBuf[LOBBS_MAIL_MSG_MAX] = '\0';
+    char msgBuf[LOBBS_MESSAGE_BODY_BUFFER_SIZE];
+    strncpy(msgBuf, message, LOBBS_MESSAGE_BODY_MAX);
+    msgBuf[LOBBS_MESSAGE_BODY_MAX] = '\0';
     mail.setString(LODB_F_DESCRIPTION, msgBuf);
     mail.setBool(MailField::FIELD_READ, false);
     mail.setUint64(MailField::FIELD_FROM, fromUserUuid);

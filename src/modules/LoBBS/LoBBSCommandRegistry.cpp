@@ -1,6 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "LoBBSCommandRegistry.h"
+#include "LoBBSHooks.h"
 #include "LoBBSModule.h"
 #include "LoBBSReply.h"
 #include <cctype>
@@ -8,15 +9,25 @@
 #include <cstdlib>
 #include <cstring>
 
-static constexpr int LOBBS_MAX_COMMANDS = 16;
+static void lobbsSkipWs(char *&p)
+{
+    while (p && (*p == ' ' || *p == '\t'))
+        p++;
+}
 
-struct LobbsCommandEntry {
-    const char *name = nullptr;
-    LoBBSCommandHandler handler = nullptr;
-};
-
-static LobbsCommandEntry lobbsCommandTable[LOBBS_MAX_COMMANDS];
-static int lobbsCommandCount = 0;
+static bool lobbsParsePageToken(const char *tok, uint32_t &pageOut)
+{
+    if (!tok || (tok[0] != 'p' && tok[0] != 'P') || !tok[1])
+        return false;
+    for (size_t i = 1; tok[i]; i++) {
+        if (!isdigit((unsigned char)tok[i]))
+            return false;
+    }
+    pageOut = (uint32_t)atoi(tok + 1);
+    if (pageOut == 0)
+        pageOut = 1;
+    return true;
+}
 
 void lobbsCommandReply(LoBBSCommandCtx &ctx, const char *body)
 {
@@ -33,17 +44,190 @@ void lobbsCommandReply(LoBBSCommandCtx &ctx, const char *body)
     ctx.mod->sendReply(*ctx.mp, buf);
 }
 
-static bool parsePageToken(const char *tok, uint32_t &pageOut)
+const char *lobbsArgShift(LoBBSCommandCtx &ctx)
 {
-    if (!tok || (tok[0] != 'p' && tok[0] != 'P') || !tok[1])
-        return false;
-    for (size_t i = 1; tok[i]; i++) {
-        if (!isdigit((unsigned char)tok[i]))
-            return false;
+    if (!ctx.rest)
+        return nullptr;
+    lobbsSkipWs(ctx.rest);
+    if (!ctx.rest[0])
+        return nullptr;
+    char *start = ctx.rest;
+    while (*ctx.rest && *ctx.rest != ' ' && *ctx.rest != '\t')
+        ctx.rest++;
+    if (*ctx.rest) {
+        *ctx.rest++ = '\0';
+        lobbsSkipWs(ctx.rest);
     }
-    pageOut = (uint32_t)atoi(tok + 1);
-    if (pageOut == 0)
-        pageOut = 1;
+    return start;
+}
+
+const char *lobbsArgPeek(const LoBBSCommandCtx &ctx)
+{
+    if (!ctx.rest)
+        return nullptr;
+    char *p = ctx.rest;
+    lobbsSkipWs(p);
+    return p[0] ? p : nullptr;
+}
+
+bool lobbsArgTakePage(LoBBSCommandCtx &ctx)
+{
+    if (!ctx.rest)
+        return false;
+    lobbsSkipWs(ctx.rest);
+    if (!ctx.rest[0])
+        return false;
+    char *start = ctx.rest;
+    char *end = start;
+    while (*end && *end != ' ' && *end != '\t')
+        end++;
+    char saved = *end;
+    *end = '\0';
+    uint32_t page = 1;
+    bool ok = lobbsParsePageToken(start, page);
+    *end = saved;
+    if (!ok)
+        return false;
+    ctx.page = page;
+    ctx.rest = end;
+    if (*ctx.rest)
+        ctx.rest++;
+    lobbsSkipWs(ctx.rest);
+    return true;
+}
+
+const char *lobbsArgRest(LoBBSCommandCtx &ctx)
+{
+    if (!ctx.rest)
+        return "";
+    lobbsSkipWs(ctx.rest);
+    return ctx.rest;
+}
+
+bool lobbsArgHasMore(const LoBBSCommandCtx &ctx)
+{
+    return lobbsArgPeek(ctx) != nullptr;
+}
+
+bool lobbsTokenIsPage(const char *tok)
+{
+    uint32_t page = 1;
+    return lobbsParsePageToken(tok, page);
+}
+
+bool lobbsTokIsUint(const char *tok, uint32_t &out)
+{
+    if (!tok || !tok[0])
+        return false;
+    char *end = nullptr;
+    unsigned long v = strtoul(tok, &end, 10);
+    if (end == tok || (end && *end != '\0'))
+        return false;
+    if (v > UINT32_MAX)
+        return false;
+    out = (uint32_t)v;
+    return true;
+}
+
+bool lobbsArgPeekIsUint(const LoBBSCommandCtx &ctx)
+{
+    uint32_t dummy = 0;
+    return lobbsArgPeekUint(ctx, dummy);
+}
+
+bool lobbsArgPeekUint(const LoBBSCommandCtx &ctx, uint32_t &out)
+{
+    return lobbsTokIsUint(lobbsArgPeek(ctx), out);
+}
+
+bool lobbsArgShiftUint(LoBBSCommandCtx &ctx, uint32_t &out)
+{
+    const char *tok = lobbsArgShift(ctx);
+    return lobbsTokIsUint(tok, out);
+}
+
+int lobbsArgShiftMany(LoBBSCommandCtx &ctx, const char *out[], int maxOut)
+{
+    if (!out || maxOut <= 0)
+        return 0;
+    int n = 0;
+    while (n < maxOut) {
+        const char *t = lobbsArgShift(ctx);
+        if (!t)
+            break;
+        out[n++] = t;
+    }
+    return n;
+}
+
+bool lobbsHelpQueryMatches(const char *query, const char *prefix)
+{
+    if (!query || !prefix || !prefix[0])
+        return false;
+    if (strcasecmp(query, prefix) == 0)
+        return true;
+    size_t plen = strlen(prefix);
+    if (strncasecmp(query, prefix, plen) != 0)
+        return false;
+    return query[plen] == ' ';
+}
+
+void lobbsRootCommandPush(std::vector<std::string> &lines, const char *name)
+{
+    if (name && name[0])
+        lines.push_back(name);
+}
+
+void lobbsCommandHelpPush(std::vector<std::string> &lines, const char *topic, const LoBBSSubHelpEntry *entries,
+                          size_t count, const char *query)
+{
+    if (!query || !topic || !entries)
+        return;
+    if (!lobbsHelpQueryMatches(query, topic) && strcasecmp(query, topic) != 0)
+        return;
+
+    if (strcasecmp(query, topic) == 0) {
+        for (size_t i = 0; i < count; i++) {
+            if (entries[i].line)
+                lines.push_back(entries[i].line);
+        }
+        return;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (!entries[i].verb || !entries[i].line)
+            continue;
+        char path[80];
+        snprintf(path, sizeof(path), "%s %s", topic, entries[i].verb);
+        if (strcasecmp(query, path) == 0) {
+            lines.push_back(entries[i].line);
+            return;
+        }
+    }
+}
+
+bool lobbsHelpStripTrailingPage(char *query, size_t queryCap, uint32_t &pageOut)
+{
+    (void)queryCap;
+    if (!query || !query[0])
+        return false;
+    char *lastSpace = strrchr(query, ' ');
+    if (!lastSpace) {
+        uint32_t p = 1;
+        if (!lobbsParsePageToken(query, p))
+            return false;
+        pageOut = p;
+        query[0] = '\0';
+        return true;
+    }
+    char *tok = lastSpace + 1;
+    uint32_t p = 1;
+    if (!lobbsParsePageToken(tok, p))
+        return false;
+    *lastSpace = '\0';
+    while (lastSpace > query && (lastSpace[-1] == ' ' || lastSpace[-1] == '\t'))
+        *--lastSpace = '\0';
+    pageOut = p;
     return true;
 }
 
@@ -185,32 +369,26 @@ bool lobbsPagerFormatItems(char *out, size_t outCap, uint32_t page1, uint32_t it
     return lobbsPagerRenderPage(out, outCap, page1, itemCount, fn, fnCtx, errEmpty, errBadPage);
 }
 
-uint32_t lobbsCommandTakePageArg(LoBBSCommandCtx &ctx, uint32_t defaultPage)
+void lobbsCommandReplyPagedLines(LoBBSCommandCtx &ctx, const std::vector<std::string> &lines)
 {
-    if (ctx.argc == 0)
-        return defaultPage;
-    uint32_t page = defaultPage;
-    if (parsePageToken(ctx.argv[ctx.argc - 1], page)) {
-        ctx.argc--;
-        return page;
+    if (lines.empty()) {
+        lobbsCommandReply(ctx, "Empty.");
+        return;
     }
-    return defaultPage;
-}
-
-void lobbsCommandJoinArgs(const LoBBSCommandCtx &ctx, int from, int to, char *out, size_t outCap)
-{
-    out[0] = '\0';
-    size_t n = 0;
-    for (int i = from; i < to; i++) {
-        if (i > from) {
-            if (n + 1 < outCap)
-                out[n++] = ' ';
-        }
-        const char *s = ctx.argv[i];
-        while (*s && n + 1 < outCap)
-            out[n++] = *s++;
+    const char *ptrs[256];
+    uint32_t n = (uint32_t)lines.size();
+    if (n > 256)
+        n = 256;
+    for (uint32_t i = 0; i < n; i++)
+        ptrs[i] = lines[i].c_str();
+    char buf[LOBBS_REPLY_BYTES + 1];
+    const char *errEmpty = nullptr;
+    const char *errBadPage = nullptr;
+    if (!lobbsPagerFormatLines(buf, sizeof(buf), ctx.page, ptrs, n, &errEmpty, &errBadPage)) {
+        lobbsCommandReply(ctx, errBadPage ? errBadPage : (errEmpty ? errEmpty : "Empty."));
+        return;
     }
-    out[n] = '\0';
+    lobbsCommandReply(ctx, buf);
 }
 
 bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx)
@@ -251,127 +429,9 @@ bool lobbsCommandRequireSysop(LoBBSCommandCtx &ctx)
     return false;
 }
 
-bool lobbsCommandNeedArgc(LoBBSCommandCtx &ctx, int min, const char *usage)
-{
-    if (ctx.argc >= min)
-        return true;
-    lobbsCommandReply(ctx, usage ? usage : "Usage error.");
-    return false;
-}
-
-static bool lobbsIsHelpToken(const char *tok)
-{
-    return tok && tok[0] == '?' && tok[1] == '\0';
-}
-
-void lobbsCommandReplySubHelpTopic(LoBBSCommandCtx &ctx, const char *title, const LoBBSSubHelpEntry *entries, size_t count,
-                                   const char *verbOrNull)
-{
-    if (!title)
-        title = "Help";
-    char buf[LOBBS_REPLY_BYTES + 1];
-    if (!verbOrNull) {
-        size_t n = 0;
-        int w = snprintf(buf, sizeof(buf), "%s\n", title);
-        if (w > 0)
-            n = (size_t)w;
-        bool firstVerb = true;
-        for (size_t i = 0; i < count; i++) {
-            if (!entries || !entries[i].verb)
-                continue;
-            if (!firstVerb && n + 2 < sizeof(buf)) {
-                buf[n++] = ',';
-                buf[n++] = ' ';
-            }
-            firstVerb = false;
-            for (const char *s = entries[i].verb; *s && n + 1 < sizeof(buf); s++)
-                buf[n++] = *s;
-        }
-        buf[n] = '\0';
-        lobbsCommandReply(ctx, buf);
-        return;
-    }
-    const char *line = nullptr;
-    for (size_t i = 0; i < count; i++) {
-        if (entries && entries[i].verb && strcasecmp(entries[i].verb, verbOrNull) == 0) {
-            line = entries[i].line;
-            break;
-        }
-    }
-    if (line)
-        snprintf(buf, sizeof(buf), "%s\n%s", title, line);
-    else
-        snprintf(buf, sizeof(buf), "%s\nUnknown subcommand.", title);
-    lobbsCommandReply(ctx, buf);
-}
-
-bool lobbsCommandTrySubHelp(LoBBSCommandCtx &ctx, const char *title, const LoBBSSubHelpEntry *entries, size_t count)
-{
-    if (!title || !entries || count == 0)
-        return false;
-
-    if (ctx.argc >= 2 && lobbsIsHelpToken(ctx.argv[1])) {
-        lobbsCommandReplySubHelpTopic(ctx, title, entries, count, nullptr);
-        return true;
-    }
-
-    if (ctx.argc >= 3 && lobbsIsHelpToken(ctx.argv[2])) {
-        lobbsCommandReplySubHelpTopic(ctx, title, entries, count, ctx.argv[1]);
-        return true;
-    }
-
-    return false;
-}
-
-void lobbsCommandDispatchSub(LoBBSCommandCtx &ctx, const LoBBSSubcommand *subs, size_t count, const char *defaultName,
-                             const char *unknownReply)
-{
-    ctx.page = lobbsCommandTakePageArg(ctx);
-    const char *verb = defaultName ? defaultName : "list";
-    if (ctx.argc >= 2)
-        verb = ctx.argv[1];
-    for (size_t i = 0; i < count; i++) {
-        if (subs[i].name && subs[i].handler && strcasecmp(verb, subs[i].name) == 0) {
-            subs[i].handler(ctx);
-            return;
-        }
-    }
-    lobbsCommandReply(ctx, unknownReply ? unknownReply : "Unknown command.");
-}
-
-void lobbsCommandsInstall(const LoBBSFilterCommands &cmds)
-{
-    lobbsCommandCount = 0;
-    for (int i = 0; i < cmds.count && lobbsCommandCount < LOBBS_MAX_COMMANDS; i++) {
-        if (!cmds.slot[i].name || !cmds.slot[i].handler)
-            continue;
-        lobbsCommandTable[lobbsCommandCount].name = cmds.slot[i].name;
-        lobbsCommandTable[lobbsCommandCount].handler = cmds.slot[i].handler;
-        lobbsCommandCount++;
-    }
-}
-
-static bool lobbsTokenize(char *p, LoBBSCommandCtx &ctx)
-{
-    ctx.argc = 0;
-    while (*p && ctx.argc < LOBBS_CMD_MAX_ARGC) {
-        while (*p == ' ' || *p == '\t')
-            p++;
-        if (!*p)
-            break;
-        ctx.argv[ctx.argc++] = p;
-        while (*p && *p != ' ' && *p != '\t')
-            p++;
-        if (*p)
-            *p++ = '\0';
-    }
-    return ctx.argc > 0;
-}
-
-static bool lobbsParseSlash(char *line, LoBBSCommandCtx &ctx)
+static bool lobbsPeelSlashLine(char *line, LoBBSCommandCtx &ctx, char **verbOut, char **restOut)
 {
     ctx.reqId = 0;
-    ctx.argc = 0;
     if (!line || line[0] != '/')
         return false;
     char *p = line + 1;
@@ -382,13 +442,23 @@ static bool lobbsParseSlash(char *line, LoBBSCommandCtx &ctx)
         if (*p == ' ') {
             *p++ = '\0';
             ctx.reqId = (uint32_t)strtoul(start, nullptr, 10);
-            while (*p == ' ')
-                p++;
+            lobbsSkipWs(p);
         } else {
             p = start;
         }
     }
-    return lobbsTokenize(p, ctx);
+    lobbsSkipWs(p);
+    if (!*p)
+        return false;
+    *verbOut = p;
+    while (*p && *p != ' ' && *p != '\t')
+        p++;
+    if (*p) {
+        *p++ = '\0';
+        lobbsSkipWs(p);
+    }
+    *restOut = p;
+    return true;
 }
 
 void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, const LoBBSSession &session, char *line)
@@ -397,21 +467,18 @@ void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, cons
     ctx.mod = mod;
     ctx.mp = &mp;
     ctx.session = session;
+    ctx.page = 1;
 
-    if (!lobbsParseSlash(line, ctx))
+    char *verb = nullptr;
+    char *rest = nullptr;
+    if (!lobbsPeelSlashLine(line, ctx, &verb, &rest))
         return;
-    if (ctx.argc == 0) {
+    if (!verb[0]) {
         lobbsCommandReply(ctx, "Missing command.");
         return;
     }
-
-    for (int i = 0; i < lobbsCommandCount; i++) {
-        if (strcasecmp(ctx.argv[0], lobbsCommandTable[i].name) == 0) {
-            lobbsCommandTable[i].handler(ctx);
-            return;
-        }
-    }
-    lobbsCommandReply(ctx, "Unknown command. Try /help");
+    ctx.rest = rest;
+    lobbsDoAction("slash_cmd", ctx, verb, rest);
 }
 
 #endif

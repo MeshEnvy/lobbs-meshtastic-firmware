@@ -33,10 +33,13 @@ static void wallSubLimit(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireSysop(ctx))
         return;
-    if (!lobbsCommandNeedArgc(ctx, 4, "Usage: /wall limit SEC CELLS"))
+    lobbsArgShift(ctx);
+    uint32_t period = 0;
+    uint32_t cells = 0;
+    if (!lobbsArgShiftUint(ctx, period) || !lobbsArgShiftUint(ctx, cells) || lobbsArgHasMore(ctx)) {
+        lobbsCommandReply(ctx, "Usage: /wall limit SEC CELLS");
         return;
-    uint32_t period = (uint32_t)atoi(ctx.argv[2]);
-    uint32_t cells = (uint32_t)atoi(ctx.argv[3]);
+    }
     char err[48];
     WallDal &wall = ctx.mod->wall().dal();
     if (!wall.setConfig(period, cells, err, sizeof(err))) {
@@ -50,15 +53,13 @@ static void wallSubLimit(LoBBSCommandCtx &ctx)
 
 static void handleWall(LoBBSCommandCtx &ctx)
 {
-    if (lobbsCommandTrySubHelp(ctx, "Wall Help", wallHelp, sizeof(wallHelp) / sizeof(wallHelp[0])))
-        return;
-
-    if (ctx.argc < 2) {
+    const char *peek = lobbsArgPeek(ctx);
+    if (!peek) {
         replyGrid(ctx, true);
         return;
     }
 
-    if (ctx.argv[1] && strcasecmp(ctx.argv[1], "limit") == 0) {
+    if (strcasecmp(peek, "limit") == 0) {
         wallSubLimit(ctx);
         return;
     }
@@ -66,53 +67,62 @@ static void handleWall(LoBBSCommandCtx &ctx)
     if (!lobbsCommandRequireLogin(ctx))
         return;
 
+    const char *toks[48];
+    int n = lobbsArgShiftMany(ctx, toks, 48);
+    if (n <= 0) {
+        replyGrid(ctx, true);
+        return;
+    }
+
     char err[48];
-    if (!ctx.mod->wall().dal().applyPaintTokens(lobbsCtxUserUuid(ctx), ctx.session.isSysop, (const char *const *)&ctx.argv[1],
-                                                ctx.argc - 1, err, sizeof(err))) {
+    if (!ctx.mod->wall().dal().applyPaintTokens(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n, err, sizeof(err))) {
         lobbsCommandReply(ctx, err[0] ? err : "Paint failed.");
         return;
     }
     replyGrid(ctx, true);
 }
 
-static void filterWallCommands(void *value, LoBBSCommandCtx *ctx)
+static void slashWall(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
 {
-    (void)ctx;
-    lobbsFilterCommandsAdd(*(LoBBSFilterCommands *)value, "wall", handleWall);
+    if (!ctx || !verb || strcasecmp(verb, "wall") != 0)
+        return;
+    LoBBSCommandCtx &c = *ctx;
+    if (rest)
+        c.rest = (char *)rest;
+    handleWall(c);
 }
 
-static void filterWallStatusLines(void *value, LoBBSCommandCtx *ctx)
+static void filterWallRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
 {
+    (void)ctx;
+    if (query)
+        return;
+    lobbsRootCommandPush(lines, "wall");
+}
+
+static void filterWallCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+{
+    (void)ctx;
+    lobbsCommandHelpPush(lines, "wall", wallHelp, sizeof(wallHelp) / sizeof(wallHelp[0]), query);
+}
+
+static void filterWallStatusLines(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+{
+    (void)query;
     if (!ctx || !ctx->mod || !lobbsCtxLoggedIn(*ctx))
         return;
-    char line[LOBBS_FILTER_LINE_BYTES];
+    char line[32];
     bool dirty = ctx->mod->wall().dal().isDirtyForUser(lobbsCtxUserUuid(*ctx));
     snprintf(line, sizeof(line), "Wall: %s", dirty ? "new" : "seen");
-    lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
-}
-
-static void filterWallHelpTopics(void *value, LoBBSCommandCtx *ctx)
-{
-    (void)ctx;
-    lobbsFilterHelpTopicAdd(*(LoBBSFilterHelpTopics *)value, "wall", "Wall Help", wallHelp,
-                            sizeof(wallHelp) / sizeof(wallHelp[0]));
-}
-
-static void filterWallHelpIndex(void *value, LoBBSCommandCtx *ctx)
-{
-    (void)ctx;
-    lobbsFilterLinesPush(*(LoBBSFilterLines *)value, "wall");
+    lines.push_back(line);
 }
 
 void lobbsWallRegisterCommands()
 {
-    LoBBSAppHooks hooks{};
-    hooks.commands = filterWallCommands;
-    hooks.status_lines = filterWallStatusLines;
-    hooks.help_topics = filterWallHelpTopics;
-    hooks.help_index = filterWallHelpIndex;
-    hooks.priority = LOBBS_FILTER_PRIORITY_FEATURE;
-    lobbsAppRegisterHooks(hooks);
+    lobbsAddAction("slash_cmd", slashWall, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("root_commands", filterWallRootCommands, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("command_help", filterWallCommandHelp, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("status_lines", filterWallStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
 }
 
 #endif

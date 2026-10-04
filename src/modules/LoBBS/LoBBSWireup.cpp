@@ -2,7 +2,6 @@
 
 #include "LoBBSWireup.h"
 #include "LoBBSHooks.h"
-#include "LoBBSCommandRegistry.h"
 #include "apps/Auth/AuthCommands.h"
 #include "apps/Help/HelpCommands.h"
 #include "apps/Mail/MailCommands.h"
@@ -10,10 +9,12 @@
 #include "apps/Yarn/YarnCommands.h"
 #include "apps/Wall/WallCommands.h"
 #include "apps/Status/StatusCommands.h"
+#include "apps/Time/TimeCommands.h"
+#include "apps/Fs/FsCommands.h"
 
 void lobbsWireup()
 {
-    lobbsFiltersReset();
+    lobbsHooksReset();
     lobbsHelpRegisterCommands();
     lobbsAuthRegisterCommands();
     lobbsMailRegisterCommands();
@@ -21,10 +22,8 @@ void lobbsWireup()
     lobbsYarnRegisterCommands();
     lobbsWallRegisterCommands();
     lobbsStatusRegisterCommands();
-
-    LoBBSFilterCommands cmds{};
-    lobbsApplyFilters("commands", &cmds, nullptr);
-    lobbsCommandsInstall(cmds);
+    lobbsTimeRegisterCommands();
+    lobbsFsRegisterCommands();
 }
 
 #endif

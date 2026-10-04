@@ -30,7 +30,7 @@ Demo builds: add `-D LOBBS_DEMO_MODE` to `build_flags` (or `PLATFORMIO_BUILD_FLA
 
 ## How to use LoBBS
 
-DM the node a line that starts with `/`. 
+DM the node a line that starts with `/`. For how verbs, help, and plugin hooks fit together, see [docs/lobbs-commands.md](docs/lobbs-commands.md).
 
 `/login username password` signs in or creates the account. The first account is the SysOp.
 
@@ -38,10 +38,10 @@ DM the node a line that starts with `/`.
 
 | Command | Notes |
 | --- | --- |
-| `/hi` | Intro and version |
-| `/status` | Display overall status|
+| `/hi` | Same command catalog as `/help` |
+| `/status` | Display overall status (paged) |
 | `/time` | Current time |
-| `/help [topic]` | Command list |
+| `/help [topic] [pN]` | Commands available to you, or topic help |
 | `/wall` | Play the Wall game (shared ASCII art) |
 | `/yarn` | Play the Yarn game (shared story) |
 
@@ -122,6 +122,12 @@ The first registered account is the SysOp. Other users get `SysOp only.`
 | `/wall limit SEC CELLS` | Paint quota (default 3600 seconds, 1 cell) |
 | `/yarn limit SEC WORDS CHARS` | Yarn quota (default 3600 seconds, 1 word, 32 characters) |
 | `/time unix` | Set the clock. The time must be after this firmware was built, or the reply is `Invalid time.` |
+| `/ls [path] [pN]` | List a directory (`*` glob on the last name only) |
+| `/cat path` | Read a file as text |
+| `/hex path` | Hex dump a file |
+| `/rm path` | Delete a file |
+| `/rmdir path` | Remove an empty directory |
+| `/rmtree path path` | Recursive delete (type the path twice) |
 
 SysOps painting the wall or adding yarn do not use quota.
 

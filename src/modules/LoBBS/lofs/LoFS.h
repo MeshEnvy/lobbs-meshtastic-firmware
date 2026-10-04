@@ -110,6 +110,10 @@ class LoFS
      */
     static bool rmdir(const char *filepath, bool recursive = false);
 
+    /** List one directory. Callback receives basename only. Return false from callback to stop. */
+    typedef bool (*ListCallback)(void *ctx, const char *basename, bool isDirectory);
+    static bool list(const char *dirpath, void *ctx, ListCallback fn);
+
     /**
      * @brief Check if SD card is available (compile-time and runtime check)
      * @return true if SD card is supported and present, false otherwise

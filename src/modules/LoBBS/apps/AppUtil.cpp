@@ -1,6 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "AppUtil.h"
+#include "../LoBBSConfig.h"
 #include "../LoBBSCommandCtx.h"
 #include "../LoBBSCommandRegistry.h"
 #include "../LoBBSModule.h"
@@ -44,7 +45,7 @@ void lobbsAppTruncMsg(const char *message, char *buffer, size_t bufferSize, size
 {
     if (!message)
         message = "";
-    size_t msgLen = strnlen(message, 200);
+    size_t msgLen = strnlen(message, LOBBS_MESSAGE_BODY_MAX);
     if (msgLen <= maxLen) {
         snprintf(buffer, bufferSize, "%.*s", (int)msgLen, message);
     } else {

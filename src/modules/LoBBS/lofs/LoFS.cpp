@@ -489,6 +489,50 @@ bool LoFS::rename(const char *oldfilepath, const char *newfilepath)
     return result;
 }
 
+static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn, bool invokeCallback)
+{
+    if (!fn && invokeCallback)
+        return false;
+    while (true) {
+        File file = dir.openNextFile();
+        if (!file)
+            break;
+
+        std::string pathFromFile = file.name();
+        bool isDir = file.isDirectory();
+        file.close();
+
+        size_t lastSlash = pathFromFile.rfind('/');
+        std::string entryName =
+            (lastSlash != std::string::npos) ? pathFromFile.substr(lastSlash + 1) : pathFromFile;
+
+        if (entryName == "." || entryName == "..")
+            continue;
+
+        if (invokeCallback && !fn(ctx, entryName.c_str(), isDir))
+            return false;
+    }
+    return true;
+}
+
+bool LoFS::list(const char *dirpath, void *ctx, ListCallback fn)
+{
+    if (!dirpath || !fn)
+        return false;
+
+    File dir = open(dirpath, FILE_O_READ);
+    if (!dir)
+        return false;
+    if (!dir.isDirectory()) {
+        dir.close();
+        return false;
+    }
+
+    bool ok = lobfsEachDirEntry(dir, ctx, fn, true);
+    dir.close();
+    return ok;
+}
+
 bool LoFS::rmdir(const char *filepath, bool recursive)
 {
     if (!exists(filepath)) {
@@ -497,7 +541,6 @@ bool LoFS::rmdir(const char *filepath, bool recursive)
 
     // If recursive, first remove all contents
     if (recursive) {
-        // Use LoFS::open to get a File object that handles prefix correctly
         File dir = open(filepath, FILE_O_READ);
         if (!dir) {
             return false;
@@ -505,50 +548,37 @@ bool LoFS::rmdir(const char *filepath, bool recursive)
 
         if (!dir.isDirectory()) {
             dir.close();
-            // If it's not a directory, try removing as a file
             return remove(filepath);
         }
 
         bool result = true;
-        
-        // Recursively remove all files and subdirectories
+
         while (true) {
             File file = dir.openNextFile();
-            if (!file) {
+            if (!file)
                 break;
-            }
-            
-            // Get the name from file.name() - this might be full path or just filename
+
             std::string pathFromFile = file.name();
             bool isDir = file.isDirectory();
             file.close();
-            
-            // Always construct full path from parent directory to ensure correctness
-            // Extract just the filename/entry name (after last /)
+
             size_t lastSlash = pathFromFile.rfind('/');
-            std::string entryName = (lastSlash != std::string::npos) ? pathFromFile.substr(lastSlash + 1) : pathFromFile;
-            
-            // Skip "." and ".." entries
-            if (entryName == "." || entryName == "..") {
+            std::string entryName =
+                (lastSlash != std::string::npos) ? pathFromFile.substr(lastSlash + 1) : pathFromFile;
+
+            if (entryName == "." || entryName == "..")
                 continue;
-            }
-            
-            // Build full path: filepath/entryName
+
             char fullPathBuf[256];
             snprintf(fullPathBuf, sizeof(fullPathBuf), "%s/%s", filepath, entryName.c_str());
             std::string fullPath = fullPathBuf;
-            
-            // Recursively remove subdirectories, or remove files
+
             if (isDir) {
-                // Recursively remove subdirectory
-                if (!rmdir(fullPath.c_str(), true)) {
+                if (!rmdir(fullPath.c_str(), true))
                     result = false;
-                }
             } else {
-                // Remove file
-                if (!remove(fullPath.c_str())) {
+                if (!remove(fullPath.c_str()))
                     result = false;
-                }
             }
         }
         dir.close();

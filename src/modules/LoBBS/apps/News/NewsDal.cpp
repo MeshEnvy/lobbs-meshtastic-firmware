@@ -1,6 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "NewsDal.h"
+#include "../../LoBBSConfig.h"
 #include "NewsRecords.h"
 #include "configuration.h"
 #include "gps/RTC.h"
@@ -54,16 +55,15 @@ static void buildNewsReadKey(uint64_t newsUuid, uint64_t userUuid, char *out, si
 }
 
 static constexpr uint32_t LOBBS_MAX_LIST_ROWS = 256;
-static constexpr size_t LOBBS_NEWS_MSG_MAX = 200;
 
 bool NewsDal::postNews(uint64_t authorUserUuid, const char *message)
 {
     lodb_uuid_t newsUuidVal = lodb_new_uuid(nullptr, authorUserUuid ^ (uint64_t)getTime());
 
     LoScalar news;
-    char msgBuf[LOBBS_NEWS_MSG_MAX + 1];
-    strncpy(msgBuf, message, LOBBS_NEWS_MSG_MAX);
-    msgBuf[LOBBS_NEWS_MSG_MAX] = '\0';
+    char msgBuf[LOBBS_MESSAGE_BODY_BUFFER_SIZE];
+    strncpy(msgBuf, message, LOBBS_MESSAGE_BODY_MAX);
+    msgBuf[LOBBS_MESSAGE_BODY_MAX] = '\0';
     news.setString(LODB_F_DESCRIPTION, msgBuf);
     news.setUint64(NewsField::FIELD_AUTHOR, authorUserUuid);
 
