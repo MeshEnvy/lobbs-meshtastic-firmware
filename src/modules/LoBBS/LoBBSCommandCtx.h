@@ -13,6 +13,7 @@ struct LoBBSSession {
     uint64_t userUuid = 0;
     char username[LOBBS_USERNAME_BUFFER_SIZE] = {0};
     bool isSysop = false;
+    char cwd[LOBBS_CWD_BUFFER_SIZE] = "/";
 };
 
 struct LoBBSCommandCtx {

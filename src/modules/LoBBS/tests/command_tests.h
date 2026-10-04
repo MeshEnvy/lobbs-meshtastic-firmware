@@ -133,6 +133,19 @@ static void test_command_cache_expires()
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "No cached reply."));
 }
 
+static void test_command_fs_cwd()
+{
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestSendLine("/pwd");
+    TEST_ASSERT_EQUAL_STRING("/", lobbsTestLastReply());
+    lobbsTestSendLine("/cd /no/such/dir");
+    TEST_ASSERT_EQUAL_STRING("No such directory.", lobbsTestLastReply());
+    lobbsTestSendLine("/rm relative.txt");
+    TEST_ASSERT_EQUAL_STRING("Absolute path only.", lobbsTestLastReply());
+    lobbsTestSendLine("/rmtree /internal/.. /internal/..");
+    TEST_ASSERT_EQUAL_STRING("Refused.", lobbsTestLastReply());
+}
+
 static void test_command_users_kick()
 {
     lobbsTestSendLine("/login demo03 demo1");
@@ -172,6 +185,7 @@ inline void lobbsRunCommandTests()
     RUN_TEST(test_command_new_command_replaces_cache);
     RUN_TEST(test_command_error_keeps_cache);
     RUN_TEST(test_command_cache_expires);
+    RUN_TEST(test_command_fs_cwd);
     RUN_TEST(test_command_users_kick);
     RUN_TEST(test_command_subcommand_with_args);
     RUN_TEST(test_command_help_catalog_and_topics);

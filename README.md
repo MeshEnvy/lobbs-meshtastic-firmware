@@ -124,12 +124,14 @@ The first registered account is the SysOp. Other users get `SysOp only.`
 | `/wall limit SEC CELLS`       | Paint quota (default 3600 seconds, 1 cell)                                                     |
 | `/yarn limit SEC WORDS CHARS` | Yarn quota (default 3600 seconds, 1 word, 32 characters)                                       |
 | `/time unix`                  | Set the clock. The time must be after this firmware was built, or the reply is `Invalid time.` |
-| `/ls [path]`                  | List a directory (`*` glob on the last name only)                                              |
+| `/cd [path]`                  | Set your working directory (default `/`). Each session keeps its own                           |
+| `/pwd`                        | Show your working directory                                                                    |
+| `/ls [path]`                  | List a directory, default the working directory (`*` glob on the last name only)               |
 | `/cat path`                   | Read a file as text                                                                            |
 | `/hex path`                   | Hex dump a file                                                                                |
-| `/rm path`                    | Delete a file                                                                                  |
-| `/rmdir path`                 | Remove an empty directory                                                                      |
-| `/rmtree path path`           | Recursive delete (type the path twice)                                                         |
+| `/rm /path`                   | Delete a file (absolute path only)                                                             |
+| `/rmdir /path`                | Remove an empty directory (absolute path only)                                                 |
+| `/rmtree /path /path`         | Recursive delete (absolute path, typed twice)                                                  |
 
 SysOps painting the wall or adding yarn do not use quota.
 

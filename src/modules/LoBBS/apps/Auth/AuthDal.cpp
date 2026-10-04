@@ -152,7 +152,8 @@ static void dropSession(LoDb &lodb, uint32_t sessionKey)
     lodb.deleteRecord("sessions", (lodb_uuid_t)sessionKey);
 }
 
-bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessionNodeIdOut, uint64_t *authUserUuidOut)
+bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessionNodeIdOut, uint64_t *authUserUuidOut,
+                               std::string *cwdOut)
 {
     LoScalar session;
     if (lodb_.get("sessions", (lodb_uuid_t)nodeId, session) != LODB_OK) {
@@ -183,7 +184,18 @@ bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessio
         *sessionNodeIdOut = sessionNodeId;
     if (authUserUuidOut)
         *authUserUuidOut = userUuid;
+    if (cwdOut && !session.getString(AuthSession::FIELD_CWD, *cwdOut))
+        cwdOut->clear();
     return true;
+}
+
+bool AuthDal::setSessionCwd(uint32_t nodeId, const char *cwd)
+{
+    LoScalar session;
+    if (lodb_.get("sessions", (lodb_uuid_t)nodeId, session) != LODB_OK)
+        return false;
+    session.setString(AuthSession::FIELD_CWD, cwd);
+    return lodb_.update("sessions", (lodb_uuid_t)nodeId, session) == LODB_OK;
 }
 
 bool AuthDal::createUser(const char *username, const char *password, uint32_t nodeId)

@@ -3,6 +3,7 @@
 #include "FsCommands.h"
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSHooks.h"
+#include "../../LoBBSModule.h"
 #include "../../LoBBSReply.h"
 #include "../../LoBBSReplyCache.h"
 #include "../../LoBBSResponse.h"
@@ -216,6 +217,65 @@ static bool fsPathHasAnyGlob(const char *path)
     return fsHasGlobMeta(path);
 }
 
+/** Join a relative spec onto the session cwd and fold `.` and `..`. False if the result does not fit. */
+static bool fsResolvePath(const LoBBSCommandCtx &ctx, const char *spec, char *out, size_t cap)
+{
+    char joined[512];
+    if (spec[0] == '/')
+        snprintf(joined, sizeof(joined), "%s", spec);
+    else
+        snprintf(joined, sizeof(joined), "%s/%s", ctx.session.cwd, spec);
+
+    size_t len = 0;
+    const char *p = joined;
+    while (*p) {
+        while (*p == '/')
+            p++;
+        if (!*p)
+            break;
+        const char *start = p;
+        while (*p && *p != '/')
+            p++;
+        size_t n = (size_t)(p - start);
+        if (n == 1 && start[0] == '.')
+            continue;
+        if (n == 2 && start[0] == '.' && start[1] == '.') {
+            while (len > 0 && out[len - 1] != '/')
+                len--;
+            if (len > 0)
+                len--;
+            continue;
+        }
+        if (len + 1 + n >= cap)
+            return false;
+        out[len++] = '/';
+        memcpy(out + len, start, n);
+        len += n;
+    }
+    if (len == 0)
+        out[len++] = '/';
+    out[len] = '\0';
+    return true;
+}
+
+static bool fsResolveOrReply(LoBBSCommandCtx &ctx, const char *spec, char *out, size_t cap)
+{
+    if (fsResolvePath(ctx, spec, out, cap))
+        return true;
+    lobbsCommandReplyError(ctx, "Path too long.");
+    return false;
+}
+
+/** rm, rmdir and rmtree never resolve against cwd. */
+static bool fsResolveAbsoluteOrReply(LoBBSCommandCtx &ctx, const char *spec, char *out, size_t cap)
+{
+    if (spec[0] != '/') {
+        lobbsCommandReplyError(ctx, "Absolute path only.");
+        return false;
+    }
+    return fsResolveOrReply(ctx, spec, out, cap);
+}
+
 static bool fsIsProtectedRmtreeRoot(const char *path)
 {
     return strcmp(path, "/") == 0 || strcmp(path, "/internal") == 0 || strcmp(path, "/internal/") == 0 ||
@@ -227,10 +287,10 @@ static void handleLs(LoBBSCommandCtx &ctx)
     if (!lobbsCommandRequireSysop(ctx))
         return;
 
-    const char *spec = "/";
-    const char *pathTok = lobbsArgPeek(ctx);
-    if (pathTok)
-        spec = lobbsArgShift(ctx);
+    char spec[256];
+    const char *pathTok = lobbsArgShift(ctx);
+    if (!fsResolveOrReply(ctx, pathTok ? pathTok : ".", spec, sizeof(spec)))
+        return;
     if (fsGlobBeforeLastName(spec)) {
         lobbsCommandReplyError(ctx, "glob only on the last name");
         return;
@@ -325,9 +385,12 @@ static void handleCat(LoBBSCommandCtx &ctx)
         return;
     }
 
+    char full[256];
     char dir[256];
     char path[256];
-    if (!fsResolveOneFilePath(spec, dir, sizeof(dir), path, sizeof(path), ctx))
+    if (!fsResolveOrReply(ctx, spec, full, sizeof(full)))
+        return;
+    if (!fsResolveOneFilePath(full, dir, sizeof(dir), path, sizeof(path), ctx))
         return;
     fsReplyFileText(ctx, path, false);
 }
@@ -342,9 +405,12 @@ static void handleHex(LoBBSCommandCtx &ctx)
         return;
     }
 
+    char full[256];
     char dir[256];
     char path[256];
-    if (!fsResolveOneFilePath(spec, dir, sizeof(dir), path, sizeof(path), ctx))
+    if (!fsResolveOrReply(ctx, spec, full, sizeof(full)))
+        return;
+    if (!fsResolveOneFilePath(full, dir, sizeof(dir), path, sizeof(path), ctx))
         return;
     fsReplyFileText(ctx, path, true);
 }
@@ -353,11 +419,14 @@ static void handleRm(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireSysop(ctx))
         return;
-    const char *spec = lobbsArgShift(ctx);
-    if (!spec) {
-        lobbsCommandReplyError(ctx, "Usage: /rm path");
+    const char *arg = lobbsArgShift(ctx);
+    if (!arg) {
+        lobbsCommandReplyError(ctx, "Usage: /rm /path");
         return;
     }
+    char spec[256];
+    if (!fsResolveAbsoluteOrReply(ctx, arg, spec, sizeof(spec)))
+        return;
     if (fsPathHasAnyGlob(spec)) {
         lobbsCommandReplyError(ctx, "No glob.");
         return;
@@ -385,11 +454,14 @@ static void handleRmdir(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireSysop(ctx))
         return;
-    const char *spec = lobbsArgShift(ctx);
-    if (!spec) {
-        lobbsCommandReplyError(ctx, "Usage: /rmdir path");
+    const char *arg = lobbsArgShift(ctx);
+    if (!arg) {
+        lobbsCommandReplyError(ctx, "Usage: /rmdir /path");
         return;
     }
+    char spec[256];
+    if (!fsResolveAbsoluteOrReply(ctx, arg, spec, sizeof(spec)))
+        return;
     if (fsPathHasAnyGlob(spec)) {
         lobbsCommandReplyError(ctx, "No glob.");
         return;
@@ -443,11 +515,13 @@ static void handleRmtree(LoBBSCommandCtx &ctx)
     const char *a = lobbsArgShift(ctx);
     const char *b = lobbsArgShift(ctx);
     if (!a || !b || strcmp(a, b) != 0 || lobbsArgHasMore(ctx)) {
-        lobbsCommandReplyError(ctx, "Usage: /rmtree path path");
+        lobbsCommandReplyError(ctx, "Usage: /rmtree /path /path");
         return;
     }
 
-    const char *path = a;
+    char path[256];
+    if (!fsResolveAbsoluteOrReply(ctx, a, path, sizeof(path)))
+        return;
     if (fsIsProtectedRmtreeRoot(path)) {
         lobbsCommandReplyError(ctx, "Refused.");
         return;
@@ -467,13 +541,55 @@ static void handleRmtree(LoBBSCommandCtx &ctx)
         lobbsCommandReplyError(ctx, "Failed.");
 }
 
+static void handleCd(LoBBSCommandCtx &ctx)
+{
+    if (!lobbsCommandRequireSysop(ctx))
+        return;
+    const char *arg = lobbsArgShift(ctx);
+    char path[LOBBS_CWD_BUFFER_SIZE];
+    if (!fsResolveOrReply(ctx, arg ? arg : "/", path, sizeof(path)))
+        return;
+    if (fsPathHasAnyGlob(path)) {
+        lobbsCommandReplyError(ctx, "No glob.");
+        return;
+    }
+    if (strcmp(path, "/") != 0) {
+        File f = LoFS::open(path, FILE_O_READ);
+        if (!f) {
+            lobbsCommandReplyError(ctx, "No such directory.");
+            return;
+        }
+        bool isDir = f.isDirectory();
+        f.close();
+        if (!isDir) {
+            lobbsCommandReplyError(ctx, "Not a directory.");
+            return;
+        }
+    }
+    if (!ctx.mod->auth().dal().setSessionCwd(ctx.session.nodeId, path)) {
+        lobbsCommandReplyError(ctx, "Failed.");
+        return;
+    }
+    memcpy(ctx.session.cwd, path, strlen(path) + 1);
+    lobbsCommandReply(ctx, ctx.session.cwd);
+}
+
+static void handlePwd(LoBBSCommandCtx &ctx)
+{
+    if (!lobbsCommandRequireSysop(ctx))
+        return;
+    lobbsCommandReply(ctx, ctx.session.cwd);
+}
+
 static const LoBBSSubHelpEntry fsHelp[] = {
-    {"ls", "ls [path] — list directory (/p2 …; * on last name only)"},
+    {"cd", "cd [path] — set working directory (default /)"},
+    {"pwd", "pwd — show working directory"},
+    {"ls", "ls [path] — list directory (default cwd; /p2 …; * on last name only)"},
     {"cat", "cat path — read a file (one match if glob)"},
     {"hex", "hex path — hex dump (one match if glob)"},
-    {"rm", "rm path — delete a file"},
-    {"rmdir", "rmdir path — remove empty directory"},
-    {"rmtree", "rmtree path path — recursive delete (type path twice)"},
+    {"rm", "rm /path — delete a file (absolute path)"},
+    {"rmdir", "rmdir /path — remove empty directory (absolute path)"},
+    {"rmtree", "rmtree /path /path — recursive delete (absolute path, typed twice)"},
 };
 
 static void slashFs(LoBBSCommandCtx *ctx, const LoScalar &args)
@@ -483,6 +599,14 @@ static void slashFs(LoBBSCommandCtx *ctx, const LoScalar &args)
         return;
     LoBBSCommandCtx &c = *ctx;
     const char *verb = v.c_str();
+    if (strcasecmp(verb, "cd") == 0) {
+        handleCd(c);
+        return;
+    }
+    if (strcasecmp(verb, "pwd") == 0) {
+        handlePwd(c);
+        return;
+    }
     if (strcasecmp(verb, "ls") == 0) {
         handleLs(c);
         return;
@@ -514,6 +638,8 @@ static void filterFsHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topi
     (void)args;
     if (!ctx || !lobbsCtxLoggedIn(*ctx) || !ctx->session.isSysop)
         return;
+    lobbsRecordPush(topics, "cd", "set working directory");
+    lobbsRecordPush(topics, "pwd", "show working directory");
     lobbsRecordPush(topics, "ls", "list files");
     lobbsRecordPush(topics, "cat", "print a file");
     lobbsRecordPush(topics, "hex", "hex dump a file");

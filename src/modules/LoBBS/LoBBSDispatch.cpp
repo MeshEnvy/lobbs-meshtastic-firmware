@@ -30,10 +30,13 @@ static LoBBSSession lobbsResolveSession(LoBBSModule *mod, uint32_t wireNodeId)
     LoScalar userRow;
     uint32_t sessionNodeId = wireNodeId;
     uint64_t authUserUuid = 0;
-    if (!auth.loadUserByNodeId(wireNodeId, &userRow, &sessionNodeId, &authUserUuid))
+    std::string cwd;
+    if (!auth.loadUserByNodeId(wireNodeId, &userRow, &sessionNodeId, &authUserUuid, &cwd))
         return session;
     session.nodeId = sessionNodeId;
     session.userUuid = authUserUuid;
+    if (!cwd.empty() && cwd[0] == '/' && cwd.size() < sizeof(session.cwd))
+        memcpy(session.cwd, cwd.c_str(), cwd.size() + 1);
     if (!AuthDal::userUsername(userRow, session.username, sizeof(session.username)))
         session.username[0] = '\0';
     session.isSysop = AuthDal::userIsSysop(userRow);
