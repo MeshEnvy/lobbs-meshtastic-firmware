@@ -1,47 +1,73 @@
 # How LoBBS commands work
 
-Command reference for players lives in the [README](../README.md). This page is for people wiring or extending the board: how a line is parsed, how help is built, and how plugins hook in.
+Command reference for players lives in the [README](../README.md). This page is for people wiring or extending the board: parsing, the hook bus, help, paging, and replies.
 
 ## One verb, rest of the line untouched
 
-You DM a line that starts with `/`. The node may peel an optional request id (`/42 mail list`). Then it takes **one** verb token and leaves everything after it as a single remainder string.
+You DM a line that starts with `/`. The node may peel an optional request id (`/42 mail list`). Then it takes **one** verb token and leaves everything after it as a single remainder string on `ctx.rest`.
 
-Example: `/mail send ben this is my long message` keeps `this is my long message` intact. Mail peels `send`, then `ben`, then treats the rest as the body. Nothing re-tokenizes the whole line up front, so spaces inside a message stay put.
+Example: `/mail send ben this is my long message` keeps `this is my long message` intact. Mail peels `send`, then `ben`, then treats the rest as the body. Nothing re-tokenizes the whole line up front.
 
-Optional paging uses a token like `p2` where a command already expects it (`/mail list p2`, `/help p3`). If the next token is not a page marker, it stays in the remainder for the handler.
+Handlers use `lobbsArgShift`, `lobbsArgPeek`, `lobbsArgRest`, `lobbsArgShiftUint`, and `lobbsArgPeekIsUint` on `ctx.rest`. Do not use partial `atoi` on numeric tokens.
+
+## Paging
+
+Long replies are cached. Follow with `/p2` or `/43 p2` (request id optional) to fetch another page. The help catalog documents paging as topic `pN` via `help_for_topic`.
+
+List and read responses are `LoBBSResponse` records; plain-text serialization runs the `display_human` filter on each record before paging.
 
 ## Help and `/hi`
 
-`/help` and `/hi` show the same **root verb** list: top-level commands you may use **right now** (`login`, `mail`, `news`, `users`, …). Logged out you see `login`. SysOps also see file verbs (`ls`, `cat`, and friends). Subcommands are not mixed into that list.
+`/help` with no remainder builds a topic list: built-in rows (`help`, `hi`, `pN`) plus whatever plugins append on **`help_topics`**. Logged-in users see mail, news, yarn, wall, and similar feature topics. Auth and sysop-only topics follow each plugin's own rules.
 
-`/help mail` or `/help mail send` runs the **`command_help`** filter with that remainder. The owning module adds usage lines. Other modules ignore the query. If nobody adds a line, the reply is `No help for that.` One reply either way, paged like any long list.
+`/help mail` or `/help mail send` runs **`help_for_topic`**. The query is in `args` as `LODB_F_TITLE`. Plugins set `LODB_F_DESCRIPTION` on the value record when they recognize the query. If nothing matches, the reply is `No help found for …`.
 
-A remainder that is only `pN` pages the catalog, not a topic. `/help mail p2` pages help for `mail` on page 2.
+`/hi` is a welcome screen (not the full command catalog). `/status` uses **`status_lines`**, not help.
+
+Subcommand tables can use `LoBBSVerb` with `lobbsHelpForTable`, or legacy `LoBBSSubHelpEntry` with `lobbsHelpForTopic`.
 
 ## Slash handlers
 
-Every plugin may register a `slash_cmd` **action**. They all run. Each handler compares the verb to what it owns. The owner replies; everyone else returns without saying anything.
+Every plugin registers a **`slash_cmd`** action. All handlers run for each line. Each compares the verb (`LOBBS_ARG_VERB` / `lobbsSlashVerbIs`) and returns silently when it is not the owner.
 
-There is no central "unknown command" from the bus. If no module owns the verb, you get silence.
+There is no central unknown-command reply from the bus. If no module owns the verb, you get silence.
 
-## Filters for shared screens
+Feature modules with subcommands often use `lobbsDispatchSub` and a `LoBBSVerb` table (`LOBBS_V_LOGIN`, `LOBBS_V_SYSOP` flags). Mail is the reference implementation.
 
-Three **filters** build lists any module can append to:
+## Filters
 
-| Filter | When it runs |
-| --- | --- |
-| `root_commands` | Bare `/help`, `/hi`, or `/help pN` |
-| `command_help` | `/help` with a topic remainder |
-| `status_lines` | `/status` (optional `pN` pages the lines) |
+| Hook             | Kind        | Role                                                  |
+| ---------------- | ----------- | ----------------------------------------------------- |
+| `slash_cmd`      | action      | Handle one top-level verb                             |
+| `help_topics`    | list        | Append `{title, description}` rows to `/help` catalog |
+| `help_for_topic` | record      | Fill usage text for `/help <query>`                   |
+| `status_lines`   | record list | Append lines for `/status`                            |
+| `display_human`  | record      | Turn a response record into human plain text          |
 
-Priority order matches the old board: Auth before Mail, News, Yarn, Wall on status. Lower number runs first, then registration order.
+Hooks are stored in **priority order** at registration time (lower `priority` runs first). Constants live in `LoBBSHooks.h` (`LOBBS_HOOK_PRIORITY_HELP`, `_AUTH`, `_FEATURE`, `_STATUS`, `_TIME`).
+
+## Shared mail/news display
+
+`lobbsMsgRegisterDisplay()` (wireup) registers one `display_human` handler for mail and news list rows (title begins with `[` plus a read flag field) and read views (`From:` header plus body). Mail/news command modules do not register their own `display_human` filters.
+
+## Replies
+
+- **`lobbsCommandReply`** — short text or multiline body (single record).
+- **`lobbsCommandReplyResponse`** — structured `LoBBSResponse` (records, errors).
+- **`lobbsRecordPush`** — append a `{title, description}` line record to a vector or response.
+- **`lobbsReplySendCachedPage`** — send a cached page after `/pN`.
 
 ## Extending LoBBS
 
-In your plugin's `lobbs*RegisterCommands()`:
+In `lobbs*RegisterCommands()`:
 
-1. `lobbsAddAction("slash_cmd", …)` and compare `verb`.
-2. Use `lobbsArgShift`, `lobbsArgTakePage`, `lobbsArgRest`, and `lobbsArgShiftUint` / `lobbsArgPeekIsUint` on `ctx.rest` instead of a pre-split argv or raw `atoi`.
-3. Register filters for catalog lines, topic help, and status if needed.
+1. `lobbsAddAction("slash_cmd", …)` and compare the verb.
+2. Parse `ctx.rest` with registry arg helpers.
+3. Register `help_topics`, `help_for_topic`, and `status_lines` when needed.
+4. Call `lobbsWireup()` once from module construction (already lists every registrar).
 
-Wireup only resets hooks and calls each registrar. There is no install pass and no capped hook table.
+Do not add a central verb switch. Do not pre-split the full line into `argv`.
+
+## LoDB from plugins
+
+Use `LoDb::upsert` when saving singleton or keyed rows instead of open-coding get/update/insert. Wall and yarn DALs load defaults in memory on miss without writing until the user saves.

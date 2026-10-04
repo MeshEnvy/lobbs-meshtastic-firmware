@@ -1,9 +1,3 @@
----
-description: LoBBS slash CLI — action/filter bus and plugin registration
-globs: src/modules/LoBBS/**/*
-alwaysApply: false
----
-
 # LoBBS command IoC
 
 LoBBS is a stateless slash CLI over mesh DMs. **Plugins own verbs and filter lines.** The registry peels one verb and runs the bus. One wireup file lists plugins.
@@ -15,10 +9,11 @@ Player docs: [README.md](../../README.md). Bus behavior: [docs/lobbs-commands.md
 | Layer | Role | May include |
 | --- | --- | --- |
 | `LoBBSDispatch.cpp` | Trim line, session/auth lookup, `lobbsCommandsHandle` | `LoBBSCommandRegistry.h`, `AuthDal` for session only |
-| `LoBBSHooks.*` | `lobbsAddAction`, `lobbsAddFilter`, `lobbsDoAction`, `lobbsApplyFilter` (`std::vector` hooks) | No plugin or DAL headers |
-| `LoBBSCommandRegistry.*` | Peel `/[id] verb`, arg cursor, pager, reply helpers | `LoBBSHooks.h` only (no `apps/*Commands.h`) |
-| `LoBBSWireup.cpp` | `lobbsHooksReset()` + each `lobbs*RegisterCommands()` | All plugin `*Commands.h` |
+| `LoBBSHooks.*` | `lobbsAddAction`, `lobbsAddFilter`, `lobbsDoAction`, `lobbsApplyFilter` | No plugin or DAL headers |
+| `LoBBSCommandRegistry.*` | Peel `/[id] verb`, arg cursor, pager, reply helpers, `lobbsDispatchSub`, `lobbsHelpForTable` | `LoBBSHooks.h` only (no `apps/*Commands.h`) |
+| `LoBBSWireup.cpp` | `lobbsHooksReset()`, `lobbsMsgRegisterDisplay()`, each `lobbs*RegisterCommands()` | All plugin `*Commands.h`, `MsgCommon.h` |
 | `apps/<App>/*Commands.*` | `slash_cmd` handler + filter callbacks | That app's DAL, `LoBBSHooks`, registry helpers |
+| `apps/Msg/MsgCommon.*` | `lobbsMsgShiftIndex`, shared `display_human` for mail/news | Mail/News record field ids |
 | `apps/AppUtil.*` | Core auth directory (load user, username lookup) | Auth DAL internally |
 | `apps/<App>/<App>.cpp` | Construct app / DAL wiring | No command switch |
 
@@ -30,34 +25,38 @@ Player docs: [README.md](../../README.md). Bus behavior: [docs/lobbs-commands.md
 
 ## Actions
 
-- **`slash_cmd`**: `lobbsDoAction("slash_cmd", ctx, verb, rest)`. Every subscriber runs; compare `verb` and return silently if not yours. No claim flag. No central unknown-command reply.
-- Dispatch sets `ctx.rest` to the mutable remainder; handlers use `lobbsArgShift`, `lobbsArgTakePage`, `lobbsArgRest`, `lobbsArgShiftMany`, and `lobbsArgShiftUint` / `lobbsTokIsUint` (full-token decimal, no `atoi` partial parse).
+- **`slash_cmd`**: `lobbsDoAction("slash_cmd", ctx, args)`. Every subscriber runs; compare `verb` and return silently if not yours. No claim flag. No central unknown-command reply.
+- Dispatch sets `ctx.rest` to the mutable remainder; handlers use `lobbsArgShift`, `lobbsArgRest`, `lobbsArgShiftMany`, and `lobbsArgShiftUint` / `lobbsArgPeekIsUint` (full-token decimal, no `atoi` partial parse).
+- Subcommand apps: `LoBBSVerb` table + `lobbsDispatchSub` (see Mail). Flags: `LOBBS_V_LOGIN`, `LOBBS_V_SYSOP`.
 
 ## Filters
 
-- **`root_commands`**: query `nullptr`. Append **top-level verbs only** (`mail`, `users`, `ls`, …). No subcommand paths. Help and `/hi` page via `lobbsCommandReplyPagedLines`.
-- **`command_help`**: query is help remainder (`mail`, `mail send`, `users find`). Append usage lines (including subcommand detail) when the query matches your topic; otherwise no-op. Help replies `No help for that.` if the vector is empty.
+- **`help_topics`**: append catalog rows for `/help` (title + short description). Help plugin seeds `help`, `hi`, `pN`.
+- **`help_for_topic`**: query in `args` `LODB_F_TITLE`; set `value` `LODB_F_DESCRIPTION` when matched. Use `lobbsHelpForTable` or `lobbsHelpForTopic`.
 - **`status_lines`**: append one line each; `/status` pages the vector.
+- **`display_human`**: mail/news list and read formatting live in `MsgCommon` (single registration from wireup).
 
-Priority constants: `LOBBS_HOOK_PRIORITY_HELP`, `_AUTH`, `_FEATURE`, `_STATUS` (lower runs first).
+Priority constants: `LOBBS_HOOK_PRIORITY_*` in `LoBBSHooks.h`. Hooks insert in priority order at register time.
 
 ## Do
 
-- Help plugin owns `/help` and `/hi` (same catalog). Status owns `/status` only (not `/hi`). Time plugin owns `/time`.
+- Help plugin owns `/help` and `/hi`. Status owns `/status` only. Time plugin owns `/time`.
 - `/time`: show clock; sysop passes Unix seconds to set RTC via `perhapsSetRTC(..., forceUpdate=true)`.
 - Auth: `/login`, `/logout`, `/whoami`, `/passwd`, `/users` subs in Auth plugin.
 - Fs verbs are top-level (`ls`, `cat`, …) with sysop gate inside handlers.
 - Call `lobbsWireup()` once from `LoBBSModule` construction.
+- Use `lobbsRecordPush` for status/help line records. Use `LoDb::upsert` for idempotent saves in DALs.
 
 ## Don't
 
-- Central verb switch or `lobbsCommandsInstall` / capped hook tables.
+- Central verb switch or capped hook tables.
 - `#include` plugin headers from `LoBBSCommandRegistry.cpp` or `LoBBSHooks.cpp`.
 - Pre-tokenize the full line into `argv` (breaks multi-word mail/news bodies).
-- `help_index`, `help_topics`, `lobbsCommandTrySubHelp`, or `?` help tokens.
+- Per-plugin `display_human` for mail/news (use `MsgCommon`).
+- Eager insert of wall/yarn defaults on load miss (defaults in memory only until save).
 
 ## New plugin checklist
 
 1. `lobbsAddAction("slash_cmd", …)` with verb compare + arg cursor.
-2. Filters: `root_commands`, `command_help`, `status_lines` as needed.
+2. Filters: `help_topics`, `help_for_topic`, `status_lines` as needed.
 3. One `lobbsXRegisterCommands()` in `LoBBSWireup.cpp`.
