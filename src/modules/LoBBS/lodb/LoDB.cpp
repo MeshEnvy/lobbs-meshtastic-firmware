@@ -372,6 +372,14 @@ LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const LoScalar 
     return LODB_OK;
 }
 
+LoDbError LoDb::upsert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record)
+{
+    LoScalar existing;
+    if (get(table_name, uuid, existing) == LODB_OK)
+        return update(table_name, uuid, record);
+    return insert(table_name, uuid, record);
+}
+
 LoDbError LoDb::deleteRecord(const char *table_name, lodb_uuid_t uuid)
 {
     if (!table_name) {

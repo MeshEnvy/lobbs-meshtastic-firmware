@@ -86,6 +86,7 @@ class LoDb
     LoDbError insert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record);
     LoDbError get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_out);
     LoDbError update(const char *table_name, lodb_uuid_t uuid, const LoScalar &record);
+    LoDbError upsert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record);
     LoDbError deleteRecord(const char *table_name, lodb_uuid_t uuid);
     std::vector<LoScalar> select(const char *table_name, LoDbFilter filter = LoDbFilter(),
                                  LoDbComparator comparator = LoDbComparator(), size_t limit = 0);

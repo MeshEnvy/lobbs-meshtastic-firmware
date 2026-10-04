@@ -56,12 +56,6 @@ bool YarnDal::loadCurrent(CurrentState &out)
     }
     out.text[0] = '\0';
     out.total_words_appended = 0;
-    lodb_.deleteRecord("yarn_current", id);
-    LoScalar fresh;
-    fresh.setString(LODB_F_DESCRIPTION, "");
-    fresh.setUint32(YarnCurrentField::FIELD_TOTAL_WORDS, 0);
-    if (lodb_.insert("yarn_current", id, fresh) != LODB_OK)
-        return false;
     return true;
 }
 
@@ -71,12 +65,7 @@ bool YarnDal::saveCurrent(CurrentState &cur)
     LoScalar rec;
     rec.setString(LODB_F_DESCRIPTION, cur.text);
     rec.setUint32(YarnCurrentField::FIELD_TOTAL_WORDS, cur.total_words_appended);
-    rec.removeField(LODB_F_CREATED);
-    rec.removeField(LODB_F_UPDATED);
-    LoScalar existing;
-    if (lodb_.get("yarn_current", id, existing) == LODB_OK)
-        return lodb_.update("yarn_current", id, rec) == LODB_OK;
-    return lodb_.insert("yarn_current", id, rec) == LODB_OK;
+    return lodb_.upsert("yarn_current", id, rec) == LODB_OK;
 }
 
 bool YarnDal::loadConfig(ConfigState &out)
@@ -92,13 +81,6 @@ bool YarnDal::loadConfig(ConfigState &out)
     out.period_seconds = LOBBS_YARN_DEFAULT_PERIOD_SEC;
     out.max_words_per_interval = LOBBS_YARN_DEFAULT_MAX_WORDS;
     out.max_chars_per_interval = LOBBS_YARN_DEFAULT_MAX_CHARS;
-    lodb_.deleteRecord("yarn_config", id);
-    LoScalar fresh;
-    fresh.setUint32(YarnConfigField::FIELD_PERIOD_SEC, out.period_seconds);
-    fresh.setUint32(YarnConfigField::FIELD_MAX_WORDS, out.max_words_per_interval);
-    fresh.setUint32(YarnConfigField::FIELD_MAX_CHARS, out.max_chars_per_interval);
-    if (lodb_.insert("yarn_config", id, fresh) != LODB_OK)
-        return false;
     return true;
 }
 
@@ -124,12 +106,7 @@ bool YarnDal::setConfig(uint32_t periodSeconds, uint32_t maxWords, uint32_t maxC
     cfg.setUint32(YarnConfigField::FIELD_PERIOD_SEC, periodSeconds);
     cfg.setUint32(YarnConfigField::FIELD_MAX_WORDS, maxWords);
     cfg.setUint32(YarnConfigField::FIELD_MAX_CHARS, maxChars);
-    cfg.removeField(LODB_F_CREATED);
-    cfg.removeField(LODB_F_UPDATED);
-    LoScalar existing;
-    if (lodb_.get("yarn_config", id, existing) == LODB_OK)
-        return lodb_.update("yarn_config", id, cfg) == LODB_OK;
-    return lodb_.insert("yarn_config", id, cfg) == LODB_OK;
+    return lodb_.upsert("yarn_config", id, cfg) == LODB_OK;
 }
 
 bool YarnDal::saveQuota(QuotaState &quota)
@@ -140,12 +117,7 @@ bool YarnDal::saveQuota(QuotaState &quota)
     rec.setUint32(YarnQuotaField::FIELD_CYCLE_START, quota.cycle_start);
     rec.setUint32(YarnQuotaField::FIELD_WORDS_USED, quota.words_used);
     rec.setUint32(YarnQuotaField::FIELD_CHARS_USED, quota.chars_used);
-    rec.removeField(LODB_F_CREATED);
-    rec.removeField(LODB_F_UPDATED);
-    LoScalar existing;
-    if (lodb_.get("yarn_quota", id, existing) == LODB_OK)
-        return lodb_.update("yarn_quota", id, rec) == LODB_OK;
-    return lodb_.insert("yarn_quota", id, rec) == LODB_OK;
+    return lodb_.upsert("yarn_quota", id, rec) == LODB_OK;
 }
 
 bool YarnDal::checkAppendQuota(uint64_t userUuid, bool isSysop, uint32_t wordCount, uint32_t charCost, char *err, size_t errCap)
@@ -304,13 +276,8 @@ bool YarnDal::markYarnSeen(uint64_t userUuid)
     LoScalar seen;
     seen.setUint64(YarnSeenField::FIELD_USER_UUID, userUuid);
     seen.setUint32(YarnSeenField::FIELD_LAST_TOTAL_WORDS, cur.total_words_appended);
-    seen.removeField(LODB_F_CREATED);
-    seen.removeField(LODB_F_UPDATED);
     lodb_uuid_t id = yarnSeenRecordUuid(userUuid);
-    LoScalar existing;
-    if (lodb_.get("yarn_seen", id, existing) == LODB_OK)
-        return lodb_.update("yarn_seen", id, seen) == LODB_OK;
-    return lodb_.insert("yarn_seen", id, seen) == LODB_OK;
+    return lodb_.upsert("yarn_seen", id, seen) == LODB_OK;
 }
 
 bool YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount, char *err, size_t errCap)

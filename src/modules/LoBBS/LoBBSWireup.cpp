@@ -6,6 +6,7 @@
 #include "apps/Fs/FsCommands.h"
 #include "apps/Help/HelpCommands.h"
 #include "apps/Mail/MailCommands.h"
+#include "apps/Msg/MsgCommon.h"
 #include "apps/News/NewsCommands.h"
 #include "apps/Status/StatusCommands.h"
 #include "apps/Time/TimeCommands.h"
@@ -15,6 +16,7 @@
 void lobbsWireup()
 {
     lobbsHooksReset();
+    lobbsMsgRegisterDisplay();
     lobbsHelpRegisterCommands();
     lobbsAuthRegisterCommands();
     lobbsMailRegisterCommands();

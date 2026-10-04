@@ -12,8 +12,6 @@
 #include <stdint.h>
 #include <sys/time.h>
 
-static constexpr int LOBBS_HOOK_PRIORITY_TIME = 31;
-
 static void handleTime(LoBBSCommandCtx &ctx)
 {
     const char *peek = lobbsArgPeek(ctx);

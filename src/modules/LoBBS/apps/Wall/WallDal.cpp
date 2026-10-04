@@ -78,12 +78,6 @@ bool WallDal::loadCanvas(CanvasState &out)
     out.cells[LOBBS_WALL_CELLS] = '\0';
     wallSealCells(out.cells);
     out.crc32 = computeCrc32((const uint8_t *)out.cells, LOBBS_WALL_CELLS);
-    lodb_.deleteRecord("wall_canvas", id);
-    LoScalar fresh;
-    fresh.setString(WallCanvasField::FIELD_CELLS, out.cells);
-    fresh.setUint32(WallCanvasField::FIELD_CRC32, out.crc32);
-    if (lodb_.insert("wall_canvas", id, fresh) != LODB_OK)
-        return false;
     return true;
 }
 
@@ -95,12 +89,7 @@ bool WallDal::saveCanvas(CanvasState &canvas)
     LoScalar rec;
     rec.setString(WallCanvasField::FIELD_CELLS, canvas.cells);
     rec.setUint32(WallCanvasField::FIELD_CRC32, canvas.crc32);
-    rec.removeField(LODB_F_CREATED);
-    rec.removeField(LODB_F_UPDATED);
-    LoScalar existing;
-    if (lodb_.get("wall_canvas", id, existing) == LODB_OK)
-        return lodb_.update("wall_canvas", id, rec) == LODB_OK;
-    return lodb_.insert("wall_canvas", id, rec) == LODB_OK;
+    return lodb_.upsert("wall_canvas", id, rec) == LODB_OK;
 }
 
 bool WallDal::loadConfig(ConfigState &out)
@@ -114,12 +103,6 @@ bool WallDal::loadConfig(ConfigState &out)
     }
     out.period_seconds = LOBBS_WALL_DEFAULT_PERIOD_SEC;
     out.max_cells_per_cycle = LOBBS_WALL_DEFAULT_MAX_CELLS;
-    lodb_.deleteRecord("wall_config", id);
-    LoScalar fresh;
-    fresh.setUint32(WallConfigField::FIELD_PERIOD_SEC, out.period_seconds);
-    fresh.setUint32(WallConfigField::FIELD_MAX_CELLS, out.max_cells_per_cycle);
-    if (lodb_.insert("wall_config", id, fresh) != LODB_OK)
-        return false;
     return true;
 }
 
@@ -139,12 +122,7 @@ bool WallDal::setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle, char 
     LoScalar cfg;
     cfg.setUint32(WallConfigField::FIELD_PERIOD_SEC, periodSeconds);
     cfg.setUint32(WallConfigField::FIELD_MAX_CELLS, maxCellsPerCycle);
-    cfg.removeField(LODB_F_CREATED);
-    cfg.removeField(LODB_F_UPDATED);
-    LoScalar existing;
-    if (lodb_.get("wall_config", id, existing) == LODB_OK)
-        return lodb_.update("wall_config", id, cfg) == LODB_OK;
-    return lodb_.insert("wall_config", id, cfg) == LODB_OK;
+    return lodb_.upsert("wall_config", id, cfg) == LODB_OK;
 }
 
 bool WallDal::saveQuota(QuotaState &quota)
@@ -154,12 +132,7 @@ bool WallDal::saveQuota(QuotaState &quota)
     rec.setUint64(WallQuotaField::FIELD_USER_UUID, quota.user_uuid);
     rec.setUint32(WallQuotaField::FIELD_CYCLE_START, quota.cycle_start);
     rec.setUint32(WallQuotaField::FIELD_CELLS_USED, quota.cells_used);
-    rec.removeField(LODB_F_CREATED);
-    rec.removeField(LODB_F_UPDATED);
-    LoScalar existing;
-    if (lodb_.get("wall_quota", id, existing) == LODB_OK)
-        return lodb_.update("wall_quota", id, rec) == LODB_OK;
-    return lodb_.insert("wall_quota", id, rec) == LODB_OK;
+    return lodb_.upsert("wall_quota", id, rec) == LODB_OK;
 }
 
 bool WallDal::checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, char *err, size_t errCap)
@@ -277,13 +250,8 @@ bool WallDal::markSeen(uint64_t userUuid, uint32_t crc32Val)
     LoScalar seen;
     seen.setUint64(WallSeenField::FIELD_USER_UUID, userUuid);
     seen.setUint32(WallSeenField::FIELD_CRC32, crc32Val);
-    seen.removeField(LODB_F_CREATED);
-    seen.removeField(LODB_F_UPDATED);
     lodb_uuid_t id = wallSeenRecordUuid(userUuid);
-    LoScalar existing;
-    if (lodb_.get("wall_seen", id, existing) == LODB_OK)
-        return lodb_.update("wall_seen", id, seen) == LODB_OK;
-    return lodb_.insert("wall_seen", id, seen) == LODB_OK;
+    return lodb_.upsert("wall_seen", id, seen) == LODB_OK;
 }
 
 bool WallDal::isDirtyForUser(uint64_t userUuid)
