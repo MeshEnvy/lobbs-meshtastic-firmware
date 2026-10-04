@@ -21,6 +21,8 @@
 static_assert(LODB_FILE_IO_BUFFER_SIZE <= LODB_MAX_RECORD_FILE_BYTES,
               "encode buffer cannot exceed max on-disk record (get would reject writes)");
 
+static constexpr size_t LODB_RECORD_PATH_BYTES = 192;
+
 __attribute__((weak)) uint32_t lodb_now_ms(void)
 {
     return static_cast<uint32_t>(millis());
@@ -134,11 +136,50 @@ LoDb::LoDb(const char *db_name, LoFS::FSType filesystem) : db_name(db_name)
 
 LoDb::~LoDb() {}
 
-bool LoDb::isLsRecordFile(const std::string &filename)
+/** Calls fn for each `<16 hex>.ls` record in `dir_path`. False when the path is not a directory. */
+static bool lodbForEachRecord(const char *dir_path, const std::function<void(lodb_uuid_t)> &fn)
 {
-    if (filename.size() < 4)
+    File dir = LoFS::open(dir_path, FILE_O_READ);
+    if (!dir) {
+        LODB_LOG_DEBUG("Table directory not found: %s", dir_path);
+        return true;
+    }
+    if (!dir.isDirectory()) {
+        LODB_LOG_ERROR("Table path is not a directory: %s", dir_path);
+        dir.close();
         return false;
-    return filename.compare(filename.size() - 3, 3, ".ls") == 0;
+    }
+    while (true) {
+        File file = dir.openNextFile();
+        if (!file)
+            break;
+        bool isDir = file.isDirectory();
+        std::string path = file.name();
+        file.close();
+        if (isDir)
+            continue;
+        size_t slash = path.rfind('/');
+        const char *name = path.c_str() + (slash == std::string::npos ? 0 : slash + 1);
+        uint32_t high = 0;
+        uint32_t low = 0;
+        if (strlen(name) != 19 || strcmp(name + 16, ".ls") != 0 || sscanf(name, "%08x%08x", &high, &low) != 2) {
+            LODB_LOG_DEBUG("Skipped non-record file: %s", name);
+            continue;
+        }
+        fn(((uint64_t)high << 32) | (uint64_t)low);
+    }
+    dir.close();
+    return true;
+}
+
+bool LoDb::recordPath(const char *table_name, lodb_uuid_t uuid, char *out, size_t cap)
+{
+    TableMetadata *table = table_name ? getTable(table_name) : nullptr;
+    if (!table)
+        return false;
+    char uuid_hex[17];
+    lodb_uuid_to_hex(uuid, uuid_hex);
+    return snprintf(out, cap, "%s/%s.ls", table->table_path, uuid_hex) < (int)cap;
 }
 
 LoDbError LoDb::registerTable(const char *table_name)
@@ -171,6 +212,7 @@ LoDb::TableMetadata *LoDb::getTable(const char *table_name)
     return &it->second;
 }
 
+/** Writes to `<path>.w` then renames over `path`, so a failed write never truncates the record. */
 static LoDbError writeRecordFile(const char *file_path, const LoScalar &record)
 {
     std::string line;
@@ -179,10 +221,16 @@ static LoDbError writeRecordFile(const char *file_path, const LoScalar &record)
         return LODB_ERR_ENCODE;
     }
 
-    auto file = LoFS::open(file_path, FILE_O_WRITE);
+    char tmp_path[LODB_RECORD_PATH_BYTES + 2];
+    if (snprintf(tmp_path, sizeof(tmp_path), "%s.w", file_path) >= (int)sizeof(tmp_path)) {
+        LODB_LOG_ERROR("Temp path too long: %s", file_path);
+        return LODB_ERR_IO;
+    }
+    LoFS::remove(tmp_path);
+
+    auto file = LoFS::open(tmp_path, FILE_O_WRITE);
     if (!file) {
-        LODB_LOG_ERROR("Failed to open file for writing: %s", file_path);
-        LoFS::remove(file_path);
+        LODB_LOG_ERROR("Failed to open file for writing: %s", tmp_path);
         return LODB_ERR_IO;
     }
 
@@ -192,7 +240,13 @@ static LoDbError writeRecordFile(const char *file_path, const LoScalar &record)
     file.close();
     if (written != encoded_size) {
         LODB_LOG_ERROR("Failed to write file, wrote %u of %u bytes", (unsigned)written, (unsigned)encoded_size);
-        LoFS::remove(file_path);
+        LoFS::remove(tmp_path);
+        return LODB_ERR_IO;
+    }
+
+    if (!LoFS::rename(tmp_path, file_path)) {
+        LODB_LOG_ERROR("Failed to rename temp to: %s", file_path);
+        LoFS::remove(tmp_path);
         return LODB_ERR_IO;
     }
 
@@ -200,22 +254,21 @@ static LoDbError writeRecordFile(const char *file_path, const LoScalar &record)
     return LODB_OK;
 }
 
+static LoDbError writeUpdatedRecord(const char *file_path, lodb_uuid_t uuid, const LoScalar &record, const LoScalar &stored)
+{
+    LoScalar stamped = record;
+    lodbStampUpdate(uuid, stamped, &stored);
+    LoDbError err = writeRecordFile(file_path, stamped);
+    if (err == LODB_OK)
+        LODB_LOG_INFO("Updated record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
+    return err;
+}
+
 LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record)
 {
-    if (!table_name) {
+    char file_path[LODB_RECORD_PATH_BYTES];
+    if (!recordPath(table_name, uuid, file_path, sizeof(file_path)))
         return LODB_ERR_INVALID;
-    }
-
-    TableMetadata *table = getTable(table_name);
-    if (!table) {
-        return LODB_ERR_INVALID;
-    }
-
-    char uuid_hex[17];
-    lodb_uuid_to_hex(uuid, uuid_hex);
-
-    char file_path[192];
-    snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
 
     {
         auto existing = LoFS::open(file_path, FILE_O_READ);
@@ -243,21 +296,9 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const LoScalar 
 
 LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_out)
 {
-    if (!table_name) {
+    char file_path[LODB_RECORD_PATH_BYTES];
+    if (!recordPath(table_name, uuid, file_path, sizeof(file_path)))
         return LODB_ERR_INVALID;
-    }
-
-    TableMetadata *table = getTable(table_name);
-    if (!table) {
-        return LODB_ERR_INVALID;
-    }
-
-    char uuid_hex[17];
-    lodb_uuid_to_hex(uuid, uuid_hex);
-
-    char file_path[192];
-    snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
-    LODB_LOG_DEBUG("file_path: %s", file_path);
 
     auto file = LoFS::open(file_path, FILE_O_READ);
     if (!file) {
@@ -310,92 +351,35 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_o
 
 LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const LoScalar &record)
 {
-    if (!table_name) {
+    char file_path[LODB_RECORD_PATH_BYTES];
+    if (!recordPath(table_name, uuid, file_path, sizeof(file_path)))
         return LODB_ERR_INVALID;
-    }
-
-    TableMetadata *table = getTable(table_name);
-    if (!table) {
-        return LODB_ERR_INVALID;
-    }
-
-    char uuid_hex[17];
-    lodb_uuid_to_hex(uuid, uuid_hex);
-
-    char file_path[192];
-    snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
-
     LoScalar stored;
-    LoDbError getErr = get(table_name, uuid, stored);
-    if (getErr != LODB_OK)
-        return getErr;
-
-    LoScalar stamped = record;
-    lodbStampUpdate(uuid, stamped, &stored);
-
-    std::string line;
-    if (!stamped.encode(line, LODB_FILE_IO_BUFFER_SIZE)) {
-        LODB_LOG_ERROR("Failed to encode updated record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
-        return LODB_ERR_ENCODE;
-    }
-
-    char tmp_path[196];
-    if (snprintf(tmp_path, sizeof(tmp_path), "%s.w", file_path) >= (int)sizeof(tmp_path)) {
-        LODB_LOG_ERROR("Temp path too long for update");
-        return LODB_ERR_IO;
-    }
-    LoFS::remove(tmp_path);
-
-    auto file = LoFS::open(tmp_path, FILE_O_WRITE);
-    if (!file) {
-        LODB_LOG_ERROR("Failed to open temp for update: %s", tmp_path);
-        return LODB_ERR_IO;
-    }
-
-    size_t encoded_size = line.size();
-    size_t written = file.write((const uint8_t *)line.data(), encoded_size);
-    file.flush();
-    file.close();
-    if (written != encoded_size) {
-        LODB_LOG_ERROR("Failed to write updated temp file");
-        LoFS::remove(tmp_path);
-        return LODB_ERR_IO;
-    }
-
-    if (!LoFS::rename(tmp_path, file_path)) {
-        LODB_LOG_ERROR("Failed to rename temp to: %s", file_path);
-        LoFS::remove(tmp_path);
-        return LODB_ERR_IO;
-    }
-
-    LODB_LOG_INFO("Updated record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
-    return LODB_OK;
+    LoDbError err = get(table_name, uuid, stored);
+    if (err != LODB_OK)
+        return err;
+    return writeUpdatedRecord(file_path, uuid, record, stored);
 }
 
 LoDbError LoDb::upsert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record)
 {
-    LoScalar existing;
-    if (get(table_name, uuid, existing) == LODB_OK)
-        return update(table_name, uuid, record);
+    char file_path[LODB_RECORD_PATH_BYTES];
+    if (!recordPath(table_name, uuid, file_path, sizeof(file_path)))
+        return LODB_ERR_INVALID;
+    LoScalar stored;
+    LoDbError err = get(table_name, uuid, stored);
+    if (err == LODB_OK)
+        return writeUpdatedRecord(file_path, uuid, record, stored);
+    if (err != LODB_ERR_NOT_FOUND)
+        return err;
     return insert(table_name, uuid, record);
 }
 
 LoDbError LoDb::deleteRecord(const char *table_name, lodb_uuid_t uuid)
 {
-    if (!table_name) {
+    char file_path[LODB_RECORD_PATH_BYTES];
+    if (!recordPath(table_name, uuid, file_path, sizeof(file_path)))
         return LODB_ERR_INVALID;
-    }
-
-    TableMetadata *table = getTable(table_name);
-    if (!table) {
-        return LODB_ERR_INVALID;
-    }
-
-    char uuid_hex[17];
-    lodb_uuid_to_hex(uuid, uuid_hex);
-
-    char file_path[192];
-    snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
 
     if (!LoFS::exists(file_path))
         return LODB_ERR_NOT_FOUND;
@@ -422,68 +406,16 @@ std::vector<LoScalar> LoDb::select(const char *table_name, LoDbFilter filter, Lo
         return results;
     }
 
-    File dir = LoFS::open(table->table_path, FILE_O_READ);
-    if (!dir) {
-        LODB_LOG_DEBUG("Table directory not found: %s", table->table_path);
-        return results;
-    }
-
-    if (!dir.isDirectory()) {
-        LODB_LOG_ERROR("Table path is not a directory: %s", table->table_path);
-        dir.close();
-        return results;
-    }
-
-    while (true) {
-        File file = dir.openNextFile();
-        if (!file) {
-            break;
-        }
-
-        if (file.isDirectory()) {
-            file.close();
-            continue;
-        }
-
-        std::string pathStr = file.name();
-        file.close();
-
-        size_t lastSlash = pathStr.rfind('/');
-        std::string filename = (lastSlash != std::string::npos) ? pathStr.substr(lastSlash + 1) : pathStr;
-
-        if (!isLsRecordFile(filename)) {
-            LODB_LOG_DEBUG("Skipped non-.ls file: %s", filename.c_str());
-            continue;
-        }
-
-        std::string uuid_hex_str = filename.substr(0, filename.size() - 3);
-
-        lodb_uuid_t uuid;
-        uint32_t high, low;
-        if (sscanf(uuid_hex_str.c_str(), "%08x%08x", &high, &low) != 2) {
-            LODB_LOG_WARN("Failed to parse UUID from filename: %s", uuid_hex_str.c_str());
-            continue;
-        }
-        uuid = ((uint64_t)high << 32) | (uint64_t)low;
-
+    lodbForEachRecord(table->table_path, [&](lodb_uuid_t uuid) {
         LoScalar record;
-        LoDbError err = get(table_name, uuid, record);
-
-        if (err != LODB_OK) {
+        if (get(table_name, uuid, record) != LODB_OK) {
             LODB_LOG_WARN("Failed to read record " LODB_UUID_FMT " during select", LODB_UUID_ARGS(uuid));
-            continue;
+            return;
         }
-
-        if (filter && !filter(record)) {
-            LODB_LOG_DEBUG("Record " LODB_UUID_FMT " filtered out", LODB_UUID_ARGS(uuid));
-            continue;
-        }
-
+        if (filter && !filter(record))
+            return;
         results.push_back(record);
-        LODB_LOG_DEBUG("Added record " LODB_UUID_FMT " to results", LODB_UUID_ARGS(uuid));
-    }
-
-    dir.close();
+    });
 
     LODB_LOG_INFO("Select from %s: %u records after filtering", table_name, (unsigned)results.size());
 
@@ -518,41 +450,8 @@ int LoDb::count(const char *table_name, LoDbFilter filter)
     int cnt = 0;
 
     if (!filter) {
-        File dir = LoFS::open(table->table_path, FILE_O_READ);
-        if (!dir) {
-            LODB_LOG_DEBUG("Table directory not found: %s", table->table_path);
-            return 0;
-        }
-
-        if (!dir.isDirectory()) {
-            LODB_LOG_ERROR("Table path is not a directory: %s", table->table_path);
-            dir.close();
+        if (!lodbForEachRecord(table->table_path, [&](lodb_uuid_t) { cnt++; }))
             return -1;
-        }
-
-        while (true) {
-            File file = dir.openNextFile();
-            if (!file) {
-                break;
-            }
-
-            if (file.isDirectory()) {
-                file.close();
-                continue;
-            }
-
-            std::string pathStr = file.name();
-            file.close();
-
-            size_t lastSlash = pathStr.rfind('/');
-            std::string filename = (lastSlash != std::string::npos) ? pathStr.substr(lastSlash + 1) : pathStr;
-
-            if (isLsRecordFile(filename)) {
-                cnt++;
-            }
-        }
-
-        dir.close();
         LODB_LOG_DEBUG("Counted %d records in %s (no filter)", cnt, table_name);
         return cnt;
     }

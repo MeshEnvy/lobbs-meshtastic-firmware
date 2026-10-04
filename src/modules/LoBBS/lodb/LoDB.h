@@ -103,5 +103,5 @@ class LoDb
     std::map<std::string, TableMetadata> tables;
 
     TableMetadata *getTable(const char *table_name);
-    static bool isLsRecordFile(const std::string &filename);
+    bool recordPath(const char *table_name, lodb_uuid_t uuid, char *out, size_t cap);
 };
