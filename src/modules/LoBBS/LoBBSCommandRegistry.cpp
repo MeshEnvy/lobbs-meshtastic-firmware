@@ -4,10 +4,14 @@
 #include "LoBBSHooks.h"
 #include "LoBBSModule.h"
 #include "LoBBSReply.h"
+#include "LoBBSReplyCache.h"
+#include "LoBBSResponse.h"
+#include "gps/RTC.h"
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <lodb/LoDB.h>
 
 static void lobbsSkipWs(char *&p)
 {
@@ -33,15 +37,15 @@ void lobbsCommandReply(LoBBSCommandCtx &ctx, const char *body)
 {
     if (!body)
         body = "";
-    if (!ctx.mod || !ctx.mp)
-        return;
-    if (ctx.reqId == 0) {
-        ctx.mod->sendReply(*ctx.mp, body);
-        return;
+    LoBBSResponse resp;
+    if (strchr(body, '\n')) {
+        LoScalar rec;
+        rec.setString(LODB_F_DESCRIPTION, body);
+        lobbsResponseAppendRecord(resp, rec);
+    } else {
+        lobbsRecordPush(resp.records, body);
     }
-    char buf[LOBBS_REPLY_BYTES + 32];
-    snprintf(buf, sizeof(buf), "<%u>%s", ctx.reqId, body);
-    ctx.mod->sendReply(*ctx.mp, buf);
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 const char *lobbsArgShift(LoBBSCommandCtx &ctx)
@@ -61,13 +65,23 @@ const char *lobbsArgShift(LoBBSCommandCtx &ctx)
     return start;
 }
 
+/** Next token without consuming it. Valid until the next peek; long tokens are truncated. */
 const char *lobbsArgPeek(const LoBBSCommandCtx &ctx)
 {
+    static char tok[64];
     if (!ctx.rest)
         return nullptr;
     char *p = ctx.rest;
     lobbsSkipWs(p);
-    return p[0] ? p : nullptr;
+    if (!p[0])
+        return nullptr;
+    size_t n = 0;
+    while (p[n] && p[n] != ' ' && p[n] != '\t' && n + 1 < sizeof(tok)) {
+        tok[n] = p[n];
+        n++;
+    }
+    tok[n] = '\0';
+    return tok;
 }
 
 bool lobbsArgTakePage(LoBBSCommandCtx &ctx)
@@ -113,6 +127,18 @@ bool lobbsTokenIsPage(const char *tok)
 {
     uint32_t page = 1;
     return lobbsParsePageToken(tok, page);
+}
+
+bool lobbsCommandIsPageOnly(const char *verb, const char *rest, uint32_t &pageOut)
+{
+    pageOut = 1;
+    if (!verb || !verb[0])
+        return false;
+    if (lobbsParsePageToken(verb, pageOut))
+        return !rest || !rest[0];
+    if ((verb[0] == 'p' || verb[0] == 'P') && verb[1] == '\0' && lobbsTokIsUint(rest, pageOut))
+        return true;
+    return false;
 }
 
 bool lobbsTokIsUint(const char *tok, uint32_t &out)
@@ -172,38 +198,39 @@ bool lobbsHelpQueryMatches(const char *query, const char *prefix)
     return query[plen] == ' ';
 }
 
-void lobbsRootCommandPush(std::vector<std::string> &lines, const char *name)
+bool lobbsSlashVerbIs(const LoScalar &args, const char *verb)
 {
-    if (name && name[0])
-        lines.push_back(name);
+    std::string v;
+    return verb && args.getString(LOBBS_ARG_VERB, v) && strcasecmp(v.c_str(), verb) == 0;
 }
 
-void lobbsCommandHelpPush(std::vector<std::string> &lines, const char *topic, const LoBBSSubHelpEntry *entries,
-                          size_t count, const char *query)
+void lobbsHelpForTopic(LoScalar &value, const LoScalar &args, const char *topic, const LoBBSSubHelpEntry *entries, size_t count)
 {
-    if (!query || !topic || !entries)
-        return;
-    if (!lobbsHelpQueryMatches(query, topic) && strcasecmp(query, topic) != 0)
+    std::string query;
+    if (!topic || !entries || !args.getString(LODB_F_TITLE, query) || !lobbsHelpQueryMatches(query.c_str(), topic))
         return;
 
-    if (strcasecmp(query, topic) == 0) {
-        for (size_t i = 0; i < count; i++) {
-            if (entries[i].line)
-                lines.push_back(entries[i].line);
-        }
-        return;
-    }
-
+    std::string body;
+    bool whole = strcasecmp(query.c_str(), topic) == 0;
     for (size_t i = 0; i < count; i++) {
-        if (!entries[i].verb || !entries[i].line)
+        if (!entries[i].line)
             continue;
-        char path[80];
-        snprintf(path, sizeof(path), "%s %s", topic, entries[i].verb);
-        if (strcasecmp(query, path) == 0) {
-            lines.push_back(entries[i].line);
-            return;
+        if (!whole) {
+            if (!entries[i].verb)
+                continue;
+            char path[80];
+            snprintf(path, sizeof(path), "%s %s", topic, entries[i].verb);
+            if (strcasecmp(query.c_str(), path) != 0)
+                continue;
         }
+        if (!body.empty())
+            body.push_back('\n');
+        body += entries[i].line;
+        if (!whole)
+            break;
     }
+    if (!body.empty())
+        value.setString(LODB_F_DESCRIPTION, body);
 }
 
 bool lobbsHelpStripTrailingPage(char *query, size_t queryCap, uint32_t &pageOut)
@@ -246,8 +273,8 @@ static bool lobbsPagerMeasureLine(LoBBSPagerFormatLineFn fn, void *fnCtx, uint32
     return false;
 }
 
-static bool lobbsPagerPackPages(uint32_t itemCount, LoBBSPagerFormatLineFn fn, void *fnCtx, size_t maxBytes,
-                                bool reserveFooter, uint32_t *pageStarts, int &pageCountOut)
+static bool lobbsPagerPackPages(uint32_t itemCount, LoBBSPagerFormatLineFn fn, void *fnCtx, size_t maxBytes, bool reserveFooter,
+                                uint32_t *pageStarts, int &pageCountOut)
 {
     char lineBuf[160];
     pageCountOut = 0;
@@ -363,32 +390,10 @@ bool lobbsPagerFormatLines(char *out, size_t outCap, uint32_t page1, const char 
     return lobbsPagerRenderPage(out, outCap, page1, lineCount, lobbsPagerFormatCStringLine, &ctx, errEmpty, errBadPage);
 }
 
-bool lobbsPagerFormatItems(char *out, size_t outCap, uint32_t page1, uint32_t itemCount, LoBBSPagerFormatLineFn fn,
-                           void *fnCtx, const char **errEmpty, const char **errBadPage)
+bool lobbsPagerFormatItems(char *out, size_t outCap, uint32_t page1, uint32_t itemCount, LoBBSPagerFormatLineFn fn, void *fnCtx,
+                           const char **errEmpty, const char **errBadPage)
 {
     return lobbsPagerRenderPage(out, outCap, page1, itemCount, fn, fnCtx, errEmpty, errBadPage);
-}
-
-void lobbsCommandReplyPagedLines(LoBBSCommandCtx &ctx, const std::vector<std::string> &lines)
-{
-    if (lines.empty()) {
-        lobbsCommandReply(ctx, "Empty.");
-        return;
-    }
-    const char *ptrs[256];
-    uint32_t n = (uint32_t)lines.size();
-    if (n > 256)
-        n = 256;
-    for (uint32_t i = 0; i < n; i++)
-        ptrs[i] = lines[i].c_str();
-    char buf[LOBBS_REPLY_BYTES + 1];
-    const char *errEmpty = nullptr;
-    const char *errBadPage = nullptr;
-    if (!lobbsPagerFormatLines(buf, sizeof(buf), ctx.page, ptrs, n, &errEmpty, &errBadPage)) {
-        lobbsCommandReply(ctx, errBadPage ? errBadPage : (errEmpty ? errEmpty : "Empty."));
-        return;
-    }
-    lobbsCommandReply(ctx, buf);
 }
 
 bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx)
@@ -417,7 +422,9 @@ bool lobbsCommandRequireLogin(LoBBSCommandCtx &ctx)
 {
     if (lobbsCtxLoggedIn(ctx))
         return true;
-    lobbsCommandReply(ctx, "Login required.");
+    LoBBSResponse resp;
+    lobbsResponseSetError(resp, "Login required.");
+    lobbsCommandReplyResponse(ctx, resp);
     return false;
 }
 
@@ -425,7 +432,9 @@ bool lobbsCommandRequireSysop(LoBBSCommandCtx &ctx)
 {
     if (lobbsCtxLoggedIn(ctx) && ctx.session.isSysop)
         return true;
-    lobbsCommandReply(ctx, "SysOp only.");
+    LoBBSResponse resp;
+    lobbsResponseSetError(resp, "SysOp only.");
+    lobbsCommandReplyResponse(ctx, resp);
     return false;
 }
 
@@ -469,6 +478,8 @@ void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, cons
     ctx.session = session;
     ctx.page = 1;
 
+    lobbsReplyCacheGc(mod, getTime());
+
     char *verb = nullptr;
     char *rest = nullptr;
     if (!lobbsPeelSlashLine(line, ctx, &verb, &rest))
@@ -477,8 +488,19 @@ void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, cons
         lobbsCommandReply(ctx, "Missing command.");
         return;
     }
+
+    uint32_t pageOnly = 1;
+    if (lobbsCommandIsPageOnly(verb, rest, pageOnly)) {
+        ctx.page = pageOnly;
+        lobbsReplySendCachedPage(ctx);
+        return;
+    }
+
     ctx.rest = rest;
-    lobbsDoAction("slash_cmd", ctx, verb, rest);
+    LoScalar args;
+    args.setString(LOBBS_ARG_VERB, verb);
+    args.setString(LOBBS_ARG_REST, rest);
+    lobbsDoAction("slash_cmd", ctx, args);
 }
 
 #endif

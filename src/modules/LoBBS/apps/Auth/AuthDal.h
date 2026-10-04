@@ -5,6 +5,7 @@
 #include <lodb/LoDB.h>
 #include <stdint.h>
 #include <string>
+#include <vector>
 
 class AuthDal
 {
@@ -22,6 +23,7 @@ class AuthDal
     bool loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessionNodeIdOut = nullptr,
                           uint64_t *authUserUuidOut = nullptr);
     bool buildUserList(const char *filterSubstr, std::string &msg, const char **emptyReply);
+    std::vector<LoScalar> listUsers(const char *filterSubstr);
     bool formatUserListPage(const char *filterSubstr, uint32_t page1Based, std::string &msg, uint32_t &totalCount,
                             const char **emptyReply);
     bool createUser(const char *username, const char *password, uint32_t nodeId);

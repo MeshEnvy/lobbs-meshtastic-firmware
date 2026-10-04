@@ -72,7 +72,7 @@ static constexpr uint32_t LOBBS_MAX_LIST_ROWS = 256;
 
 bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *message)
 {
-    lodb_uuid_t mailUuidVal = lodb_new_uuid((const char *)&toUserUuid, getTime());
+    lodb_uuid_t mailUuidVal = lodb_new_uuid(nullptr, toUserUuid ^ fromUserUuid);
 
     LoScalar mail;
     char msgBuf[LOBBS_MESSAGE_BODY_BUFFER_SIZE];

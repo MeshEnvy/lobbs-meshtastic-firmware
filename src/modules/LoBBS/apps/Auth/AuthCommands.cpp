@@ -1,34 +1,62 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "AuthCommands.h"
-#include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
+#include "../../LoBBSHooks.h"
 #include "../../LoBBSModule.h"
+#include "../../LoBBSResponse.h"
+#include "../AppUtil.h"
 #include "AuthDal.h"
+#include "AuthRecords.h"
 #include "mesh/NodeDB.h"
 #include <cstdio>
 #include <cstring>
+#include <lodb/LoDB.h>
 #include <string>
+
+static void authAppendUserRecord(LoBBSResponse &resp, const LoScalar &user)
+{
+    char name[LOBBS_USERNAME_BUFFER_SIZE];
+    AuthDal::userUsername(user, name, sizeof(name));
+    std::string line = name;
+    if (AuthDal::userIsSysop(user))
+        line += "*";
+    char idBuf[24];
+    lobbsAppFormatUint64Decimal(idBuf, sizeof(idBuf), AuthDal::userUuid(user));
+    LoScalar rec;
+    rec.setString(LODB_F_TITLE, line.c_str());
+    rec.setString(LODB_F_ID, idBuf);
+    rec.setBool(AuthUser::FIELD_SYSOP, AuthDal::userIsSysop(user));
+    lobbsResponseAppendRecord(resp, rec);
+}
 
 static void handleWhoami(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireLogin(ctx))
         return;
-    char buf[96];
     char uname[LOBBS_USERNAME_BUFFER_SIZE];
     lobbsCtxUsername(ctx, uname, sizeof(uname));
-    snprintf(buf, sizeof(buf), "Logged in as %s.", uname);
-    if (ctx.session.isSysop) {
-        size_t len = strlen(buf);
-        snprintf(buf + len, sizeof(buf) - len, "\nYou are the SysOp.");
-    }
-    lobbsCommandReply(ctx, buf);
+    char title[96];
+    snprintf(title, sizeof(title), "Logged in as %s.", uname);
+    LoScalar rec;
+    rec.setString(LODB_F_TITLE, title);
+    if (ctx.session.isSysop)
+        rec.setString(LODB_F_DESCRIPTION, "You are the SysOp.");
+    char idBuf[24];
+    lobbsAppFormatUint64Decimal(idBuf, sizeof(idBuf), lobbsCtxUserUuid(ctx));
+    rec.setString(LODB_F_ID, idBuf);
+    rec.setBool(AuthUser::FIELD_SYSOP, ctx.session.isSysop);
+    LoBBSResponse resp;
+    lobbsResponseAppendRecord(resp, rec);
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void handleLogout(LoBBSCommandCtx &ctx)
 {
     ctx.mod->auth().dal().logoutUser(ctx.session.nodeId);
-    lobbsCommandReply(ctx, "Goodbye!");
+    LoBBSResponse resp;
+    lobbsRecordPush(resp.records, "Goodbye!");
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void handleLogin(LoBBSCommandCtx &ctx)
@@ -36,59 +64,73 @@ static void handleLogin(LoBBSCommandCtx &ctx)
     AuthDal &auth = ctx.mod->auth().dal();
     const char *username = lobbsArgShift(ctx);
     const char *password = lobbsArgShift(ctx);
+    LoBBSResponse resp;
     if (!username || !password) {
-        lobbsCommandReply(ctx, "Usage: /login user password");
+        lobbsResponseSetError(resp, "Usage: /login user password");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
     if (!auth.isValidUsername(username)) {
-        lobbsCommandReply(ctx, "Invalid username.");
+        lobbsResponseSetError(resp, "Invalid username.");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
     if (strlen(password) < 5 || !auth.isValidPassword(password)) {
-        lobbsCommandReply(ctx, "Password too short.");
+        lobbsResponseSetError(resp, "Password too short.");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
     LoScalar dbUser;
     if (auth.loadUserByUsername(username, &dbUser)) {
         if (!auth.verifyPassword(&dbUser, password)) {
-            lobbsCommandReply(ctx, "Invalid password");
+            lobbsResponseSetError(resp, "Invalid password");
+            lobbsCommandReplyResponse(ctx, resp);
             return;
         }
         const uint32_t sessionKey = getFrom(ctx.mp);
         if (!auth.loginUser(username, sessionKey)) {
-            lobbsCommandReply(ctx, "Error creating session");
+            lobbsResponseSetError(resp, "Error creating session");
+            lobbsCommandReplyResponse(ctx, resp);
             return;
         }
     } else if (!auth.createUser(username, password, getFrom(ctx.mp))) {
-        lobbsCommandReply(ctx, "Error creating account");
+        lobbsResponseSetError(resp, "Error creating account");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     } else {
         auth.loadUserByUsername(username, &dbUser);
     }
-    char buf[96];
-    snprintf(buf, sizeof(buf), "Welcome %s!", username);
-    if (AuthDal::userIsSysop(dbUser)) {
-        size_t len = strlen(buf);
-        snprintf(buf + len, sizeof(buf) - len, "\nYou are the SysOp.");
-    }
-    lobbsCommandReply(ctx, buf);
+    char title[96];
+    snprintf(title, sizeof(title), "Welcome %s!", username);
+    LoScalar rec;
+    rec.setString(LODB_F_TITLE, title);
+    if (AuthDal::userIsSysop(dbUser))
+        rec.setString(LODB_F_DESCRIPTION, "You are the SysOp.");
+    rec.setBool(AuthUser::FIELD_SYSOP, AuthDal::userIsSysop(dbUser));
+    lobbsResponseAppendRecord(resp, rec);
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static bool passwdApply(AuthDal &auth, const char *username, const char *newPass, const char *confirm, LoBBSCommandCtx &ctx)
 {
+    LoBBSResponse resp;
     if (strcmp(newPass, confirm) != 0) {
-        lobbsCommandReply(ctx, "Passwords do not match.");
+        lobbsResponseSetError(resp, "Passwords do not match.");
+        lobbsCommandReplyResponse(ctx, resp);
         return false;
     }
     if (strlen(newPass) < 5 || !auth.isValidPassword(newPass)) {
-        lobbsCommandReply(ctx, "Password too short.");
+        lobbsResponseSetError(resp, "Password too short.");
+        lobbsCommandReplyResponse(ctx, resp);
         return false;
     }
     if (!auth.setPasswordByUsername(username, newPass)) {
-        lobbsCommandReply(ctx, "Error updating password.");
+        lobbsResponseSetError(resp, "Error updating password.");
+        lobbsCommandReplyResponse(ctx, resp);
         return false;
     }
-    lobbsCommandReply(ctx, "Password updated.");
+    lobbsRecordPush(resp.records, "Password updated.");
+    lobbsCommandReplyResponse(ctx, resp);
     return true;
 }
 
@@ -110,18 +152,24 @@ static void handlePasswd(LoBBSCommandCtx &ctx)
         if (!lobbsCommandRequireSysop(ctx))
             return;
         if (!auth.isValidUsername(a)) {
-            lobbsCommandReply(ctx, "Invalid username.");
+            LoBBSResponse resp;
+            lobbsResponseSetError(resp, "Invalid username.");
+            lobbsCommandReplyResponse(ctx, resp);
             return;
         }
         LoScalar dbUser;
         if (!auth.loadUserByUsername(a, &dbUser)) {
-            lobbsCommandReply(ctx, "User not found.");
+            LoBBSResponse resp;
+            lobbsResponseSetError(resp, "User not found.");
+            lobbsCommandReplyResponse(ctx, resp);
             return;
         }
         passwdApply(auth, a, b, c, ctx);
         return;
     }
-    lobbsCommandReply(ctx, "Usage: /passwd new confirm\nUsage: /passwd user new confirm (sysop)");
+    LoBBSResponse resp;
+    lobbsResponseSetError(resp, "Usage: /passwd new confirm\nUsage: /passwd user new confirm (sysop)");
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void usersSubList(LoBBSCommandCtx &ctx)
@@ -129,41 +177,43 @@ static void usersSubList(LoBBSCommandCtx &ctx)
     const char *sub = lobbsArgPeek(ctx);
     if (sub && strcasecmp(sub, "list") == 0)
         lobbsArgShift(ctx);
-    lobbsArgTakePage(ctx);
     AuthDal &auth = ctx.mod->auth().dal();
-    std::string msg;
-    uint32_t total = 0;
-    const char *empty = nullptr;
-    if (!auth.formatUserListPage(nullptr, ctx.page, msg, total, &empty)) {
-        lobbsCommandReply(ctx, empty ? empty : "No such page.");
+    auto users = auth.listUsers(nullptr);
+    LoBBSResponse resp;
+    if (users.empty()) {
+        lobbsResponseSetError(resp, "No users found");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    lobbsCommandReply(ctx, msg.c_str());
+    for (const LoScalar &user : users)
+        authAppendUserRecord(resp, user);
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void usersSubFind(LoBBSCommandCtx &ctx)
 {
     const char *sub = lobbsArgShift(ctx);
     if (!sub || strcasecmp(sub, "find") != 0) {
-        lobbsCommandReply(ctx, "Usage: /users find text [pN]");
+        LoBBSResponse resp;
+        lobbsResponseSetError(resp, "Usage: /users find text");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
     char filterBuf[128];
     strncpy(filterBuf, lobbsArgRest(ctx), sizeof(filterBuf) - 1);
     filterBuf[sizeof(filterBuf) - 1] = '\0';
-    uint32_t page = ctx.page;
-    lobbsHelpStripTrailingPage(filterBuf, sizeof(filterBuf), page);
-    ctx.page = page;
 
     AuthDal &auth = ctx.mod->auth().dal();
-    std::string msg;
-    uint32_t total = 0;
-    const char *empty = nullptr;
-    if (!auth.formatUserListPage(filterBuf[0] ? filterBuf : nullptr, ctx.page, msg, total, &empty)) {
-        lobbsCommandReply(ctx, empty ? empty : "No such page.");
+    auto users = auth.listUsers(filterBuf[0] ? filterBuf : nullptr);
+    LoBBSResponse resp;
+    if (users.empty()) {
+        lobbsResponseSetError(resp, "No users match filter.");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    lobbsCommandReply(ctx, msg.c_str());
+    for (const LoScalar &user : users)
+        authAppendUserRecord(resp, user);
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void usersSubKick(LoBBSCommandCtx &ctx)
@@ -173,10 +223,14 @@ static void usersSubKick(LoBBSCommandCtx &ctx)
     const char *sub = lobbsArgShift(ctx);
     const char *user = lobbsArgShift(ctx);
     if (!sub || strcasecmp(sub, "kick") != 0 || !user) {
-        lobbsCommandReply(ctx, "Usage: /users kick user");
+        LoBBSResponse resp;
+        lobbsResponseSetError(resp, "Usage: /users kick user");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    lobbsCommandReply(ctx, ctx.mod->auth().dal().kickUserByUsername(user) ? "Sessions cleared." : "User not found.");
+    LoBBSResponse resp;
+    lobbsRecordPush(resp.records, ctx.mod->auth().dal().kickUserByUsername(user) ? "Sessions cleared." : "User not found.");
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void usersSubPromote(LoBBSCommandCtx &ctx)
@@ -186,10 +240,14 @@ static void usersSubPromote(LoBBSCommandCtx &ctx)
     const char *sub = lobbsArgShift(ctx);
     const char *user = lobbsArgShift(ctx);
     if (!sub || strcasecmp(sub, "promote") != 0 || !user) {
-        lobbsCommandReply(ctx, "Usage: /users promote user");
+        LoBBSResponse resp;
+        lobbsResponseSetError(resp, "Usage: /users promote user");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    lobbsCommandReply(ctx, ctx.mod->auth().dal().setUserSysopByUsername(user, true) ? "Promoted." : "User not found.");
+    LoBBSResponse resp;
+    lobbsRecordPush(resp.records, ctx.mod->auth().dal().setUserSysopByUsername(user, true) ? "Promoted." : "User not found.");
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void usersSubDemote(LoBBSCommandCtx &ctx)
@@ -199,25 +257,31 @@ static void usersSubDemote(LoBBSCommandCtx &ctx)
     const char *sub = lobbsArgShift(ctx);
     const char *user = lobbsArgShift(ctx);
     if (!sub || strcasecmp(sub, "demote") != 0 || !user) {
-        lobbsCommandReply(ctx, "Usage: /users demote user");
+        LoBBSResponse resp;
+        lobbsResponseSetError(resp, "Usage: /users demote user");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
     AuthDal &auth = ctx.mod->auth().dal();
     LoScalar target;
+    LoBBSResponse resp;
     if (!auth.loadUserByUsername(user, &target)) {
-        lobbsCommandReply(ctx, "User not found.");
+        lobbsResponseSetError(resp, "User not found.");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
     if (AuthDal::userIsSysop(target) && auth.countSysopUsers() <= 1) {
-        lobbsCommandReply(ctx, "Cannot demote last SysOp.");
+        lobbsResponseSetError(resp, "Cannot demote last SysOp.");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    lobbsCommandReply(ctx, auth.setUserSysopByUsername(user, false) ? "Demoted." : "Failed.");
+    lobbsRecordPush(resp.records, auth.setUserSysopByUsername(user, false) ? "Demoted." : "Failed.");
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static const LoBBSSubHelpEntry usersHelp[] = {
-    {"list", "list [pN] — all users"},
-    {"find", "find text [pN] — filter by username"},
+    {"list", "list — all users (/p2 …)"},
+    {"find", "find text — filter by username (/p2 …)"},
     {"kick", "kick user — sysop: clear sessions"},
     {"promote", "promote user — sysop: grant sysop"},
     {"demote", "demote user — sysop: revoke sysop"},
@@ -265,16 +329,18 @@ static void handleUsers(LoBBSCommandCtx &ctx)
         usersSubDemote(ctx);
         return;
     }
-    lobbsCommandReply(ctx, "Unknown command. Try /help users");
+    LoBBSResponse resp;
+    lobbsResponseSetError(resp, "Unknown command. Try /help users");
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
-static void slashAuth(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+static void slashAuth(LoBBSCommandCtx *ctx, const LoScalar &args)
 {
-    if (!ctx || !verb)
+    std::string v;
+    if (!ctx || !args.getString(LOBBS_ARG_VERB, v))
         return;
     LoBBSCommandCtx &c = *ctx;
-    if (rest)
-        c.rest = (char *)rest;
+    const char *verb = v.c_str();
     if (strcasecmp(verb, "whoami") == 0) {
         handleWhoami(c);
         return;
@@ -297,50 +363,78 @@ static void slashAuth(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
     }
 }
 
-static void filterAuthRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterAuthHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
 {
-    if (query || !ctx)
+    (void)args;
+    if (!ctx)
         return;
     if (lobbsCtxLoggedIn(*ctx)) {
-        lobbsRootCommandPush(lines, "whoami");
-        lobbsRootCommandPush(lines, "logout");
-        lobbsRootCommandPush(lines, "passwd");
-        lobbsRootCommandPush(lines, "users");
+        lobbsRecordPush(topics, "whoami", "show your account");
+        lobbsRecordPush(topics, "logout", "sign out");
+        lobbsRecordPush(topics, "passwd", "change your password");
+        lobbsRecordPush(topics, "users", "list users");
     } else {
-        lobbsRootCommandPush(lines, "login");
+        lobbsRecordPush(topics, "login", "sign in or create an account");
     }
 }
 
-static void filterAuthCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterAuthHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     (void)ctx;
-    lobbsCommandHelpPush(lines, "whoami", whoamiHelp, sizeof(whoamiHelp) / sizeof(whoamiHelp[0]), query);
-    lobbsCommandHelpPush(lines, "login", loginHelp, sizeof(loginHelp) / sizeof(loginHelp[0]), query);
-    lobbsCommandHelpPush(lines, "logout", logoutHelp, sizeof(logoutHelp) / sizeof(logoutHelp[0]), query);
-    lobbsCommandHelpPush(lines, "passwd", passwdHelp, sizeof(passwdHelp) / sizeof(passwdHelp[0]), query);
-    lobbsCommandHelpPush(lines, "users", usersHelp, sizeof(usersHelp) / sizeof(usersHelp[0]), query);
+    lobbsHelpForTopic(value, args, "whoami", whoamiHelp, sizeof(whoamiHelp) / sizeof(whoamiHelp[0]));
+    lobbsHelpForTopic(value, args, "login", loginHelp, sizeof(loginHelp) / sizeof(loginHelp[0]));
+    lobbsHelpForTopic(value, args, "logout", logoutHelp, sizeof(logoutHelp) / sizeof(logoutHelp[0]));
+    lobbsHelpForTopic(value, args, "passwd", passwdHelp, sizeof(passwdHelp) / sizeof(passwdHelp[0]));
+    lobbsHelpForTopic(value, args, "users", usersHelp, sizeof(usersHelp) / sizeof(usersHelp[0]));
 }
 
-static void filterAuthStatusLines(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterAuthStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)
 {
-    (void)query;
+    (void)args;
     if (!ctx || !ctx->mod)
         return;
-    char line[96];
+    char title[32];
+    char value[32];
     uint32_t n = ctx->mod->auth().dal().countAllUsers();
-    if (lobbsCtxLoggedIn(*ctx))
-        snprintf(line, sizeof(line), "Users: %u", (unsigned)n);
-    else
-        snprintf(line, sizeof(line), "Users: %u (all time)", (unsigned)n);
-    lines.push_back(line);
+    snprintf(title, sizeof(title), "Users");
+    snprintf(value, sizeof(value), "%u total", (unsigned)n);
+    lobbsRecordPush(lines, title, value);
+}
+
+static bool displayAuthRecord(const LoScalar &record, std::string &lineOut)
+{
+    if (record.has(LODB_F_ID) && record.has(AuthUser::FIELD_SYSOP) && record.has(LODB_F_TITLE)) {
+        std::string title;
+        if (record.getString(LODB_F_TITLE, title)) {
+            lineOut = title;
+            return true;
+        }
+    }
+    std::string title;
+    std::string body;
+    if (record.getString(LODB_F_TITLE, title) && record.getString(LODB_F_DESCRIPTION, body) &&
+        (title.rfind("Welcome ", 0) == 0 || title.rfind("Logged in as ", 0) == 0)) {
+        lineOut = title + "\n" + body;
+        return true;
+    }
+    return false;
+}
+
+static void displayAuthHuman(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &record)
+{
+    (void)ctx;
+    std::string line;
+    if (displayAuthRecord(record, line))
+        value.setString(LODB_F_TITLE, line);
 }
 
 void lobbsAuthRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashAuth, LOBBS_HOOK_PRIORITY_AUTH);
-    lobbsAddFilter("root_commands", filterAuthRootCommands, LOBBS_HOOK_PRIORITY_AUTH);
-    lobbsAddFilter("command_help", filterAuthCommandHelp, LOBBS_HOOK_PRIORITY_AUTH);
+    lobbsAddFilter("help_topics", filterAuthHelpTopics, LOBBS_HOOK_PRIORITY_AUTH);
+    lobbsAddFilter("help_for_topic", filterAuthHelpForTopic, LOBBS_HOOK_PRIORITY_AUTH);
     lobbsAddFilter("status_lines", filterAuthStatusLines, LOBBS_HOOK_PRIORITY_AUTH);
+    lobbsAddFilter("display_human", displayAuthHuman, LOBBS_HOOK_PRIORITY_AUTH);
 }
 
 #endif

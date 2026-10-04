@@ -1,7 +1,7 @@
-#include <loscalar/LoScalar.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <loscalar/LoScalar.h>
 
 static constexpr uint32_t kLoScalarFieldMax = 99;
 
@@ -10,7 +10,8 @@ static bool loscalarFieldOk(uint32_t field)
     return field <= kLoScalarFieldMax;
 }
 
-namespace {
+namespace
+{
 
 bool loscalarUnescapeValue(const char *in, size_t inLen, std::string &raw)
 {

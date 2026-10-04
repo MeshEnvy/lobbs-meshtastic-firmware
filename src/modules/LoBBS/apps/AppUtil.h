@@ -18,5 +18,6 @@ void lobbsAppUsernameForUuid(LoBBSModule *mod, uint64_t uuid, char *buf, size_t 
 uint64_t lobbsAppUuidForUsername(LoBBSModule *mod, const char *username);
 /** Sets uuidOut and returns true, or replies and returns false. */
 bool lobbsAppResolveUsername(LoBBSCommandCtx &ctx, const char *username, uint64_t &uuidOut);
+void lobbsAppFormatUint64Decimal(char *buf, size_t bufCap, uint64_t value);
 
 #endif

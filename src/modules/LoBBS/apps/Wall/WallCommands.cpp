@@ -1,13 +1,15 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "WallCommands.h"
-#include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
+#include "../../LoBBSHooks.h"
 #include "../../LoBBSModule.h"
 #include "../../LoBBSReply.h"
+#include "../../LoBBSResponse.h"
 #include "WallDal.h"
 #include <cstdio>
 #include <cstring>
+#include <lodb/LoDB.h>
 #include <strings.h>
 
 static const LoBBSSubHelpEntry wallHelp[] = {
@@ -82,46 +84,40 @@ static void handleWall(LoBBSCommandCtx &ctx)
     replyGrid(ctx, true);
 }
 
-static void slashWall(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+static void slashWall(LoBBSCommandCtx *ctx, const LoScalar &args)
 {
-    if (!ctx || !verb || strcasecmp(verb, "wall") != 0)
+    if (!ctx || !lobbsSlashVerbIs(args, "wall"))
         return;
-    LoBBSCommandCtx &c = *ctx;
-    if (rest)
-        c.rest = (char *)rest;
-    handleWall(c);
+    handleWall(*ctx);
 }
 
-static void filterWallRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterWallHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
 {
     (void)ctx;
-    if (query)
-        return;
-    lobbsRootCommandPush(lines, "wall");
+    (void)args;
+    lobbsRecordPush(topics, "wall", "shared 12x12 paint grid");
 }
 
-static void filterWallCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterWallHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     (void)ctx;
-    lobbsCommandHelpPush(lines, "wall", wallHelp, sizeof(wallHelp) / sizeof(wallHelp[0]), query);
+    lobbsHelpForTopic(value, args, "wall", wallHelp, sizeof(wallHelp) / sizeof(wallHelp[0]));
 }
 
-static void filterWallStatusLines(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterWallStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)
 {
-    (void)query;
+    (void)args;
     if (!ctx || !ctx->mod || !lobbsCtxLoggedIn(*ctx))
         return;
-    char line[32];
     bool dirty = ctx->mod->wall().dal().isDirtyForUser(lobbsCtxUserUuid(*ctx));
-    snprintf(line, sizeof(line), "Wall: %s", dirty ? "new" : "seen");
-    lines.push_back(line);
+    lobbsRecordPush(lines, "Wall", dirty ? "new" : "seen");
 }
 
 void lobbsWallRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashWall, LOBBS_HOOK_PRIORITY_FEATURE);
-    lobbsAddFilter("root_commands", filterWallRootCommands, LOBBS_HOOK_PRIORITY_FEATURE);
-    lobbsAddFilter("command_help", filterWallCommandHelp, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("help_topics", filterWallHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("help_for_topic", filterWallHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("status_lines", filterWallStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
 }
 

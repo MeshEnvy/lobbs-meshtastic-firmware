@@ -1,12 +1,15 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "FsCommands.h"
-#include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
+#include "../../LoBBSHooks.h"
 #include "../../LoBBSReply.h"
-#include <lofs/LoFS.h>
+#include "../../LoBBSResponse.h"
 #include <cstdio>
 #include <cstring>
+#include <lodb/LoDB.h>
+#include <lofs/LoFS.h>
+#include <string>
 
 static constexpr int FS_LS_MAX_NAMES = 128;
 static constexpr size_t FS_NAME_BYTES = 48;
@@ -169,8 +172,7 @@ static bool fsMatchFileCb(void *ctx, const char *basename, bool isDirectory)
     return true;
 }
 
-static bool fsResolveOneFilePath(const char *spec, char *dir, size_t dirCap, char *outPath, size_t outCap,
-                                 LoBBSCommandCtx &ctx)
+static bool fsResolveOneFilePath(const char *spec, char *dir, size_t dirCap, char *outPath, size_t outCap, LoBBSCommandCtx &ctx)
 {
     if (fsGlobBeforeLastName(spec)) {
         lobbsCommandReply(ctx, "glob only on the last name");
@@ -228,8 +230,6 @@ static void handleLs(LoBBSCommandCtx &ctx)
     const char *pathTok = lobbsArgPeek(ctx);
     if (pathTok && !lobbsTokenIsPage(pathTok))
         spec = lobbsArgShift(ctx);
-    lobbsArgTakePage(ctx);
-
     if (fsGlobBeforeLastName(spec)) {
         lobbsCommandReply(ctx, "glob only on the last name");
         return;
@@ -246,23 +246,17 @@ static void handleLs(LoBBSCommandCtx &ctx)
         return;
     }
 
-    const char *linePtrs[FS_LS_MAX_NAMES + 1];
-    int lineCount = fsLsCollectScratch.count;
+    LoBBSResponse resp;
     for (int i = 0; i < fsLsCollectScratch.count; i++)
-        linePtrs[i] = fsLsCollectScratch.names[i];
-    if (fsLsCollectScratch.truncated && lineCount < FS_LS_MAX_NAMES) {
-        linePtrs[lineCount] = "(list cut off)";
-        lineCount++;
-    }
-
-    char buf[LOBBS_REPLY_BYTES + 1];
-    const char *errEmpty = nullptr;
-    const char *errBadPage = nullptr;
-    if (!lobbsPagerFormatLines(buf, sizeof(buf), ctx.page, linePtrs, (uint32_t)lineCount, &errEmpty, &errBadPage)) {
-        lobbsCommandReply(ctx, errEmpty ? errEmpty : (errBadPage ? errBadPage : "No such page."));
+        lobbsRecordPush(resp.records, fsLsCollectScratch.names[i]);
+    if (fsLsCollectScratch.truncated)
+        lobbsRecordPush(resp.records, "(list cut off)");
+    if (resp.records.empty()) {
+        lobbsResponseSetError(resp, "Empty.");
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    lobbsCommandReply(ctx, buf);
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void fsReplyFileText(LoBBSCommandCtx &ctx, const char *path, bool hex)
@@ -278,55 +272,30 @@ static void fsReplyFileText(LoBBSCommandCtx &ctx, const char *path, bool hex)
         return;
     }
 
-    char buf[LOBBS_REPLY_BYTES + 1];
-    size_t cap = sizeof(buf);
-    if (hex)
-        cap = LOBBS_REPLY_BYTES - 12;
-
-    size_t out = 0;
-    bool truncated = false;
-    uint8_t chunk[32];
-
-    if (hex) {
-        while (true) {
-            size_t n = f.read(chunk, sizeof(chunk));
-            if (n == 0)
-                break;
+    std::string body;
+    body.reserve(4096);
+    uint8_t chunk[64];
+    while (true) {
+        size_t n = f.read(chunk, sizeof(chunk));
+        if (n == 0)
+            break;
+        if (hex) {
             for (size_t i = 0; i < n; i++) {
-                if (out + 3 >= cap) {
-                    truncated = true;
-                    break;
-                }
-                int w = snprintf(buf + out, cap - out + 1, "%02x ", chunk[i]);
-                if (w > 0)
-                    out += (size_t)w;
+                char pair[4];
+                snprintf(pair, sizeof(pair), "%02x ", chunk[i]);
+                body += pair;
             }
-            if (truncated)
-                break;
-        }
-    } else {
-        while (true) {
-            size_t n = f.read((uint8_t *)buf + out, cap - out);
-            if (n == 0)
-                break;
-            out += n;
-            if (out >= cap) {
-                truncated = true;
-                out = cap;
-                break;
-            }
+        } else {
+            body.append((const char *)chunk, n);
         }
     }
     f.close();
 
-    buf[out] = '\0';
-    if (truncated) {
-        size_t suffixLen = strlen(" truncated");
-        if (out + suffixLen >= sizeof(buf))
-            out = sizeof(buf) - suffixLen - 1;
-        strcpy(buf + out, " truncated");
-    }
-    lobbsCommandReply(ctx, buf);
+    LoScalar rec;
+    rec.setString(LODB_F_DESCRIPTION, body);
+    LoBBSResponse resp;
+    lobbsResponseAppendRecord(resp, rec);
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void handleCat(LoBBSCommandCtx &ctx)
@@ -473,7 +442,7 @@ static void handleRmtree(LoBBSCommandCtx &ctx)
 }
 
 static const LoBBSSubHelpEntry fsHelp[] = {
-    {"ls", "ls [path] [pN] — list directory (* on last name only)"},
+    {"ls", "ls [path] — list directory (/p2 …; * on last name only)"},
     {"cat", "cat path — read a file (one match if glob)"},
     {"hex", "hex path — hex dump (one match if glob)"},
     {"rm", "rm path — delete a file"},
@@ -481,13 +450,13 @@ static const LoBBSSubHelpEntry fsHelp[] = {
     {"rmtree", "rmtree path path — recursive delete (type path twice)"},
 };
 
-static void slashFs(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+static void slashFs(LoBBSCommandCtx *ctx, const LoScalar &args)
 {
-    if (!ctx || !verb)
+    std::string v;
+    if (!ctx || !args.getString(LOBBS_ARG_VERB, v))
         return;
     LoBBSCommandCtx &c = *ctx;
-    if (rest)
-        c.rest = (char *)rest;
+    const char *verb = v.c_str();
     if (strcasecmp(verb, "ls") == 0) {
         handleLs(c);
         return;
@@ -514,34 +483,31 @@ static void slashFs(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
     }
 }
 
-static void filterFsRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterFsHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
 {
-    if (query || !ctx || !lobbsCtxLoggedIn(*ctx) || !ctx->session.isSysop)
+    (void)args;
+    if (!ctx || !lobbsCtxLoggedIn(*ctx) || !ctx->session.isSysop)
         return;
-    lobbsRootCommandPush(lines, "ls");
-    lobbsRootCommandPush(lines, "cat");
-    lobbsRootCommandPush(lines, "hex");
-    lobbsRootCommandPush(lines, "rm");
-    lobbsRootCommandPush(lines, "rmdir");
-    lobbsRootCommandPush(lines, "rmtree");
+    lobbsRecordPush(topics, "ls", "list files");
+    lobbsRecordPush(topics, "cat", "print a file");
+    lobbsRecordPush(topics, "hex", "hex dump a file");
+    lobbsRecordPush(topics, "rm", "delete a file");
+    lobbsRecordPush(topics, "rmdir", "remove an empty directory");
+    lobbsRecordPush(topics, "rmtree", "remove a directory tree");
 }
 
-static void filterFsCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterFsHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     (void)ctx;
-    if (!query)
-        return;
-    for (size_t i = 0; i < sizeof(fsHelp) / sizeof(fsHelp[0]); i++) {
-        if (fsHelp[i].verb && strcasecmp(query, fsHelp[i].verb) == 0 && fsHelp[i].line)
-            lines.push_back(fsHelp[i].line);
-    }
+    for (size_t i = 0; i < sizeof(fsHelp) / sizeof(fsHelp[0]); i++)
+        lobbsHelpForTopic(value, args, fsHelp[i].verb, &fsHelp[i], 1);
 }
 
 void lobbsFsRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashFs, LOBBS_HOOK_PRIORITY_FEATURE);
-    lobbsAddFilter("root_commands", filterFsRootCommands, LOBBS_HOOK_PRIORITY_FEATURE);
-    lobbsAddFilter("command_help", filterFsCommandHelp, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("help_topics", filterFsHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("help_for_topic", filterFsHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);
 }
 
 #endif

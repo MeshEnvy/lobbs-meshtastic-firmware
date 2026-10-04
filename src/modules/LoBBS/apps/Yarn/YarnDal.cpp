@@ -148,8 +148,7 @@ bool YarnDal::saveQuota(QuotaState &quota)
     return lodb_.insert("yarn_quota", id, rec) == LODB_OK;
 }
 
-bool YarnDal::checkAppendQuota(uint64_t userUuid, bool isSysop, uint32_t wordCount, uint32_t charCost, char *err,
-                               size_t errCap)
+bool YarnDal::checkAppendQuota(uint64_t userUuid, bool isSysop, uint32_t wordCount, uint32_t charCost, char *err, size_t errCap)
 {
     if (isSysop)
         return true;
@@ -314,8 +313,7 @@ bool YarnDal::markYarnSeen(uint64_t userUuid)
     return lodb_.insert("yarn_seen", id, seen) == LODB_OK;
 }
 
-bool YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount, char *err,
-                          size_t errCap)
+bool YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount, char *err, size_t errCap)
 {
     if (!words || wordCount <= 0) {
         if (err && errCap)

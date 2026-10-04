@@ -21,4 +21,8 @@
 /** Shared in /hi and /help root (omit topic for list, or name a command). */
 #define LOBBS_HELP_HINT "Use /help [topic] for help"
 
+#if defined(LOBBS_DEMO_MODE) || defined(PIO_UNIT_TESTING)
+#define LOBBS_SEED 1
+#endif
+
 #endif

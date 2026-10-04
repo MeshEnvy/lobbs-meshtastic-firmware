@@ -2,31 +2,30 @@
 
 **A 100% Meshtastic BBS. No sidecar, no Python, just mesh**
 
-------
+---
 
 ### Watch the Walkthrough
 
 [![LoBBS 2.0 walkthrough](.github/lobbs-2.0-walkthrough-youtube-thumb.jpg)](https://youtu.be/lMK1zx9DbOI)
 
--------
+---
 
 [Discord](https://discord.gg/DMrGcGQfMN)
 
 ## Features
 
-- **User directory** 
-- **Private mail** 
-- **News feed** 
+- **User directory**
+- **Private mail**
+- **News feed**
 - **Shared ASCII art wall**
 - **Collaborative stories**
 - CLI over DM
-
 
 ## Installation
 
 [Install on MeshForge](https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware) or compile and flash from source.
 
-Demo builds: add `-D LOBBS_DEMO_MODE` to `build_flags` (or `PLATFORMIO_BUILD_FLAGS="-D LOBBS_DEMO_MODE" pio run -e <env>`) to wipe `/lodb/lobbs` on every boot. Users, sessions, mail, news, wall, and yarn all start empty.
+Demo builds: add `-D LOBBS_DEMO_MODE` to `build_flags` (or `PLATFORMIO_BUILD_FLAGS="-D LOBBS_DEMO_MODE" pio run -e <env>`) to wipe `/lodb/lobbs` on every boot and seed demo data. Accounts: `sysop` and `demo01` through `demo12`, password `demo1` (sysop is the first account). Sample mail, news, wall paint, and yarn text are included for paging tests.
 
 ## How to use LoBBS
 
@@ -34,59 +33,62 @@ DM the node a line that starts with `/`. For how verbs, help, and plugin hooks f
 
 `/login username password` signs in or creates the account. The first account is the SysOp.
 
+Long replies are cached on the node for your session (about five minutes). Run the list command once, then `/p2`, `/p3`, and so on for the next pages. A new command replaces the cache. Machine clients use the same pattern with a fresh message id per page (`/43 p2`).
+
 ### Public
 
-| Command | Notes |
-| --- | --- |
-| `/hi` | Same command catalog as `/help` |
-| `/status` | Display overall status (paged) |
-| `/time` | Current time |
-| `/help [topic] [pN]` | Commands available to you, or topic help |
-| `/wall` | Play the Wall game (shared ASCII art) |
-| `/yarn` | Play the Yarn game (shared story) |
+| Command         | Notes                                    |
+| --------------- | ---------------------------------------- |
+| `/hi`           | Same command catalog as `/help`          |
+| `/status`       | Display overall status (paged)           |
+| `/time`         | Current time                             |
+| `/help [topic]` | Commands available to you, or topic help |
+| `/pN`           | Next page of the last reply (e.g. `/p2`) |
+| `/wall`         | Play the Wall game (shared ASCII art)    |
+| `/yarn`         | Play the Yarn game (shared story)        |
 
 ### Session
 
-| Command | Notes |
-| --- | --- |
+| Command                | Notes                        |
+| ---------------------- | ---------------------------- |
 | `/login user password` | Sign in or create an account |
-| `/logout` | End session |
-| `/whoami` | Who you are |
-| `/passwd new confirm` | Change your password |
+| `/logout`              | End session                  |
+| `/whoami`              | Who you are                  |
+| `/passwd new confirm`  | Change your password         |
 
 ### Users
 
 Login required.
 
-| Command | Notes |
-| --- | --- |
-| `/users list [pN]` | User list |
-| `/users find text [pN]` | Search usernames |
+| Command            | Notes                   |
+| ------------------ | ----------------------- |
+| `/users list`      | User list (use `/p2` …) |
+| `/users find text` | Search usernames        |
 
 ### Mail
 
 Login required. SysOps reading someone else's inbox: [SysOp commands](#sysop-commands).
 
-| Command | Notes |
-| --- | --- |
-| `/mail list [pN]` | Your inbox |
-| `/mail read N` | Read message N |
-| `/mail N` | Same as `/mail read N` |
-| `/mail unread N` | Mark unread |
-| `/mail delete N` | Delete from your inbox |
-| `/mail send user message…` | Send mail |
+| Command                    | Notes                  |
+| -------------------------- | ---------------------- |
+| `/mail list`               | Your inbox             |
+| `/mail read N`             | Read message N         |
+| `/mail N`                  | Same as `/mail read N` |
+| `/mail unread N`           | Mark unread            |
+| `/mail delete N`           | Delete from your inbox |
+| `/mail send user message…` | Send mail              |
 
 ### News
 
 Login required.
 
-| Command | Notes |
-| --- | --- |
-| `/news list [pN]` | News index |
-| `/news read N` | Read item N |
-| `/news N` | Same as `/news read N` |
-| `/news unread N` | Mark unread |
-| `/news post message…` | Post news |
+| Command               | Notes                  |
+| --------------------- | ---------------------- |
+| `/news list`          | News index             |
+| `/news read N`        | Read item N            |
+| `/news N`             | Same as `/news read N` |
+| `/news unread N`      | Mark unread            |
+| `/news post message…` | Post news              |
 
 ### Wall
 
@@ -94,53 +96,62 @@ Login required.
 
 Rows `a`–`l`, columns `1`–`12`. `a4x` paints `x` at row a, column 4. `-a4` clears that cell. Several tokens in one command: `/wall a1# a2# b2#`.
 
-| Command | Notes |
-| --- | --- |
+| Command        | Notes                                   |
+| -------------- | --------------------------------------- |
 | `/wall token…` | Paint. Default quota is 1 cell per hour |
 
 ### Yarn
 
 `/yarn` shows the tail (no login). Adding words needs login.
 
-| Command | Notes |
-| --- | --- |
+| Command        | Notes                                                       |
+| -------------- | ----------------------------------------------------------- |
 | `/yarn word …` | Add words. Default quota is 1 word (32 characters) per hour |
 
 ## SysOp commands
 
 The first registered account is the SysOp. Other users get `SysOp only.`
 
-| Command | Notes |
-| --- | --- |
-| `/passwd user new confirm` | Reset a user's password |
-| `/users kick user` | Log that user out |
-| `/users promote user` | Make them a SysOp |
-| `/users demote user` | Remove SysOp (not the last SysOp) |
-| `/mail list user [pN]` | Their inbox |
-| `/mail read user N` | Read their message (does not mark it read) |
-| `/news delete N` | Delete a news item |
-| `/wall limit SEC CELLS` | Paint quota (default 3600 seconds, 1 cell) |
-| `/yarn limit SEC WORDS CHARS` | Yarn quota (default 3600 seconds, 1 word, 32 characters) |
-| `/time unix` | Set the clock. The time must be after this firmware was built, or the reply is `Invalid time.` |
-| `/ls [path] [pN]` | List a directory (`*` glob on the last name only) |
-| `/cat path` | Read a file as text |
-| `/hex path` | Hex dump a file |
-| `/rm path` | Delete a file |
-| `/rmdir path` | Remove an empty directory |
-| `/rmtree path path` | Recursive delete (type the path twice) |
+| Command                       | Notes                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- |
+| `/passwd user new confirm`    | Reset a user's password                                                                        |
+| `/users kick user`            | Log that user out                                                                              |
+| `/users promote user`         | Make them a SysOp                                                                              |
+| `/users demote user`          | Remove SysOp (not the last SysOp)                                                              |
+| `/mail list user`             | Their inbox                                                                                    |
+| `/mail read user N`           | Read their message (does not mark it read)                                                     |
+| `/news delete N`              | Delete a news item                                                                             |
+| `/wall limit SEC CELLS`       | Paint quota (default 3600 seconds, 1 cell)                                                     |
+| `/yarn limit SEC WORDS CHARS` | Yarn quota (default 3600 seconds, 1 word, 32 characters)                                       |
+| `/time unix`                  | Set the clock. The time must be after this firmware was built, or the reply is `Invalid time.` |
+| `/ls [path]`                  | List a directory (`*` glob on the last name only)                                              |
+| `/cat path`                   | Read a file as text                                                                            |
+| `/hex path`                   | Hex dump a file                                                                                |
+| `/rm path`                    | Delete a file                                                                                  |
+| `/rmdir path`                 | Remove an empty directory                                                                      |
+| `/rmtree path path`           | Recursive delete (type the path twice)                                                         |
 
 SysOps painting the wall or adding yarn do not use quota.
 
 ## Machine interface (message IDs)
 
-Put a number and a space after `/` so the reply starts with that same number. The command itself does not change.
+Put a number and a space after `/` on a command to get a machine reply. Each page is a separate DM with its own id. Run the command first, then request further pages without re-running it.
 
 ```
-/42 login alice secret12
-<42>Welcome alice!
+/42 mail list
+<42:1>ok
+…payload…
+
+/43 p2
+<43:2!>ok
+…payload…
 ```
 
-Without a number, the reply has no prefix. The number must be followed by a space (`/42 login`, not `/42login`). The 200-byte limit includes the `<42>` prefix.
+A reply that fits in one DM is `<id>ok`. Multi-page replies are `<id:n>ok`, and the last page is marked `<id:n!>ok`. Success bodies start with `ok` and LoScalar record lines. Errors are one sentence with no `ok`. Without a leading id, replies use the human paginator and `{p i/n}` footers.
+
+Human paging: `/p2` after `/mail list`. Machine paging: `/43 p2` (new id each page). The cache expires after about five minutes of idle time. Payloads larger than 8 KiB are not cached (page 1 only).
+
+The 200-byte limit applies to each DM, including the `<id:n>ok` header.
 
 ## Versions
 
@@ -157,7 +168,7 @@ Example: `lobbs-1.3.0.f18d6d6-meshtastic-2.7.26.54e0d8d`. The trailing Meshtasti
 
 ## License
 
-LoBBS (the BBS) is [MIT](https://opensource.org/license/mit). Meshtastic firmware in this tree is [GPL v3](LICENSE). 
+LoBBS (the BBS) is [MIT](https://opensource.org/license/mit). Meshtastic firmware in this tree is [GPL v3](LICENSE).
 
 ## Disclaimer
 

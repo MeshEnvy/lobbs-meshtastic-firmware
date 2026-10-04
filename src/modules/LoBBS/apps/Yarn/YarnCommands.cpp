@@ -1,13 +1,15 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "YarnCommands.h"
-#include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
+#include "../../LoBBSHooks.h"
 #include "../../LoBBSModule.h"
 #include "../../LoBBSReply.h"
+#include "../../LoBBSResponse.h"
 #include "YarnDal.h"
 #include <cstdio>
 #include <cstring>
+#include <lodb/LoDB.h>
 #include <strings.h>
 
 static const LoBBSSubHelpEntry yarnHelp[] = {
@@ -82,51 +84,47 @@ static void handleYarn(LoBBSCommandCtx &ctx)
     replyYarnView(ctx, true);
 }
 
-static void slashYarn(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+static void slashYarn(LoBBSCommandCtx *ctx, const LoScalar &args)
 {
-    if (!ctx || !verb || strcasecmp(verb, "yarn") != 0)
+    if (!ctx || !lobbsSlashVerbIs(args, "yarn"))
         return;
-    LoBBSCommandCtx &c = *ctx;
-    if (rest)
-        c.rest = (char *)rest;
-    handleYarn(c);
+    handleYarn(*ctx);
 }
 
-static void filterYarnRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterYarnHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
 {
     (void)ctx;
-    if (query)
-        return;
-    lobbsRootCommandPush(lines, "yarn");
+    (void)args;
+    lobbsRecordPush(topics, "yarn", "shared story, a few words at a time");
 }
 
-static void filterYarnCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterYarnHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     (void)ctx;
-    lobbsCommandHelpPush(lines, "yarn", yarnHelp, sizeof(yarnHelp) / sizeof(yarnHelp[0]), query);
+    lobbsHelpForTopic(value, args, "yarn", yarnHelp, sizeof(yarnHelp) / sizeof(yarnHelp[0]));
 }
 
-static void filterYarnStatusLines(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterYarnStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)
 {
-    (void)query;
+    (void)args;
     if (!ctx || !ctx->mod)
         return;
-    char line[64];
+    char value[32];
     if (lobbsCtxLoggedIn(*ctx)) {
         uint32_t n = ctx->mod->yarn().dal().newWordsForUser(lobbsCtxUserUuid(*ctx));
-        snprintf(line, sizeof(line), "Yarn: %u", (unsigned)n);
+        snprintf(value, sizeof(value), "%u new words", (unsigned)n);
     } else {
         uint32_t n = ctx->mod->yarn().dal().totalWordsAppended();
-        snprintf(line, sizeof(line), "Yarn: %u (all time)", (unsigned)n);
+        snprintf(value, sizeof(value), "%u words total", (unsigned)n);
     }
-    lines.push_back(line);
+    lobbsRecordPush(lines, "Yarn", value);
 }
 
 void lobbsYarnRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashYarn, LOBBS_HOOK_PRIORITY_FEATURE);
-    lobbsAddFilter("root_commands", filterYarnRootCommands, LOBBS_HOOK_PRIORITY_FEATURE);
-    lobbsAddFilter("command_help", filterYarnCommandHelp, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("help_topics", filterYarnHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
+    lobbsAddFilter("help_for_topic", filterYarnHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("status_lines", filterYarnStatusLines, LOBBS_HOOK_PRIORITY_FEATURE);
 }
 

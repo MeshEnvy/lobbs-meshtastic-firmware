@@ -1,8 +1,8 @@
+#include <algorithm>
+#include <cstring>
 #include <lodb/LoDB.h>
 #include <lodb/LoDBDiagRecords.h>
 #include <loscalar/LoScalar.h>
-#include <algorithm>
-#include <cstring>
 #include <string>
 
 static LoScalar lodbDiagMake(uint32_t counter, const char *value, bool active)
@@ -36,9 +36,9 @@ void lodb_diagnostics()
     LODB_LOG_INFO("");
 
     const char *cleanupDirs[] = {
-        "/lodb/test_db_1",         "/lodb/test_db_2",         "/lodb/test_db_3",         "/lodb/test_db_4",
-        "/sd/lodb/test_db_1",        "/sd/lodb/test_db_2",        "/sd/lodb/test_db_3",        "/sd/lodb/test_db_4",
-        "/internal/lodb/test_db_1",  "/internal/lodb/test_db_2",  "/internal/lodb/test_db_3",  "/internal/lodb/test_db_4",
+        "/lodb/test_db_1",          "/lodb/test_db_2",          "/lodb/test_db_3",          "/lodb/test_db_4",
+        "/sd/lodb/test_db_1",       "/sd/lodb/test_db_2",       "/sd/lodb/test_db_3",       "/sd/lodb/test_db_4",
+        "/internal/lodb/test_db_1", "/internal/lodb/test_db_2", "/internal/lodb/test_db_3", "/internal/lodb/test_db_4",
     };
     size_t numCleanupDirs = sizeof(cleanupDirs) / sizeof(cleanupDirs[0]);
     for (size_t i = 0; i < numCleanupDirs; i++) {
@@ -165,10 +165,8 @@ void lodb_diagnostics()
         lodbDiagRead(retrieved, id, val, sizeof(val), active);
         retrieved.getUint32(LODB_F_CREATED, createdAfterUpdate);
         retrieved.getUint32(LODB_F_UPDATED, updatedAfterUpdate);
-        LODB_LOG_INFO("  after update id=%u value=\"%s\" created=%u updated=%u", id, val, createdAfterUpdate,
-                      updatedAfterUpdate);
-        LODB_LOG_INFO("  created preserved: %s updated changed: %s",
-                      createdAfterUpdate == createdAfterInsert ? "YES" : "NO",
+        LODB_LOG_INFO("  after update id=%u value=\"%s\" created=%u updated=%u", id, val, createdAfterUpdate, updatedAfterUpdate);
+        LODB_LOG_INFO("  created preserved: %s updated changed: %s", createdAfterUpdate == createdAfterInsert ? "YES" : "NO",
                       updatedAfterUpdate != updatedAfterInsert ? "YES" : "NO");
     }
     err = db1->update("users", fakeUuid, record);

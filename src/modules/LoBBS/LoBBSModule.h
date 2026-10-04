@@ -49,4 +49,10 @@ class LoBBSModule : public SinglePortModule
 
 extern LoBBSModule *lobbsModule;
 
+#ifdef PIO_UNIT_TESTING
+#include <string>
+#include <vector>
+extern std::vector<std::string> *lobbsTestReplySink;
+#endif
+
 #endif

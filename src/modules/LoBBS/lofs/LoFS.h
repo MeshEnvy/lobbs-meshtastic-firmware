@@ -7,8 +7,8 @@
 #include <Stream.h>
 
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-#include <SD.h>
 #include <FS.h>
+#include <SD.h>
 // SD library uses FILE_READ and FILE_WRITE constants
 #ifndef FILE_READ
 #define FILE_READ O_READ
@@ -20,33 +20,33 @@
 
 /**
  * @brief Unified filesystem interface that routes paths to appropriate backends
- * 
+ *
  * Supports path prefixes:
  * - /internal/... -> routes to internal filesystem (onboard flash via FSCommon)
  * - /sd/...  -> routes to SD card (if available and HAS_SDCARD is defined)
- * 
+ *
  * Paths without prefix default to internal filesystem for backward compatibility.
- * 
+ *
  * Usage examples:
  *   // Open from internal filesystem
  *   File f1 = LoFS::open("/internal/config/settings.txt", FILE_O_READ);
- *   
+ *
  *   // Open from SD card
  *   File f2 = LoFS::open("/sd/data/log.txt", FILE_O_WRITE);
- *   
+ *
  *   // Check existence
  *   if (LoFS::exists("/sd/myfile.txt")) {
  *       // file exists on SD card
  *   }
- *   
+ *
  *   // Create directory
  *   LoFS::mkdir("/internal/my/directory");
- *   
+ *
  *   // Copy between filesystems
  *   File src = LoFS::open("/internal/source.txt", FILE_O_READ);
  *   File dst = LoFS::open("/sd/dest.txt", FILE_O_WRITE);
  *   // ... copy data ...
- * 
+ *
  * Note: Both filesystems use the same File interface, so you can use
  * the returned File objects interchangeably for reading/writing.
  */
@@ -95,7 +95,7 @@ class LoFS
      * @param oldfilepath Source path with prefix
      * @param newfilepath Destination path with prefix
      * @return true if successful
-     * 
+     *
      * If both paths are on the same filesystem, performs a simple rename.
      * If paths are on different filesystems (e.g., /internal/file -> /sd/file),
      * performs a copy + delete operation.
@@ -117,7 +117,7 @@ class LoFS
     /**
      * @brief Check if SD card is available (compile-time and runtime check)
      * @return true if SD card is supported and present, false otherwise
-     * 
+     *
      * This function works even when HAS_SDCARD is false (returns false).
      * Useful for checking SD card availability before attempting operations.
      */
@@ -148,14 +148,13 @@ class LoFS
      * @brief Filesystem type enum for specifying which filesystem to use
      */
     enum class FSType : int {
-        AUTO = -1,  ///< Auto-select: use SD if available, otherwise INTERNAL
-        INTERNAL = 0,    ///< Internal filesystem (onboard flash via FSCommon)
-        SD = 1,     ///< SD Card (if available)
-        INVALID     ///< Invalid filesystem type (internal use)
+        AUTO = -1,    ///< Auto-select: use SD if available, otherwise INTERNAL
+        INTERNAL = 0, ///< Internal filesystem (onboard flash via FSCommon)
+        SD = 1,       ///< SD Card (if available)
+        INVALID       ///< Invalid filesystem type (internal use)
     };
 
   private:
-
     /**
      * @brief Parse path prefix and return filesystem type and stripped path
      * @param filepath Full path with prefix

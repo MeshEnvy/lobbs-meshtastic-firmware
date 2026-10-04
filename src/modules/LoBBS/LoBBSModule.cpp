@@ -1,8 +1,12 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "LoBBSModule.h"
+#include "LoBBSConfig.h"
 #include "LoBBSDispatch.h"
 #include "LoBBSWireup.h"
+#if LOBBS_SEED
+#include "LoBBSSeed.h"
+#endif
 #include "MeshService.h"
 #include <cstdio>
 #include <cstring>
@@ -22,6 +26,9 @@ LoBBSModule::LoBBSModule()
       news_(*lodb_), yarn_(*lodb_), wall_(*lodb_)
 {
     lobbsWireup();
+#ifdef LOBBS_DEMO_MODE
+    lobbsSeedAll(*this);
+#endif
 }
 
 LoBBSModule::~LoBBSModule()
@@ -46,10 +53,21 @@ void lobbsBreadcrumb(const char *step)
 #endif
 }
 
+#ifdef PIO_UNIT_TESTING
+#include <vector>
+std::vector<std::string> *lobbsTestReplySink = nullptr;
+#endif
+
 void LoBBSModule::sendReply(const meshtastic_MeshPacket &req, const char *msg)
 {
     if (!msg)
         return;
+#ifdef PIO_UNIT_TESTING
+    if (lobbsTestReplySink) {
+        lobbsTestReplySink->push_back(msg);
+        return;
+    }
+#endif
     char mark[40];
     snprintf(mark, sizeof(mark), "reply alloc %uB", (unsigned)strlen(msg));
     lobbsBreadcrumb(mark);

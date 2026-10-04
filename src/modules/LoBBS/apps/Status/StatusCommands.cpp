@@ -1,44 +1,38 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "StatusCommands.h"
-#include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
-#include "../../LoBBSReply.h"
+#include "../../LoBBSHooks.h"
+#include "../../LoBBSResponse.h"
 
 static void handleStatus(LoBBSCommandCtx &ctx)
 {
-    lobbsArgTakePage(ctx);
-    std::vector<std::string> lines;
-    lobbsApplyFilter("status_lines", ctx, lines, nullptr);
-    if (lines.empty()) {
-        lobbsCommandReply(ctx, "No status.");
-        return;
+    LoBBSResponse resp;
+    lobbsApplyFilter("status_lines", ctx, resp.records, LoScalar());
+    if (resp.records.empty()) {
+        lobbsResponseSetError(resp, "No status.");
     }
-    lobbsCommandReplyPagedLines(ctx, lines);
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
-static void slashStatus(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+static void slashStatus(LoBBSCommandCtx *ctx, const LoScalar &args)
 {
-    if (!ctx || !verb || strcasecmp(verb, "status") != 0)
+    if (!ctx || !lobbsSlashVerbIs(args, "status"))
         return;
-    LoBBSCommandCtx &c = *ctx;
-    if (rest)
-        c.rest = (char *)rest;
-    handleStatus(c);
+    handleStatus(*ctx);
 }
 
-static void filterStatusRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterStatusHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
 {
     (void)ctx;
-    if (query)
-        return;
-    lobbsRootCommandPush(lines, "status");
+    (void)args;
+    lobbsRecordPush(topics, "status", "what's happening");
 }
 
 void lobbsStatusRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashStatus, LOBBS_HOOK_PRIORITY_STATUS);
-    lobbsAddFilter("root_commands", filterStatusRootCommands, LOBBS_HOOK_PRIORITY_STATUS);
+    lobbsAddFilter("help_topics", filterStatusHelpTopics, LOBBS_HOOK_PRIORITY_STATUS);
 }
 
 #endif

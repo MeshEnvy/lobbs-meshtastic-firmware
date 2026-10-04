@@ -1,9 +1,10 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "TimeCommands.h"
-#include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
+#include "../../LoBBSHooks.h"
 #include "../../LoBBSReply.h"
+#include "../../LoBBSResponse.h"
 #include "gps/RTC.h"
 #include <cstdio>
 #include <cstdlib>
@@ -25,12 +26,12 @@ static void handleTime(LoBBSCommandCtx &ctx)
     if (!lobbsCommandRequireSysop(ctx))
         return;
     uint32_t sec = 0;
-    if (lobbsArgHasMore(ctx)) {
-        lobbsCommandReply(ctx, "Usage: /time\nUsage: /time unix (sysop)");
-        return;
-    }
     if (!lobbsArgShiftUint(ctx, sec)) {
         lobbsCommandReply(ctx, "Invalid time.");
+        return;
+    }
+    if (lobbsArgHasMore(ctx)) {
+        lobbsCommandReply(ctx, "Usage: /time\nUsage: /time unix (sysop)");
         return;
     }
     struct timeval tv;
@@ -50,35 +51,31 @@ static const LoBBSSubHelpEntry timeHelp[] = {
     {"time", "time unix — sysop: set clock to Unix epoch"},
 };
 
-static void slashTime(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+static void slashTime(LoBBSCommandCtx *ctx, const LoScalar &args)
 {
-    if (!ctx || !verb || strcasecmp(verb, "time") != 0)
+    if (!ctx || !lobbsSlashVerbIs(args, "time"))
         return;
-    LoBBSCommandCtx &c = *ctx;
-    if (rest)
-        c.rest = (char *)rest;
-    handleTime(c);
+    handleTime(*ctx);
 }
 
-static void filterTimeRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterTimeHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
 {
     (void)ctx;
-    if (query)
-        return;
-    lobbsRootCommandPush(lines, "time");
+    (void)args;
+    lobbsRecordPush(topics, "time", "show the clock");
 }
 
-static void filterTimeCommandHelp(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static void filterTimeHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     (void)ctx;
-    lobbsCommandHelpPush(lines, "time", timeHelp, sizeof(timeHelp) / sizeof(timeHelp[0]), query);
+    lobbsHelpForTopic(value, args, "time", timeHelp, sizeof(timeHelp) / sizeof(timeHelp[0]));
 }
 
 void lobbsTimeRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashTime, LOBBS_HOOK_PRIORITY_TIME);
-    lobbsAddFilter("root_commands", filterTimeRootCommands, LOBBS_HOOK_PRIORITY_TIME);
-    lobbsAddFilter("command_help", filterTimeCommandHelp, LOBBS_HOOK_PRIORITY_TIME);
+    lobbsAddFilter("help_topics", filterTimeHelpTopics, LOBBS_HOOK_PRIORITY_TIME);
+    lobbsAddFilter("help_for_topic", filterTimeHelpForTopic, LOBBS_HOOK_PRIORITY_TIME);
 }
 
 #endif

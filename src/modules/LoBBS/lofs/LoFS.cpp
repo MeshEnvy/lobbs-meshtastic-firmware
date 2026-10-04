@@ -1,8 +1,8 @@
-#include <lofs/LoFS.h>
 #include "SPILock.h"
 #include "configuration.h"
-#include <string.h>
+#include <lofs/LoFS.h>
 #include <stdlib.h>
+#include <string.h>
 #include <string>
 
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
@@ -27,7 +27,7 @@ bool LoFS::isSDCardAvailable()
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
     // Check current card type
     uint8_t cardType = SD.cardType();
-    
+
     // If card type is NONE, try to initialize the SD card
     if (cardType == CARD_NONE) {
         concurrency::LockGuard g(spiLock);
@@ -36,7 +36,7 @@ bool LoFS::isSDCardAvailable()
             cardType = SD.cardType();
         }
     }
-    
+
     return (cardType != CARD_NONE);
 #else
     return false; // SD card support not compiled in or disabled
@@ -503,8 +503,7 @@ static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn, bool 
         file.close();
 
         size_t lastSlash = pathFromFile.rfind('/');
-        std::string entryName =
-            (lastSlash != std::string::npos) ? pathFromFile.substr(lastSlash + 1) : pathFromFile;
+        std::string entryName = (lastSlash != std::string::npos) ? pathFromFile.substr(lastSlash + 1) : pathFromFile;
 
         if (entryName == "." || entryName == "..")
             continue;
@@ -563,8 +562,7 @@ bool LoFS::rmdir(const char *filepath, bool recursive)
             file.close();
 
             size_t lastSlash = pathFromFile.rfind('/');
-            std::string entryName =
-                (lastSlash != std::string::npos) ? pathFromFile.substr(lastSlash + 1) : pathFromFile;
+            std::string entryName = (lastSlash != std::string::npos) ? pathFromFile.substr(lastSlash + 1) : pathFromFile;
 
             if (entryName == "." || entryName == "..")
                 continue;

@@ -1,9 +1,9 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "AuthDal.h"
-#include "AuthRecords.h"
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSReply.h"
+#include "AuthRecords.h"
 #include "configuration.h"
 #include "gps/RTC.h"
 #include "mesh/NodeDB.h"
@@ -88,6 +88,21 @@ static int compareUsersByName(const LoScalar &a, const LoScalar &b)
 bool AuthDal::loadUserByUuid(uint64_t uuid, LoScalar *user)
 {
     return lodb_.get("users", uuid, *user) == LODB_OK;
+}
+
+std::vector<LoScalar> AuthDal::listUsers(const char *filterSubstr)
+{
+    const bool hasFilter = filterSubstr && filterSubstr[0];
+    return lodb_.select(
+        "users",
+        [filterSubstr, hasFilter](const LoScalar &rec) -> bool {
+            if (!hasFilter)
+                return true;
+            char name[LOBBS_USERNAME_BUFFER_SIZE];
+            AuthDal::userUsername(rec, name, sizeof(name));
+            return stristrLocal(name, filterSubstr) != nullptr;
+        },
+        compareUsersByName);
 }
 
 bool AuthDal::buildUserList(const char *filterSubstr, std::string &msg, const char **emptyReply)
@@ -216,8 +231,7 @@ static void dropSession(LoDb &lodb, uint32_t sessionKey)
     lodb.deleteRecord("sessions", (lodb_uuid_t)sessionKey);
 }
 
-bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessionNodeIdOut,
-                              uint64_t *authUserUuidOut)
+bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessionNodeIdOut, uint64_t *authUserUuidOut)
 {
     LoScalar session;
     if (lodb_.get("sessions", (lodb_uuid_t)nodeId, session) != LODB_OK) {
@@ -291,9 +305,6 @@ bool AuthDal::loginUser(const char *username, uint32_t nodeId)
 
     lodb_uuid_t sessionUuid = (lodb_uuid_t)nodeId;
     lodb_.deleteRecord("sessions", sessionUuid);
-    // Greenfield: drop legacy phone sessions keyed at wire from=0 (not getFrom).
-    if (nodeId != 0)
-        lodb_.deleteRecord("sessions", (lodb_uuid_t)0);
 
     LoDbError err = lodb_.insert("sessions", sessionUuid, session);
     if (err != LODB_OK) {

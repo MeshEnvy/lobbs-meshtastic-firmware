@@ -1,5 +1,5 @@
-#include <lodb/LoDB.h>
 #include <Arduino.h>
+#include <lodb/LoDB.h>
 #if __has_include("configuration.h")
 #include "configuration.h"
 #include "gps/RTC.h"
@@ -276,7 +276,6 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_o
         LODB_LOG_ERROR("Record file too large: %s (%u > %u)", file_path, (unsigned)total_size,
                        (unsigned)LODB_MAX_RECORD_FILE_BYTES);
         file.close();
-        LoFS::remove(file_path);
         return LODB_ERR_IO;
     }
 
@@ -392,12 +391,14 @@ LoDbError LoDb::deleteRecord(const char *table_name, lodb_uuid_t uuid)
     char file_path[192];
     snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
 
+    if (!LoFS::exists(file_path))
+        return LODB_ERR_NOT_FOUND;
     if (LoFS::remove(file_path)) {
         LODB_LOG_DEBUG("Deleted record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
         return LODB_OK;
     }
-    LODB_LOG_WARN("Failed to delete record (may not exist): " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
-    return LODB_ERR_NOT_FOUND;
+    LODB_LOG_WARN("Failed to delete record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
+    return LODB_ERR_IO;
 }
 
 std::vector<LoScalar> LoDb::select(const char *table_name, LoDbFilter filter, LoDbComparator comparator, size_t limit)
@@ -481,9 +482,8 @@ std::vector<LoScalar> LoDb::select(const char *table_name, LoDbFilter filter, Lo
     LODB_LOG_INFO("Select from %s: %u records after filtering", table_name, (unsigned)results.size());
 
     if (comparator && !results.empty()) {
-        std::sort(results.begin(), results.end(), [&comparator](const LoScalar &a, const LoScalar &b) {
-            return comparator(a, b) < 0;
-        });
+        std::sort(results.begin(), results.end(),
+                  [&comparator](const LoScalar &a, const LoScalar &b) { return comparator(a, b) < 0; });
         LODB_LOG_DEBUG("Sorted %u records", (unsigned)results.size());
     }
 

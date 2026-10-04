@@ -343,8 +343,7 @@ static bool parseWallToken(const char *tok, int &rowOut, int &colOut, char &chOu
     return true;
 }
 
-bool WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count, char *err,
-                               size_t errCap)
+bool WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count, char *err, size_t errCap)
 {
     if (count <= 0) {
         if (err && errCap)

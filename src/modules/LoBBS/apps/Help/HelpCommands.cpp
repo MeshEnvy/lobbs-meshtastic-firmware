@@ -1,9 +1,13 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "HelpCommands.h"
-#include "../../LoBBSHooks.h"
 #include "../../LoBBSCommandRegistry.h"
+#include "../../LoBBSConfig.h"
+#include "../../LoBBSHooks.h"
+#include "../../LoBBSResponse.h"
+#include "../../LoBBSVersion.h"
 #include <cstring>
+#include <lodb/LoDB.h>
 
 static void lobbsTrimRestInPlace(char *s)
 {
@@ -19,77 +23,101 @@ static void lobbsTrimRestInPlace(char *s)
         s[--len] = '\0';
 }
 
-static void replyCatalog(LoBBSCommandCtx &ctx, uint32_t page)
+static void replyCatalog(LoBBSCommandCtx &ctx)
 {
-    ctx.page = page;
-    std::vector<std::string> lines;
-    lobbsApplyFilter("root_commands", ctx, lines, nullptr);
-    lobbsCommandReplyPagedLines(ctx, lines);
+    std::vector<LoScalar> topics;
+    lobbsRecordPush(topics, "help", "this list, or /help topic");
+    lobbsRecordPush(topics, "hi", "welcome screen");
+    lobbsRecordPush(topics, "pN", "page N of the last reply");
+    lobbsApplyFilter("help_topics", ctx, topics, LoScalar());
+
+    LoBBSResponse resp;
+    lobbsRecordPush(resp.records, "LoBBS v" LOBBS_VERSION_SHORT " Help");
+    resp.records.insert(resp.records.end(), topics.begin(), topics.end());
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
-static void replyTopicHelp(LoBBSCommandCtx &ctx, char *queryWork)
+static void replyTopicHelp(LoBBSCommandCtx &ctx, const char *query)
 {
-    lobbsTrimRestInPlace(queryWork);
-    uint32_t page = ctx.page;
-    if (lobbsHelpStripTrailingPage(queryWork, 128, page))
-        ctx.page = page;
+    LoScalar args;
+    args.setString(LODB_F_TITLE, query);
+    LoScalar topic;
+    topic.setString(LODB_F_TITLE, query);
+    lobbsApplyFilter("help_for_topic", ctx, topic, args);
 
-    std::vector<std::string> lines;
-    const char *q = queryWork[0] ? queryWork : nullptr;
-    lobbsApplyFilter("command_help", ctx, lines, q);
-    if (lines.empty()) {
-        lobbsCommandReply(ctx, "No help for that.");
+    LoBBSResponse resp;
+    std::string body;
+    if (!topic.getString(LODB_F_DESCRIPTION, body) || body.empty()) {
+        lobbsRecordPush(resp.records, (std::string("No help found for ") + query).c_str());
+        lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    lobbsCommandReplyPagedLines(ctx, lines);
+    size_t start = 0;
+    while (start <= body.size()) {
+        size_t nl = body.find('\n', start);
+        if (nl == std::string::npos)
+            nl = body.size();
+        lobbsRecordPush(resp.records, body.substr(start, nl - start).c_str());
+        start = nl + 1;
+    }
+    lobbsCommandReplyResponse(ctx, resp);
 }
 
-static void slashHelp(LoBBSCommandCtx *ctx, const char *verb, const char *rest)
+static void replyHi(LoBBSCommandCtx &ctx)
 {
-    if (!ctx || !verb)
-        return;
-    if (strcasecmp(verb, "help") != 0 && strcasecmp(verb, "hi") != 0)
-        return;
+    LoBBSResponse resp;
+    lobbsRecordPush(resp.records, "LoBBS v" LOBBS_VERSION_SHORT);
+    char uname[LOBBS_USERNAME_BUFFER_SIZE];
+    if (lobbsCtxLoggedIn(ctx) && lobbsCtxUsername(ctx, uname, sizeof(uname)))
+        lobbsRecordPush(resp.records, (std::string("Welcome back, ") + uname + "!").c_str());
+    else
+        lobbsRecordPush(resp.records, "Welcome!");
+    lobbsRecordPush(resp.records, LOBBS_HELP_HINT);
+    lobbsRecordPush(resp.records, "Use /status to see what's happening");
+    if (!lobbsCtxLoggedIn(ctx))
+        lobbsRecordPush(resp.records, "Use /login to sign in");
+    lobbsCommandReplyResponse(ctx, resp);
+}
 
-    LoBBSCommandCtx &c = *ctx;
-    if (rest)
-        c.rest = (char *)rest;
+static void slashHelp(LoBBSCommandCtx *ctx, const LoScalar &args)
+{
+    if (!ctx)
+        return;
+    if (lobbsSlashVerbIs(args, "hi")) {
+        replyHi(*ctx);
+        return;
+    }
+    if (!lobbsSlashVerbIs(args, "help"))
+        return;
 
     char work[128];
     work[0] = '\0';
-    if (rest && rest[0])
-        strncpy(work, rest, sizeof(work) - 1);
+    if (ctx->rest && ctx->rest[0])
+        strncpy(work, ctx->rest, sizeof(work) - 1);
 
     lobbsTrimRestInPlace(work);
     if (!work[0]) {
-        replyCatalog(c, 1);
+        replyCatalog(*ctx);
         return;
     }
 
-    char onlyPage[128];
-    strncpy(onlyPage, work, sizeof(onlyPage) - 1);
-    uint32_t page = 1;
-    if (lobbsHelpStripTrailingPage(onlyPage, sizeof(onlyPage), page) && !onlyPage[0]) {
-        replyCatalog(c, page);
-        return;
-    }
-
-    replyTopicHelp(c, work);
+    replyTopicHelp(*ctx, work);
 }
 
-static void filterHelpRootCommands(LoBBSCommandCtx *ctx, std::vector<std::string> &lines, const char *query)
+static const LoBBSSubHelpEntry pagingHelp[] = {
+    {"pN", "pN — next page of last reply (/p2, /43 p2 machine)"},
+};
+
+static void filterHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     (void)ctx;
-    if (query)
-        return;
-    lobbsRootCommandPush(lines, "help");
-    lobbsRootCommandPush(lines, "hi");
+    lobbsHelpForTopic(value, args, "pN", pagingHelp, sizeof(pagingHelp) / sizeof(pagingHelp[0]));
 }
 
 void lobbsHelpRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashHelp, LOBBS_HOOK_PRIORITY_HELP);
-    lobbsAddFilter("root_commands", filterHelpRootCommands, LOBBS_HOOK_PRIORITY_HELP);
+    lobbsAddFilter("help_for_topic", filterHelpForTopic, LOBBS_HOOK_PRIORITY_HELP);
 }
 
 #endif
