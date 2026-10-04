@@ -7,8 +7,18 @@
 #include <cstdio>
 #include <cstring>
 
+static LoDb *lobbsOpenDb()
+{
+#ifdef LOBBS_DEMO_MODE
+    // Demo builds boot with an empty BBS (path mirrors LoDb's default layout).
+    LoFS::rmdir("/lodb/lobbs", true);
+    LOG_WARN("LoBBS demo mode: wiped /lodb/lobbs");
+#endif
+    return new LoDb("lobbs");
+}
+
 LoBBSModule::LoBBSModule()
-    : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(new LoDb("lobbs")), auth_(*lodb_), mail_(*lodb_),
+    : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(lobbsOpenDb()), auth_(*lodb_), mail_(*lodb_),
       news_(*lodb_), yarn_(*lodb_), wall_(*lodb_)
 {
     lobbsWireup();
@@ -68,7 +78,9 @@ void LoBBSModule::sendReply(const meshtastic_MeshPacket &req, const char *msg)
     reply->decoded.want_response = false;
     snprintf(mark, sizeof(mark), "reply send %08x", reply->id);
     lobbsBreadcrumb(mark);
-    service->sendToMesh(reply);
+    // Phone ToRadio uses from=0; RoutingModule only forwards to the app when from != 0.
+    const bool ccPhone = (req.from == 0);
+    service->sendToMesh(reply, RX_SRC_LOCAL, ccPhone);
     lobbsBreadcrumb("reply out");
 }
 

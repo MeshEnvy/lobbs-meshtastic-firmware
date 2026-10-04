@@ -210,25 +210,44 @@ bool AuthDal::loadUserByUsername(const char *username, LoScalar *user)
     return false;
 }
 
-bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user)
+static void dropSession(LoDb &lodb, uint32_t sessionKey)
 {
-    lodb_uuid_t sessionUuid = (lodb_uuid_t)nodeId;
+    lodb.deleteRecord("sessions", (lodb_uuid_t)sessionKey);
+}
+
+bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessionNodeIdOut,
+                              uint64_t *authUserUuidOut)
+{
     LoScalar session;
-    LoDbError err = lodb_.get("sessions", sessionUuid, session);
-    if (err != LODB_OK) {
+    if (lodb_.get("sessions", (lodb_uuid_t)nodeId, session) != LODB_OK) {
         LOG_DEBUG("No session found for node 0x%08x", nodeId);
         return false;
     }
+
     uint64_t userUuid = 0;
-    if (!session.getUint64(1, userUuid)) {
+    if (!session.getUint64(1, userUuid) || userUuid == 0) {
+        LOG_WARN("Invalid session at 0x%08x, removing", nodeId);
+        dropSession(lodb_, nodeId);
         return false;
     }
-    err = lodb_.get("users", userUuid, *user);
-    if (err == LODB_OK) {
-        LOG_DEBUG("Loaded user by node ID: 0x%08x -> UUID: " LODB_UUID_FMT, nodeId, LODB_UUID_ARGS(userUuid));
-        return true;
+
+    uint32_t sessionNodeId = nodeId;
+    uint32_t storedNode = 0;
+    if (session.getUint32(5, storedNode) && storedNode != 0)
+        sessionNodeId = storedNode;
+
+    if (lodb_.get("users", userUuid, *user) != LODB_OK) {
+        LOG_WARN("Session 0x%08x references missing user, removing session", sessionNodeId);
+        dropSession(lodb_, sessionNodeId);
+        return false;
     }
-    return false;
+
+    LOG_DEBUG("Loaded user by node ID: 0x%08x -> UUID: " LODB_UUID_FMT, sessionNodeId, LODB_UUID_ARGS(userUuid));
+    if (sessionNodeIdOut)
+        *sessionNodeIdOut = sessionNodeId;
+    if (authUserUuidOut)
+        *authUserUuidOut = userUuid;
+    return true;
 }
 
 bool AuthDal::createUser(const char *username, const char *password, uint32_t nodeId)
@@ -273,6 +292,9 @@ bool AuthDal::loginUser(const char *username, uint32_t nodeId)
 
     lodb_uuid_t sessionUuid = (lodb_uuid_t)nodeId;
     lodb_.deleteRecord("sessions", sessionUuid);
+    // Greenfield: drop legacy phone sessions keyed at wire from=0 (not getFrom).
+    if (nodeId != 0)
+        lodb_.deleteRecord("sessions", (lodb_uuid_t)0);
 
     LoDbError err = lodb_.insert("sessions", sessionUuid, session);
     if (err != LODB_OK) {

@@ -26,6 +26,8 @@
 
 [Install on MeshForge](https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware) or compile and flash from source.
 
+Demo builds: add `-D LOBBS_DEMO_MODE` to `build_flags` (or `PLATFORMIO_BUILD_FLAGS="-D LOBBS_DEMO_MODE" pio run -e <env>`) to wipe `/lodb/lobbs` on every boot. Users, sessions, mail, news, wall, and yarn all start empty.
+
 ## How to use LoBBS
 
 DM the node a line that starts with `/`. 

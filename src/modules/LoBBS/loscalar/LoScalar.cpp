@@ -82,11 +82,17 @@ void LoScalar::setString(uint32_t field, const std::string &value)
 
 void LoScalar::setUint64(uint32_t field, uint64_t value)
 {
-    char buf[24];
-    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)value);
+    // newlib-nano (nRF52) snprintf has no %llu and would emit only the low 32 bits.
+    char buf[21];
+    char *p = buf + sizeof(buf) - 1;
+    *p = '\0';
+    do {
+        *--p = (char)('0' + (value % 10));
+        value /= 10;
+    } while (value);
     Field *f = findOrInsert(field);
     if (f)
-        f->value = buf;
+        f->value = p;
 }
 
 void LoScalar::setUint32(uint32_t field, uint32_t value)

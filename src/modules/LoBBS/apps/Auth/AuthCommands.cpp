@@ -5,6 +5,7 @@
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSModule.h"
 #include "AuthDal.h"
+#include "mesh/NodeDB.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -53,11 +54,12 @@ static void handleLogin(LoBBSCommandCtx &ctx)
             lobbsCommandReply(ctx, "Invalid password");
             return;
         }
-        if (!auth.loginUser(username, ctx.session.nodeId)) {
+        const uint32_t sessionKey = getFrom(ctx.mp);
+        if (!auth.loginUser(username, sessionKey)) {
             lobbsCommandReply(ctx, "Error creating session");
             return;
         }
-    } else if (!auth.createUser(username, password, ctx.session.nodeId)) {
+    } else if (!auth.createUser(username, password, getFrom(ctx.mp))) {
         lobbsCommandReply(ctx, "Error creating account");
         return;
     } else {

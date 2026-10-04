@@ -19,7 +19,8 @@ class AuthDal
     bool isValidPassword(const char *password);
     bool loadUserByUsername(const char *username, LoScalar *user);
     bool loadUserByUuid(uint64_t uuid, LoScalar *user);
-    bool loadUserByNodeId(uint32_t nodeId, LoScalar *user);
+    bool loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessionNodeIdOut = nullptr,
+                          uint64_t *authUserUuidOut = nullptr);
     bool buildUserList(const char *filterSubstr, std::string &msg, const char **emptyReply);
     bool formatUserListPage(const char *filterSubstr, uint32_t page1Based, std::string &msg, uint32_t &totalCount,
                             const char **emptyReply);
