@@ -64,11 +64,24 @@ typedef enum {
 typedef std::function<bool(const LoScalar &)> LoDbFilter;
 typedef std::function<int(const LoScalar &, const LoScalar &)> LoDbComparator;
 
+/** LoScalar field numbers are 0..99 inclusive. */
+static constexpr uint32_t LODB_F_MAX = 99;
+/** App fields use 0 .. LODB_F_USER_LIMIT - 1. */
+static constexpr uint32_t LODB_F_USER_LIMIT = 95;
+
+static constexpr uint32_t LODB_F_UPDATED = 95;
+static constexpr uint32_t LODB_F_CREATED = 96;
+static constexpr uint32_t LODB_F_DESCRIPTION = 97;
+static constexpr uint32_t LODB_F_TITLE = 98;
+static constexpr uint32_t LODB_F_ID = 99;
+
 void lodb_uuid_to_hex(lodb_uuid_t uuid, char hex_out[17]);
 lodb_uuid_t lodb_new_uuid(const char *str, uint64_t salt);
 
 /** Weak by default (`millis()`); override with a strong definition for wall time. */
 uint32_t lodb_now_ms(void);
+/** Unix seconds from getTime() when RTC is linked; else 0. */
+uint32_t lodb_now_unix(void);
 
 class LoDb
 {

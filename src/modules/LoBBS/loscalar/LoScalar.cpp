@@ -3,6 +3,13 @@
 #include <cstdio>
 #include <cstring>
 
+static constexpr uint32_t kLoScalarFieldMax = 99;
+
+static bool loscalarFieldOk(uint32_t field)
+{
+    return field <= kLoScalarFieldMax;
+}
+
 namespace {
 
 bool loscalarUnescapeValue(const char *in, size_t inLen, std::string &raw)
@@ -43,6 +50,8 @@ static bool fieldLess(const LoScalar::Field &a, const LoScalar::Field &b)
 
 LoScalar::Field *LoScalar::findOrInsert(uint32_t field)
 {
+    if (!loscalarFieldOk(field))
+        return nullptr;
     for (auto &f : fields_) {
         if (f.number == field)
             return &f;
@@ -105,6 +114,18 @@ void LoScalar::setBool(uint32_t field, bool value)
     Field *f = findOrInsert(field);
     if (f)
         f->value = value ? "1" : "0";
+}
+
+void LoScalar::removeField(uint32_t field)
+{
+    if (!loscalarFieldOk(field))
+        return;
+    for (auto it = fields_.begin(); it != fields_.end(); ++it) {
+        if (it->number == field) {
+            fields_.erase(it);
+            return;
+        }
+    }
 }
 
 void LoScalar::setBytesHex(uint32_t field, const uint8_t *data, size_t len)
@@ -263,6 +284,8 @@ static bool decodeOneField(const char *line, size_t lineLen, size_t &pos, uint32
         return false;
     while (pos < lineLen && line[pos] >= '0' && line[pos] <= '9') {
         fieldNum = fieldNum * 10 + (uint32_t)(line[pos] - '0');
+        if (fieldNum > kLoScalarFieldMax)
+            return false;
         pos++;
     }
     if (pos >= lineLen || line[pos] != ':')
@@ -302,6 +325,8 @@ bool LoScalar::decode(const char *line, size_t lineLen)
         uint32_t fieldNum = 0;
         std::string value;
         if (!decodeOneField(line, lineLen, pos, fieldNum, value))
+            return false;
+        if (!loscalarFieldOk(fieldNum))
             return false;
         Field *f = findOrInsert(fieldNum);
         if (f)

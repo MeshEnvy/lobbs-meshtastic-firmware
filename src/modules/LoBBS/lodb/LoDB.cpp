@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #if __has_include("configuration.h")
 #include "configuration.h"
+#include "gps/RTC.h"
 #undef LODB_LOG_DEBUG
 #define LODB_LOG_DEBUG(...) LOG_DEBUG(__VA_ARGS__)
 #undef LODB_LOG_INFO
@@ -23,6 +24,44 @@ static_assert(LODB_FILE_IO_BUFFER_SIZE <= LODB_MAX_RECORD_FILE_BYTES,
 __attribute__((weak)) uint32_t lodb_now_ms(void)
 {
     return static_cast<uint32_t>(millis());
+}
+
+__attribute__((weak)) uint32_t lodb_now_unix(void)
+{
+#if __has_include("configuration.h")
+    return getTime();
+#else
+    return 0;
+#endif
+}
+
+static void lodbStampInsert(lodb_uuid_t uuid, LoScalar &record)
+{
+    const uint32_t now = lodb_now_unix();
+    record.setUint64(LODB_F_ID, uuid);
+    if (!record.has(LODB_F_CREATED))
+        record.setUint32(LODB_F_CREATED, now);
+    if (!record.has(LODB_F_UPDATED))
+        record.setUint32(LODB_F_UPDATED, now);
+}
+
+static void lodbStampUpdate(lodb_uuid_t uuid, LoScalar &record, const LoScalar *stored)
+{
+    const uint32_t now = lodb_now_unix();
+    record.setUint64(LODB_F_ID, uuid);
+    if (record.has(LODB_F_CREATED)) {
+        // caller value kept
+    } else if (stored && stored->has(LODB_F_CREATED)) {
+        uint32_t created = 0;
+        if (stored->getUint32(LODB_F_CREATED, created))
+            record.setUint32(LODB_F_CREATED, created);
+        else
+            record.setUint32(LODB_F_CREATED, now);
+    } else {
+        record.setUint32(LODB_F_CREATED, now);
+    }
+    if (!record.has(LODB_F_UPDATED))
+        record.setUint32(LODB_F_UPDATED, now);
 }
 
 void lodb_uuid_to_hex(lodb_uuid_t uuid, char hex_out[17])
@@ -192,7 +231,9 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const LoScalar 
         }
     }
 
-    LoDbError err = writeRecordFile(file_path, record);
+    LoScalar stamped = record;
+    lodbStampInsert(uuid, stamped);
+    LoDbError err = writeRecordFile(file_path, stamped);
     if (err != LODB_OK)
         return err;
 
@@ -287,17 +328,16 @@ LoDbError LoDb::update(const char *table_name, lodb_uuid_t uuid, const LoScalar 
     char file_path[192];
     snprintf(file_path, sizeof(file_path), "%s/%s.ls", table->table_path, uuid_hex);
 
-    {
-        auto file = LoFS::open(file_path, FILE_O_READ);
-        if (!file) {
-            LODB_LOG_DEBUG("Record not found for update: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
-            return LODB_ERR_NOT_FOUND;
-        }
-        file.close();
-    }
+    LoScalar stored;
+    LoDbError getErr = get(table_name, uuid, stored);
+    if (getErr != LODB_OK)
+        return getErr;
+
+    LoScalar stamped = record;
+    lodbStampUpdate(uuid, stamped, &stored);
 
     std::string line;
-    if (!record.encode(line, LODB_FILE_IO_BUFFER_SIZE)) {
+    if (!stamped.encode(line, LODB_FILE_IO_BUFFER_SIZE)) {
         LODB_LOG_ERROR("Failed to encode updated record: " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
         return LODB_ERR_ENCODE;
     }

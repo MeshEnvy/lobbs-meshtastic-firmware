@@ -22,6 +22,7 @@ class LoScalar
     void setBool(uint32_t field, bool value);
     /** 32 bytes encoded as 64 lowercase hex chars. */
     void setBytesHex(uint32_t field, const uint8_t *data, size_t len);
+    void removeField(uint32_t field);
 
     bool has(uint32_t field) const;
     bool getString(uint32_t field, std::string &out) const;

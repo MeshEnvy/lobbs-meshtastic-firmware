@@ -1,35 +1,33 @@
 #include <lodb/LoDB.h>
+#include <lodb/LoDBDiagRecords.h>
 #include <loscalar/LoScalar.h>
 #include <algorithm>
 #include <cstring>
 #include <string>
 
-static LoScalar lodbDiagMake(uint32_t id, const char *value, uint32_t timestamp, bool active)
+static LoScalar lodbDiagMake(uint32_t counter, const char *value, bool active)
 {
     LoScalar r;
-    r.setUint32(1, id);
+    r.setUint32(LoDbDiagField::FIELD_COUNTER, counter);
     if (value && value[0])
-        r.setString(2, value);
-    r.setUint32(4, timestamp);
-    r.setBool(5, active);
+        r.setString(LODB_F_DESCRIPTION, value);
+    r.setBool(LoDbDiagField::FIELD_ACTIVE, active);
     return r;
 }
 
-static void lodbDiagRead(const LoScalar &r, uint32_t &id, char *value, size_t valueCap, uint32_t &timestamp, bool &active)
+static void lodbDiagRead(const LoScalar &r, uint32_t &counter, char *value, size_t valueCap, bool &active)
 {
-    id = 0;
-    timestamp = 0;
+    counter = 0;
     active = false;
     if (valueCap)
         value[0] = '\0';
-    r.getUint32(1, id);
+    r.getUint32(LoDbDiagField::FIELD_COUNTER, counter);
     std::string s;
-    if (r.getString(2, s) && valueCap) {
+    if (r.getString(LODB_F_DESCRIPTION, s) && valueCap) {
         strncpy(value, s.c_str(), valueCap - 1);
         value[valueCap - 1] = '\0';
     }
-    r.getUint32(4, timestamp);
-    r.getBool(5, active);
+    r.getBool(LoDbDiagField::FIELD_ACTIVE, active);
 }
 
 void lodb_diagnostics()
@@ -73,27 +71,27 @@ void lodb_diagnostics()
 
     LODB_LOG_INFO("--- Test 4: Insert ---");
     lodb_uuid_t uuid;
-    LoScalar record = lodbDiagMake(1, "test_value_1", lodb_now_ms(), true);
+    LoScalar record = lodbDiagMake(1, "test_value_1", true);
     uuid = lodb_new_uuid(nullptr, 0);
     err = db1->insert("users", uuid, record);
     LODB_LOG_INFO("insert users: %s", err == LODB_OK ? "SUCCESS" : "FAILED");
     lodb_uuid_t uuid1 = uuid;
 
-    record = lodbDiagMake(2, "test_value_2", lodb_now_ms() + 1, false);
+    record = lodbDiagMake(2, "test_value_2", false);
     uuid = lodb_new_uuid("custom_string_1", 12345);
     err = db1->insert("users", uuid, record);
     lodb_uuid_t uuid2 = uuid;
 
-    record = lodbDiagMake(3, "duplicate", lodb_now_ms(), true);
+    record = lodbDiagMake(3, "duplicate", true);
     err = db1->insert("users", uuid1, record);
     LODB_LOG_INFO("duplicate insert: %s (expect FAILED)", err == LODB_OK ? "SUCCESS" : "FAILED");
 
-    record = lodbDiagMake(10, "message_1", lodb_now_ms(), true);
+    record = lodbDiagMake(10, "message_1", true);
     uuid = lodb_new_uuid(nullptr, 0);
     err = db1->insert("messages", uuid, record);
     lodb_uuid_t uuid3 = uuid;
 
-    record = lodbDiagMake(100, "item_1", lodb_now_ms(), true);
+    record = lodbDiagMake(100, "item_1", true);
     uuid = lodb_new_uuid(nullptr, 0);
     err = db2->insert("items", uuid, record);
     lodb_uuid_t uuid4 = uuid;
@@ -101,10 +99,35 @@ void lodb_diagnostics()
     for (int i = 0; i < 5; i++) {
         char value[32];
         snprintf(value, sizeof(value), "bulk_test_%d", i);
-        record = lodbDiagMake((uint32_t)(20 + i), value, lodb_now_ms() + (uint32_t)i, i % 2 == 0);
+        record = lodbDiagMake((uint32_t)(20 + i), value, i % 2 == 0);
         uuid = lodb_new_uuid(nullptr, (uint64_t)i);
         db1->insert("users", uuid, record);
     }
+    LODB_LOG_INFO("");
+
+    LODB_LOG_INFO("--- Test 4b: Stamp created/updated ---");
+    err = db1->get("users", uuid1, record);
+    uint32_t createdAfterInsert = 0;
+    uint32_t updatedAfterInsert = 0;
+    if (err == LODB_OK) {
+        record.getUint32(LODB_F_CREATED, createdAfterInsert);
+        record.getUint32(LODB_F_UPDATED, updatedAfterInsert);
+    }
+    LODB_LOG_INFO("after insert created=%u updated=%u (expect both set)", createdAfterInsert, updatedAfterInsert);
+
+    LoScalar explicitTs = lodbDiagMake(1, "explicit_ts", true);
+    explicitTs.setUint32(LODB_F_CREATED, 42);
+    explicitTs.setUint32(LODB_F_UPDATED, 43);
+    lodb_uuid_t uuidExplicit = lodb_new_uuid("explicit_ts", 0);
+    db1->insert("users", uuidExplicit, explicitTs);
+    LoScalar gotExplicit;
+    err = db1->get("users", uuidExplicit, gotExplicit);
+    uint32_t cExp = 0, uExp = 0;
+    if (err == LODB_OK) {
+        gotExplicit.getUint32(LODB_F_CREATED, cExp);
+        gotExplicit.getUint32(LODB_F_UPDATED, uExp);
+    }
+    LODB_LOG_INFO("explicit timestamps kept: %s (c=%u u=%u)", (cExp == 42 && uExp == 43) ? "YES" : "NO", cExp, uExp);
     LODB_LOG_INFO("");
 
     LODB_LOG_INFO("--- Test 5: Get ---");
@@ -113,9 +136,9 @@ void lodb_diagnostics()
     LODB_LOG_INFO("get users uuid1: %s", err == LODB_OK ? "SUCCESS" : "FAILED");
     if (err == LODB_OK) {
         char val[64];
-        uint32_t id = 0, ts = 0;
+        uint32_t id = 0;
         bool active = false;
-        lodbDiagRead(retrieved, id, val, sizeof(val), ts, active);
+        lodbDiagRead(retrieved, id, val, sizeof(val), active);
         LODB_LOG_INFO("  id=%u value=\"%s\" active=%s", id, val, active ? "true" : "false");
     }
 
@@ -128,36 +151,48 @@ void lodb_diagnostics()
     LODB_LOG_INFO("");
 
     LODB_LOG_INFO("--- Test 6: Update ---");
-    record = lodbDiagMake(999, "updated_value", lodb_now_ms() + 1000, false);
+    record = lodbDiagMake(999, "updated_value", false);
+    record.removeField(LODB_F_CREATED);
+    record.removeField(LODB_F_UPDATED);
     err = db1->update("users", uuid1, record);
     err = db1->get("users", uuid1, retrieved);
+    uint32_t createdAfterUpdate = 0;
+    uint32_t updatedAfterUpdate = 0;
     if (err == LODB_OK) {
         char val[64];
-        uint32_t id = 0, ts = 0;
+        uint32_t id = 0;
         bool active = false;
-        lodbDiagRead(retrieved, id, val, sizeof(val), ts, active);
-        LODB_LOG_INFO("  after update id=%u value=\"%s\"", id, val);
+        lodbDiagRead(retrieved, id, val, sizeof(val), active);
+        retrieved.getUint32(LODB_F_CREATED, createdAfterUpdate);
+        retrieved.getUint32(LODB_F_UPDATED, updatedAfterUpdate);
+        LODB_LOG_INFO("  after update id=%u value=\"%s\" created=%u updated=%u", id, val, createdAfterUpdate,
+                      updatedAfterUpdate);
+        LODB_LOG_INFO("  created preserved: %s updated changed: %s",
+                      createdAfterUpdate == createdAfterInsert ? "YES" : "NO",
+                      updatedAfterUpdate != updatedAfterInsert ? "YES" : "NO");
     }
     err = db1->update("users", fakeUuid, record);
-    record = lodbDiagMake(888, "updated_message", lodb_now_ms(), true);
+    record = lodbDiagMake(888, "updated_message", true);
+    record.removeField(LODB_F_CREATED);
+    record.removeField(LODB_F_UPDATED);
     err = db1->update("messages", uuid3, record);
     LODB_LOG_INFO("");
 
     LODB_LOG_INFO("--- Test 7: Select ---");
     auto filterActive = [](const LoScalar &rec) -> bool {
         bool active = false;
-        rec.getBool(5, active);
+        rec.getBool(LoDbDiagField::FIELD_ACTIVE, active);
         return active;
     };
     auto filterId = [](const LoScalar &rec) -> bool {
         uint32_t id = 0;
-        rec.getUint32(1, id);
+        rec.getUint32(LoDbDiagField::FIELD_COUNTER, id);
         return id > 20;
     };
     auto comparatorId = [](const LoScalar &a, const LoScalar &b) -> int {
         uint32_t ia = 0, ib = 0;
-        a.getUint32(1, ia);
-        b.getUint32(1, ib);
+        a.getUint32(LoDbDiagField::FIELD_COUNTER, ia);
+        b.getUint32(LoDbDiagField::FIELD_COUNTER, ib);
         if (ia > ib)
             return -1;
         if (ia < ib)
@@ -195,7 +230,7 @@ void lodb_diagnostics()
     for (int i = 0; i < 3; i++) {
         char value[32];
         snprintf(value, sizeof(value), "truncate_%d", i);
-        record = lodbDiagMake((uint32_t)(100 + i), value, lodb_now_ms(), true);
+        record = lodbDiagMake((uint32_t)(100 + i), value, true);
         uuid = lodb_new_uuid(nullptr, (uint64_t)(1000 + i));
         db1->insert("logs", uuid, record);
     }
@@ -209,7 +244,7 @@ void lodb_diagnostics()
 
     LODB_LOG_INFO("--- Test 11: Cross-database ---");
     db2->registerTable("users");
-    record = lodbDiagMake(200, "db2_user", lodb_now_ms(), true);
+    record = lodbDiagMake(200, "db2_user", true);
     uuid = lodb_new_uuid(nullptr, 2000);
     db2->insert("users", uuid, record);
     LODB_LOG_INFO("db1 users=%d db2 users=%d", db1->count("users"), db2->count("users"));

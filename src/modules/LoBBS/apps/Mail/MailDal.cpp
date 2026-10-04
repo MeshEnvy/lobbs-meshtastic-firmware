@@ -1,6 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "MailDal.h"
+#include "MailRecords.h"
 #include "configuration.h"
 #include "gps/RTC.h"
 #include <cstring>
@@ -13,14 +14,14 @@ MailDal::MailDal(LoDb &lodb) : lodb_(lodb)
 uint64_t MailDal::mailUuid(const LoScalar &m)
 {
     uint64_t v = 0;
-    m.getUint64(1, v);
+    m.getUint64(LODB_F_ID, v);
     return v;
 }
 
 bool MailDal::mailMessage(const LoScalar &m, char *buf, size_t bufCap)
 {
     std::string s;
-    if (!m.getString(3, s) || bufCap == 0)
+    if (!m.getString(LODB_F_DESCRIPTION, s) || bufCap == 0)
         return false;
     strncpy(buf, s.c_str(), bufCap - 1);
     buf[bufCap - 1] = '\0';
@@ -30,28 +31,28 @@ bool MailDal::mailMessage(const LoScalar &m, char *buf, size_t bufCap)
 bool MailDal::mailRead(const LoScalar &m)
 {
     bool v = false;
-    m.getBool(4, v);
+    m.getBool(MailField::FIELD_READ, v);
     return v;
 }
 
 uint32_t MailDal::mailTimestamp(const LoScalar &m)
 {
     uint32_t v = 0;
-    m.getUint32(5, v);
+    m.getUint32(LODB_F_CREATED, v);
     return v;
 }
 
 uint64_t MailDal::mailFromUuid(const LoScalar &m)
 {
     uint64_t v = 0;
-    m.getUint64(6, v);
+    m.getUint64(MailField::FIELD_FROM, v);
     return v;
 }
 
 uint64_t MailDal::mailToUuid(const LoScalar &m)
 {
     uint64_t v = 0;
-    m.getUint64(7, v);
+    m.getUint64(MailField::FIELD_TO, v);
     return v;
 }
 
@@ -74,15 +75,13 @@ bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *m
     lodb_uuid_t mailUuidVal = lodb_new_uuid((const char *)&toUserUuid, getTime());
 
     LoScalar mail;
-    mail.setUint64(1, mailUuidVal);
     char msgBuf[LOBBS_MAIL_MSG_MAX + 1];
     strncpy(msgBuf, message, LOBBS_MAIL_MSG_MAX);
     msgBuf[LOBBS_MAIL_MSG_MAX] = '\0';
-    mail.setString(3, msgBuf);
-    mail.setBool(4, false);
-    mail.setUint32(5, getTime());
-    mail.setUint64(6, fromUserUuid);
-    mail.setUint64(7, toUserUuid);
+    mail.setString(LODB_F_DESCRIPTION, msgBuf);
+    mail.setBool(MailField::FIELD_READ, false);
+    mail.setUint64(MailField::FIELD_FROM, fromUserUuid);
+    mail.setUint64(MailField::FIELD_TO, toUserUuid);
 
     LoDbError err = lodb_.insert("mail", mailUuidVal, mail);
     if (err != LODB_OK) {
@@ -116,10 +115,10 @@ bool MailDal::markMailAsRead(uint64_t mailUuidVal)
     if (err != LODB_OK)
         return false;
 
-    mail.setBool(4, true);
-    lodb_.deleteRecord("mail", mailUuidVal);
-    err = lodb_.insert("mail", mailUuidVal, mail);
-    return err == LODB_OK;
+    mail.setBool(MailField::FIELD_READ, true);
+    mail.removeField(LODB_F_CREATED);
+    mail.removeField(LODB_F_UPDATED);
+    return lodb_.update("mail", mailUuidVal, mail) == LODB_OK;
 }
 
 bool MailDal::markMailAsUnread(uint64_t mailUuidVal)
@@ -129,10 +128,10 @@ bool MailDal::markMailAsUnread(uint64_t mailUuidVal)
     if (err != LODB_OK)
         return false;
 
-    mail.setBool(4, false);
-    lodb_.deleteRecord("mail", mailUuidVal);
-    err = lodb_.insert("mail", mailUuidVal, mail);
-    return err == LODB_OK;
+    mail.setBool(MailField::FIELD_READ, false);
+    mail.removeField(LODB_F_CREATED);
+    mail.removeField(LODB_F_UPDATED);
+    return lodb_.update("mail", mailUuidVal, mail) == LODB_OK;
 }
 
 uint32_t MailDal::countAllMail()

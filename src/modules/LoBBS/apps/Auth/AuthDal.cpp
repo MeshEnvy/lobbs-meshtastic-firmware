@@ -1,6 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "AuthDal.h"
+#include "AuthRecords.h"
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSReply.h"
 #include "configuration.h"
@@ -31,14 +32,14 @@ AuthDal::AuthDal(LoDb &lodb) : lodb_(lodb)
 uint64_t AuthDal::userUuid(const LoScalar &user)
 {
     uint64_t v = 0;
-    user.getUint64(1, v);
+    user.getUint64(LODB_F_ID, v);
     return v;
 }
 
 bool AuthDal::userUsername(const LoScalar &user, char *buf, size_t bufCap)
 {
     std::string name;
-    if (!user.getString(2, name) || bufCap == 0)
+    if (!user.getString(AuthUser::FIELD_USERNAME, name) || bufCap == 0)
         return false;
     strncpy(buf, name.c_str(), bufCap - 1);
     buf[bufCap - 1] = '\0';
@@ -48,7 +49,7 @@ bool AuthDal::userUsername(const LoScalar &user, char *buf, size_t bufCap)
 bool AuthDal::userIsSysop(const LoScalar &user)
 {
     bool v = false;
-    return user.getBool(4, v) && v;
+    return user.getBool(AuthUser::FIELD_SYSOP, v) && v;
 }
 
 static lodb_uuid_t usernameToUuid(const char *username)
@@ -225,7 +226,7 @@ bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessio
     }
 
     uint64_t userUuid = 0;
-    if (!session.getUint64(1, userUuid) || userUuid == 0) {
+    if (!session.getUint64(AuthSession::FIELD_USER_UUID, userUuid) || userUuid == 0) {
         LOG_WARN("Invalid session at 0x%08x, removing", nodeId);
         dropSession(lodb_, nodeId);
         return false;
@@ -233,7 +234,7 @@ bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessio
 
     uint32_t sessionNodeId = nodeId;
     uint32_t storedNode = 0;
-    if (session.getUint32(5, storedNode) && storedNode != 0)
+    if (session.getUint32(AuthSession::FIELD_NODE_ID, storedNode) && storedNode != 0)
         sessionNodeId = storedNode;
 
     if (lodb_.get("users", userUuid, *user) != LODB_OK) {
@@ -256,12 +257,11 @@ bool AuthDal::createUser(const char *username, const char *password, uint32_t no
     bool isFirstUser = (lodb_.count("users") == 0);
 
     LoScalar user;
-    user.setUint64(1, userUuid);
-    user.setString(2, username);
+    user.setString(AuthUser::FIELD_USERNAME, username);
     uint8_t hash[32];
     hashPassword(password, hash);
-    user.setBytesHex(5, hash, 32);
-    user.setBool(4, isFirstUser);
+    user.setBytesHex(AuthUser::FIELD_PASSWORD, hash, 32);
+    user.setBool(AuthUser::FIELD_SYSOP, isFirstUser);
     LoDbError err = lodb_.insert("users", userUuid, user);
     if (err != LODB_OK) {
         LOG_ERROR("Failed to create user: %s", username);
@@ -276,7 +276,7 @@ bool AuthDal::verifyPassword(const LoScalar *user, const char *password)
 {
     uint8_t stored[32];
     size_t n = 0;
-    if (!user->getBytesHex(5, stored, sizeof(stored), n) || n != 32)
+    if (!user->getBytesHex(AuthUser::FIELD_PASSWORD, stored, sizeof(stored), n) || n != 32)
         return false;
     uint8_t providedHash[32];
     hashPassword(password, providedHash);
@@ -286,9 +286,8 @@ bool AuthDal::verifyPassword(const LoScalar *user, const char *password)
 bool AuthDal::loginUser(const char *username, uint32_t nodeId)
 {
     LoScalar session;
-    session.setUint64(1, usernameToUuid(username));
-    session.setUint32(4, getTime());
-    session.setUint32(5, nodeId);
+    session.setUint64(AuthSession::FIELD_USER_UUID, usernameToUuid(username));
+    session.setUint32(AuthSession::FIELD_NODE_ID, nodeId);
 
     lodb_uuid_t sessionUuid = (lodb_uuid_t)nodeId;
     lodb_.deleteRecord("sessions", sessionUuid);
@@ -334,9 +333,10 @@ bool AuthDal::setUserSysopByUsername(const char *username, bool isSysop)
     if (!loadUserByUsername(username, &user))
         return false;
     uint64_t uuid = userUuid(user);
-    user.setBool(4, isSysop);
-    lodb_.deleteRecord("users", uuid);
-    return lodb_.insert("users", uuid, user) == LODB_OK;
+    user.setBool(AuthUser::FIELD_SYSOP, isSysop);
+    user.removeField(LODB_F_CREATED);
+    user.removeField(LODB_F_UPDATED);
+    return lodb_.update("users", uuid, user) == LODB_OK;
 }
 
 bool AuthDal::setPasswordByUsername(const char *username, const char *password)
@@ -347,9 +347,10 @@ bool AuthDal::setPasswordByUsername(const char *username, const char *password)
     uint64_t uuid = userUuid(user);
     uint8_t hash[32];
     hashPassword(password, hash);
-    user.setBytesHex(5, hash, 32);
-    lodb_.deleteRecord("users", uuid);
-    return lodb_.insert("users", uuid, user) == LODB_OK;
+    user.setBytesHex(AuthUser::FIELD_PASSWORD, hash, 32);
+    user.removeField(LODB_F_CREATED);
+    user.removeField(LODB_F_UPDATED);
+    return lodb_.update("users", uuid, user) == LODB_OK;
 }
 
 uint32_t AuthDal::countSysopUsers()
@@ -374,13 +375,13 @@ bool AuthDal::kickUserByUsername(const char *username)
         "sessions",
         [userUuidVal](const LoScalar &rec) -> bool {
             uint64_t u = 0;
-            return rec.getUint64(1, u) && u == userUuidVal;
+            return rec.getUint64(AuthSession::FIELD_USER_UUID, u) && u == userUuidVal;
         },
         LoDbComparator());
 
     for (const auto &rec : sessions) {
         uint32_t nodeId = 0;
-        if (rec.getUint32(5, nodeId))
+        if (rec.getUint32(AuthSession::FIELD_NODE_ID, nodeId))
             lodb_.deleteRecord("sessions", (lodb_uuid_t)nodeId);
     }
     return true;
