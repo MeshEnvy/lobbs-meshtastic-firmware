@@ -1,4 +1,5 @@
 #pragma once
+#include "LoBBSConfig.h"
 #if !MESHTASTIC_EXCLUDE_LOBBS && LOBBS_SEED
 
 #include "LoBBSDispatch.h"

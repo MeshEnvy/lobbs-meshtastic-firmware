@@ -1,0 +1,23 @@
+---
+description: How to verify LoBBS changes; skip the native Docker test suite
+globs: src/modules/LoBBS/**/*
+alwaysApply: false
+---
+
+# Verifying LoBBS changes
+
+The native test suite (`./bin/test-native-docker.sh`, `pio test -e native`) is not green on the `lobbs` branch and takes several minutes per run. Do not run it as a verification step, and do not block a commit on it.
+
+## Do
+
+- Build the target radio: `pio run -e rak4631`.
+- Run `trunk fmt` before committing.
+
+## Do not
+
+- Start `./bin/test-native-docker.sh` or `pio test -e native` unless the operator asks for a test run.
+- Treat a native test failure as caused by the current change without checking it fails on `HEAD` too.
+
+## Known gap
+
+The rak4631 build does not compile the ESP32/RP2040/Portduino branches of LoFS. Code under `#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)` (for example the string-mode `LoFS::open`) needs a careful read when you touch it.
