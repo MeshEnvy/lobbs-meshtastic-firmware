@@ -10,7 +10,7 @@ bool lobbsPaginateMachine(uint32_t reqId, const std::string &document, uint32_t 
     if (page1 == 0)
         page1 = 1;
 
-    char prefix[32];
+    char prefix[40];
     size_t prefixLen = (size_t)snprintf(prefix, sizeof(prefix), "<%u>ok\n", reqId);
     if (prefixLen + document.size() <= LOBBS_REPLY_BYTES) {
         if (page1 > 1) {
@@ -23,25 +23,28 @@ bool lobbsPaginateMachine(uint32_t reqId, const std::string &document, uint32_t 
         return true;
     }
 
-    size_t offset = 0;
-    for (uint32_t n = 1; offset < document.size(); n++) {
-        // Budget assumes the `!` so the last fragment never overflows.
-        prefixLen = (size_t)snprintf(prefix, sizeof(prefix), "<%u:%u!>ok\n", reqId, n);
-        size_t budget = LOBBS_REPLY_BYTES - prefixLen;
-        size_t remaining = document.size() - offset;
-        bool last = remaining <= budget;
-        size_t take = last ? remaining : budget;
-        if (n == page1) {
-            snprintf(prefix, sizeof(prefix), "<%u:%u%s>ok\n", reqId, n, last ? "!" : "");
-            pageOut = prefix;
-            pageOut.append(document, offset, take);
-            return true;
-        }
-        offset += take;
+    // Size every page for the widest header at this digit count; widen until the page count fits.
+    uint32_t widest = 9;
+    size_t budget = 0;
+    uint32_t pages = 0;
+    while (true) {
+        prefixLen = (size_t)snprintf(prefix, sizeof(prefix), "<%u>ok [%u:%u]\n", reqId, widest, widest);
+        budget = LOBBS_REPLY_BYTES - prefixLen;
+        pages = (uint32_t)((document.size() + budget - 1) / budget);
+        if (pages <= widest)
+            break;
+        widest = widest * 10 + 9;
     }
-    if (errMsg)
-        *errMsg = "No such page.";
-    return false;
+
+    if (page1 > pages) {
+        if (errMsg)
+            *errMsg = "No such page.";
+        return false;
+    }
+    snprintf(prefix, sizeof(prefix), "<%u>ok [%u:%u]\n", reqId, page1, pages);
+    pageOut = prefix;
+    pageOut.append(document, (size_t)(page1 - 1) * budget, budget);
+    return true;
 }
 
 #endif

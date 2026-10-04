@@ -23,6 +23,7 @@ Planned major release **2.0.0** (not tagged yet).
 - `/news`: announcement feed (list, read, post, unread, sysop delete).
 - `/yarn`: collaborative word tail and sysop quotas.
 - Public `/status` and `/hi`; all-time totals when logged out; unread mail/news when logged in.
+- Machine replies echo the request id and mark pages separately: `<id>ok [n:max]` (single-page replies are `<id>ok`).
 - `/passwd` (self and sysop reset) and `/time` (show Unix time; sysop set clock).
 - Ignore non-slash DMs and self-originated loopback (`from` = local node).
 

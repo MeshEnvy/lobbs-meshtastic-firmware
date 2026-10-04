@@ -88,10 +88,9 @@ static void test_command_machine_page_from_cache()
     lobbsTestReplies.clear();
     lobbsTestSendLine("/42 mail list");
     const char *p1 = lobbsTestLastReply();
-    TEST_ASSERT_NOT_NULL(strstr(p1, "<42:"));
-    TEST_ASSERT_NOT_NULL(strstr(p1, "ok"));
+    TEST_ASSERT_NOT_NULL(strstr(p1, "<42>ok [1:"));
     lobbsTestSendLine("/43 p2");
-    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "<43:"));
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "<43>ok [2:"));
 }
 
 static void test_command_no_such_page()

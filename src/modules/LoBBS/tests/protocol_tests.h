@@ -6,6 +6,7 @@
 #include "protocol/machine/paginate.h"
 #include "protocol/machine/serialize.h"
 #include "protocol/plain_text/paginate.h"
+#include <cstdio>
 #include <cstring>
 #include <lodb/LoDB.h>
 #include <string>
@@ -96,7 +97,9 @@ static void test_protocol_machine_last_fragment_marker()
     std::string lastFrag;
     const char *err = nullptr;
     TEST_ASSERT_TRUE(lobbsPaginateMachine(7, doc, last, lastFrag, &err));
-    TEST_ASSERT_NOT_NULL(strstr(lastFrag.c_str(), "!>ok"));
+    char header[32];
+    snprintf(header, sizeof(header), "<7>ok [%u:%u]\n", last, last);
+    TEST_ASSERT_EQUAL_STRING_LEN(header, lastFrag.c_str(), strlen(header));
 }
 
 static void test_protocol_machine_reassemble_document()
@@ -138,8 +141,8 @@ static void test_protocol_machine_req_id_in_header()
     const char *err = nullptr;
     TEST_ASSERT_TRUE(lobbsPaginateMachine(1, doc, 1, f1, &err));
     TEST_ASSERT_TRUE(lobbsPaginateMachine(999, doc, 1, f2, &err));
-    TEST_ASSERT_NOT_NULL(strstr(f1.c_str(), "<1:"));
-    TEST_ASSERT_NOT_NULL(strstr(f2.c_str(), "<999:"));
+    TEST_ASSERT_NOT_NULL(strstr(f1.c_str(), "<1>ok [1:"));
+    TEST_ASSERT_NOT_NULL(strstr(f2.c_str(), "<999>ok [1:"));
 }
 
 static void test_protocol_machine_serialize_error()

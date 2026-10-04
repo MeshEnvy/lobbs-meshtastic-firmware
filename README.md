@@ -135,23 +135,23 @@ SysOps painting the wall or adding yarn do not use quota.
 
 ## Machine interface (message IDs)
 
-Put a number and a space after `/` on a command to get a machine reply. Each page is a separate DM with its own id. Run the command first, then request further pages without re-running it.
+Put a number and a space after `/` on a command to get a machine reply. The reply header echoes the id of the request it answers. Run the command first, then request further pages without re-running it.
 
 ```
 /42 mail list
-<42:1>ok
+<42>ok [1:2]
 …payload…
 
 /43 p2
-<43:2!>ok
+<43>ok [2:2]
 …payload…
 ```
 
-A reply that fits in one DM is `<id>ok`. Multi-page replies are `<id:n>ok`, and the last page is marked `<id:n!>ok`. Success bodies start with `ok` and LoScalar record lines. Errors are one sentence with no `ok`. Without a leading id, replies use the human paginator and `{p i/n}` footers.
+A reply that fits in one DM is `<id>ok`. Multi-page replies add `[n:max]` after `ok`. Success bodies start with `ok` and LoScalar record lines. Errors are `<id>` and one sentence with no `ok`. Without a leading id, replies use the human paginator and `{p i/n}` footers.
 
 Human paging: `/p2` after `/mail list`. Machine paging: `/43 p2` (new id each page). The cache expires after about five minutes of idle time. Payloads larger than 8 KiB are not cached (page 1 only).
 
-The 200-byte limit applies to each DM, including the `<id:n>ok` header.
+The 200-byte limit applies to each DM, including the `<id>ok [n:max]` header.
 
 ## Versions
 
