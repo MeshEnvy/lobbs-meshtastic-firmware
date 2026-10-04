@@ -1,8 +1,8 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "WallDal.h"
+#include "../AppUtil.h"
 #include "WallRecords.h"
-#include "gps/RTC.h"
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -32,15 +32,6 @@ static lodb_uuid_t wallSeenRecordUuid(uint64_t userUuid)
     return lodb_new_uuid(hex, 0);
 }
 
-static lodb_uuid_t wallQuotaRecordUuid(uint64_t userUuid)
-{
-    char hex[17];
-    lodb_uuid_to_hex(userUuid, hex);
-    char key[24];
-    snprintf(key, sizeof(key), "q:%s", hex);
-    return lodb_new_uuid(key, 0);
-}
-
 static void wallSealCells(char *cells)
 {
     cells[LOBBS_WALL_CELLS] = '\0';
@@ -57,28 +48,23 @@ uint32_t WallDal::computeCrc32(const uint8_t *data, size_t len)
     return ~crc;
 }
 
-bool WallDal::loadCanvas(CanvasState &out)
+void WallDal::loadCanvas(CanvasState &out)
 {
     lodb_uuid_t id = wallCanvasRecordUuid();
     LoScalar rec;
     if (lodb_.get("wall_canvas", id, rec) == LODB_OK) {
         std::string cells;
-        if (rec.getString(WallCanvasField::FIELD_CELLS, cells)) {
+        if (rec.getString(WallCanvasField::FIELD_CELLS, cells))
             strncpy(out.cells, cells.c_str(), LOBBS_WALL_CELLS);
-            out.cells[LOBBS_WALL_CELLS] = '\0';
-        } else {
+        else
             memset(out.cells, ' ', LOBBS_WALL_CELLS);
-            out.cells[LOBBS_WALL_CELLS] = '\0';
-        }
-        rec.getUint32(WallCanvasField::FIELD_CRC32, out.crc32);
         wallSealCells(out.cells);
-        return true;
+        rec.getUint32(WallCanvasField::FIELD_CRC32, out.crc32);
+        return;
     }
     memset(out.cells, ' ', LOBBS_WALL_CELLS);
-    out.cells[LOBBS_WALL_CELLS] = '\0';
     wallSealCells(out.cells);
     out.crc32 = computeCrc32((const uint8_t *)out.cells, LOBBS_WALL_CELLS);
-    return true;
 }
 
 bool WallDal::saveCanvas(CanvasState &canvas)
@@ -92,125 +78,33 @@ bool WallDal::saveCanvas(CanvasState &canvas)
     return lodb_.upsert("wall_canvas", id, rec) == LODB_OK;
 }
 
-bool WallDal::loadConfig(ConfigState &out)
+void WallDal::loadConfig(ConfigState &out)
 {
-    lodb_uuid_t id = wallConfigRecordUuid();
-    LoScalar rec;
-    if (lodb_.get("wall_config", id, rec) == LODB_OK) {
-        rec.getUint32(WallConfigField::FIELD_PERIOD_SEC, out.period_seconds);
-        rec.getUint32(WallConfigField::FIELD_MAX_CELLS, out.max_cells_per_cycle);
-        return true;
-    }
     out.period_seconds = LOBBS_WALL_DEFAULT_PERIOD_SEC;
     out.max_cells_per_cycle = LOBBS_WALL_DEFAULT_MAX_CELLS;
-    return true;
+    LoScalar rec;
+    if (lodb_.get("wall_config", wallConfigRecordUuid(), rec) != LODB_OK)
+        return;
+    rec.getUint32(WallConfigField::FIELD_PERIOD_SEC, out.period_seconds);
+    rec.getUint32(WallConfigField::FIELD_MAX_CELLS, out.max_cells_per_cycle);
 }
 
-bool WallDal::setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle, char *err, size_t errCap)
+const char *WallDal::setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle)
 {
-    if (periodSeconds < 60 || periodSeconds > 86400) {
-        if (err && errCap)
-            snprintf(err, errCap, "Bad period.");
-        return false;
-    }
-    if (maxCellsPerCycle < 1 || maxCellsPerCycle > LOBBS_WALL_CELLS) {
-        if (err && errCap)
-            snprintf(err, errCap, "Bad cell max.");
-        return false;
-    }
-    lodb_uuid_t id = wallConfigRecordUuid();
+    if (periodSeconds < 60 || periodSeconds > 86400)
+        return "Bad period.";
+    if (maxCellsPerCycle < 1 || maxCellsPerCycle > LOBBS_WALL_CELLS)
+        return "Bad cell max.";
     LoScalar cfg;
     cfg.setUint32(WallConfigField::FIELD_PERIOD_SEC, periodSeconds);
     cfg.setUint32(WallConfigField::FIELD_MAX_CELLS, maxCellsPerCycle);
-    return lodb_.upsert("wall_config", id, cfg) == LODB_OK;
-}
-
-bool WallDal::saveQuota(QuotaState &quota)
-{
-    lodb_uuid_t id = wallQuotaRecordUuid(quota.user_uuid);
-    LoScalar rec;
-    rec.setUint64(WallQuotaField::FIELD_USER_UUID, quota.user_uuid);
-    rec.setUint32(WallQuotaField::FIELD_CYCLE_START, quota.cycle_start);
-    rec.setUint32(WallQuotaField::FIELD_CELLS_USED, quota.cells_used);
-    return lodb_.upsert("wall_quota", id, rec) == LODB_OK;
-}
-
-bool WallDal::checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, char *err, size_t errCap)
-{
-    if (isSysop)
-        return true;
-    if (tokenCount <= 0) {
-        if (err && errCap)
-            snprintf(err, errCap, "No paint tokens.");
-        return false;
-    }
-    ConfigState cfg = {};
-    if (!loadConfig(cfg)) {
-        if (err && errCap)
-            snprintf(err, errCap, "Config error.");
-        return false;
-    }
-    if ((uint32_t)tokenCount > cfg.max_cells_per_cycle) {
-        if (err && errCap)
-            snprintf(err, errCap, "Too many cells.");
-        return false;
-    }
-    QuotaState quota = {};
-    lodb_uuid_t id = wallQuotaRecordUuid(userUuid);
-    LoScalar qrec;
-    if (lodb_.get("wall_quota", id, qrec) == LODB_OK) {
-        qrec.getUint64(WallQuotaField::FIELD_USER_UUID, quota.user_uuid);
-        qrec.getUint32(WallQuotaField::FIELD_CYCLE_START, quota.cycle_start);
-        qrec.getUint32(WallQuotaField::FIELD_CELLS_USED, quota.cells_used);
-    } else {
-        quota.user_uuid = userUuid;
-        quota.cycle_start = 0;
-        quota.cells_used = 0;
-    }
-    uint32_t now = getTime();
-    uint32_t used = quota.cells_used;
-    if (quota.cycle_start == 0 || now >= quota.cycle_start + cfg.period_seconds)
-        used = 0;
-    if (used + (uint32_t)tokenCount > cfg.max_cells_per_cycle) {
-        if (err && errCap)
-            snprintf(err, errCap, "Quota full.");
-        return false;
-    }
-    return true;
-}
-
-bool WallDal::recordPaintQuota(uint64_t userUuid, int tokenCount)
-{
-    ConfigState cfg = {};
-    if (!loadConfig(cfg))
-        return false;
-    QuotaState quota = {};
-    lodb_uuid_t id = wallQuotaRecordUuid(userUuid);
-    LoScalar qrec;
-    if (lodb_.get("wall_quota", id, qrec) == LODB_OK) {
-        qrec.getUint64(WallQuotaField::FIELD_USER_UUID, quota.user_uuid);
-        qrec.getUint32(WallQuotaField::FIELD_CYCLE_START, quota.cycle_start);
-        qrec.getUint32(WallQuotaField::FIELD_CELLS_USED, quota.cells_used);
-    } else {
-        quota.user_uuid = userUuid;
-        quota.cycle_start = 0;
-        quota.cells_used = 0;
-    }
-    uint32_t now = getTime();
-    if (quota.cycle_start == 0 || now >= quota.cycle_start + cfg.period_seconds) {
-        quota.cycle_start = now;
-        quota.cells_used = 0;
-    }
-    quota.cells_used += (uint32_t)tokenCount;
-    quota.user_uuid = userUuid;
-    return saveQuota(quota);
+    return lodb_.upsert("wall_config", wallConfigRecordUuid(), cfg) == LODB_OK ? nullptr : "Failed.";
 }
 
 bool WallDal::formatGridLines(char *out, size_t outCap)
 {
     CanvasState canvas = {};
-    if (!loadCanvas(canvas))
-        return false;
+    loadCanvas(canvas);
     size_t n = 0;
     for (int row = 0; row < LOBBS_WALL_ROWS; row++) {
         if (row > 0 && n + 1 < outCap)
@@ -230,8 +124,7 @@ bool WallDal::formatGridLines(char *out, size_t outCap)
 uint32_t WallDal::canvasCrc32()
 {
     CanvasState canvas = {};
-    if (!loadCanvas(canvas))
-        return 0;
+    loadCanvas(canvas);
     return canvas.crc32;
 }
 
@@ -311,44 +204,38 @@ static bool parseWallToken(const char *tok, int &rowOut, int &colOut, char &chOu
     return true;
 }
 
-bool WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count, char *err, size_t errCap)
+const char *WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count)
 {
-    if (count <= 0) {
-        if (err && errCap)
-            snprintf(err, errCap, "No paint tokens.");
-        return false;
-    }
+    if (count <= 0)
+        return "No paint tokens.";
     CanvasState canvas = {};
-    if (!loadCanvas(canvas)) {
-        if (err && errCap)
-            snprintf(err, errCap, "Canvas error.");
-        return false;
-    }
+    loadCanvas(canvas);
     for (int i = 0; i < count; i++) {
         int row = 0;
         int col = 0;
         char ch = 0;
-        if (!parseWallToken(tokens[i], row, col, ch)) {
-            if (err && errCap)
-                snprintf(err, errCap, "Bad token.");
-            return false;
-        }
+        if (!parseWallToken(tokens[i], row, col, ch))
+            return "Bad token.";
         canvas.cells[row * LOBBS_WALL_COLS + (col - 1)] = ch;
     }
     wallSealCells(canvas.cells);
-    if (!checkPaintQuota(userUuid, isSysop, count, err, errCap))
-        return false;
-    if (!saveCanvas(canvas)) {
-        if (err && errCap)
-            snprintf(err, errCap, "Save failed.");
-        return false;
+
+    ConfigState cfg = {};
+    loadConfig(cfg);
+    uint32_t cells = (uint32_t)count;
+    if (!isSysop) {
+        if (cells > cfg.max_cells_per_cycle)
+            return "Too many cells.";
+        uint32_t used = 0;
+        lobbsQuotaUsed(lodb_, "wall_quota", userUuid, cfg.period_seconds, &used, 1);
+        if (used + cells > cfg.max_cells_per_cycle)
+            return "Quota full.";
     }
-    if (!isSysop && !recordPaintQuota(userUuid, count)) {
-        if (err && errCap)
-            snprintf(err, errCap, "Quota save.");
-        return false;
-    }
-    return true;
+    if (!saveCanvas(canvas))
+        return "Save failed.";
+    if (!isSysop && !lobbsQuotaAdd(lodb_, "wall_quota", userUuid, cfg.period_seconds, &cells, 1))
+        return "Quota save.";
+    return nullptr;
 }
 
 #endif

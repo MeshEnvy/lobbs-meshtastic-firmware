@@ -42,10 +42,8 @@ static void wallSubLimit(LoBBSCommandCtx &ctx)
         lobbsCommandReplyError(ctx, "Usage: /wall limit SEC CELLS");
         return;
     }
-    char err[48];
-    WallDal &wall = ctx.mod->wall().dal();
-    if (!wall.setConfig(period, cells, err, sizeof(err))) {
-        lobbsCommandReplyError(ctx, err[0] ? err : "Failed.");
+    if (const char *err = ctx.mod->wall().dal().setConfig(period, cells)) {
+        lobbsCommandReplyError(ctx, err);
         return;
     }
     char reply[64];
@@ -76,9 +74,8 @@ static void handleWall(LoBBSCommandCtx &ctx)
         return;
     }
 
-    char err[48];
-    if (!ctx.mod->wall().dal().applyPaintTokens(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n, err, sizeof(err))) {
-        lobbsCommandReplyError(ctx, err[0] ? err : "Paint failed.");
+    if (const char *err = ctx.mod->wall().dal().applyPaintTokens(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n)) {
+        lobbsCommandReplyError(ctx, err);
         return;
     }
     replyGrid(ctx, true);

@@ -43,9 +43,8 @@ static void yarnSubLimit(LoBBSCommandCtx &ctx)
         lobbsCommandReplyError(ctx, "Usage: /yarn limit SEC WORDS CHARS");
         return;
     }
-    char err[48];
-    if (!ctx.mod->yarn().dal().setConfig(period, words, chars, err, sizeof(err))) {
-        lobbsCommandReplyError(ctx, err[0] ? err : "Failed.");
+    if (const char *err = ctx.mod->yarn().dal().setConfig(period, words, chars)) {
+        lobbsCommandReplyError(ctx, err);
         return;
     }
     char reply[72];
@@ -76,9 +75,8 @@ static void handleYarn(LoBBSCommandCtx &ctx)
         return;
     }
 
-    char err[48];
-    if (!ctx.mod->yarn().dal().appendWords(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n, err, sizeof(err))) {
-        lobbsCommandReplyError(ctx, err[0] ? err : "Failed.");
+    if (const char *err = ctx.mod->yarn().dal().appendWords(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n)) {
+        lobbsCommandReplyError(ctx, err);
         return;
     }
     replyYarnView(ctx, true);

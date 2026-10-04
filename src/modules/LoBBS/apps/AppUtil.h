@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 class LoBBSModule;
+class LoDb;
 struct LoBBSCommandCtx;
 
 void lobbsAppCopyCapped(char *dst, size_t dstCap, const char *src, size_t srcCap);
@@ -18,4 +19,18 @@ void lobbsAppUsernameForUuid(LoBBSModule *mod, uint64_t uuid, char *buf, size_t 
 uint64_t lobbsAppUuidForUsername(LoBBSModule *mod, const char *username);
 /** Sets uuidOut and returns true, or replies and returns false. */
 bool lobbsAppResolveUsername(LoBBSCommandCtx &ctx, const char *username, uint64_t &uuidOut);
+
+/** Per-user quota record: user uuid, cycle start, then one counter per field from 2. */
+namespace LoBBSQuotaField
+{
+inline constexpr uint32_t FIELD_USER_UUID = 0;
+inline constexpr uint32_t FIELD_CYCLE_START = 1;
+inline constexpr uint32_t FIELD_USED = 2;
+} // namespace LoBBSQuotaField
+static constexpr size_t LOBBS_QUOTA_MAX_COUNTERS = 4;
+
+/** Fills `used` with this cycle's counters; zeros when missing or the cycle has expired. */
+void lobbsQuotaUsed(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, uint32_t *used, size_t n);
+/** Adds `add` to this cycle's counters, starting a new cycle when the last one expired. */
+bool lobbsQuotaAdd(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, const uint32_t *add, size_t n);
 #endif

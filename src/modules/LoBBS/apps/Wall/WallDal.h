@@ -21,8 +21,9 @@ class WallDal
     uint32_t canvasCrc32();
     bool markSeen(uint64_t userUuid, uint32_t crc32);
     bool isDirtyForUser(uint64_t userUuid);
-    bool applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count, char *err, size_t errCap);
-    bool setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle, char *err, size_t errCap);
+    /** Returns nullptr on success, else a user-facing error. */
+    const char *applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count);
+    const char *setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle);
 
   private:
     struct CanvasState {
@@ -33,18 +34,10 @@ class WallDal
         uint32_t period_seconds;
         uint32_t max_cells_per_cycle;
     };
-    struct QuotaState {
-        uint64_t user_uuid;
-        uint32_t cycle_start;
-        uint32_t cells_used;
-    };
 
-    bool loadCanvas(CanvasState &out);
+    void loadCanvas(CanvasState &out);
     bool saveCanvas(CanvasState &canvas);
-    bool loadConfig(ConfigState &out);
-    bool saveQuota(QuotaState &quota);
-    bool checkPaintQuota(uint64_t userUuid, bool isSysop, int tokenCount, char *err, size_t errCap);
-    bool recordPaintQuota(uint64_t userUuid, int tokenCount);
+    void loadConfig(ConfigState &out);
     uint32_t computeCrc32(const uint8_t *data, size_t len);
     uint32_t getLastSeenCrc(uint64_t userUuid);
     LoDb &lodb_;

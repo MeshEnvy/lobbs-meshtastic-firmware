@@ -10,6 +10,7 @@
 #include "gps/RTC.h"
 #include <cstdio>
 #include <cstring>
+#include <lodb/LoDB.h>
 
 void lobbsAppCopyCapped(char *dst, size_t dstCap, const char *src, size_t srcCap)
 {
@@ -90,6 +91,41 @@ bool lobbsAppResolveUsername(LoBBSCommandCtx &ctx, const char *username, uint64_
     lobbsResponseSetError(resp, msg);
     lobbsCommandReplyResponse(ctx, resp);
     return false;
+}
+
+static uint32_t quotaLoad(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, uint32_t *used, size_t n)
+{
+    memset(used, 0, n * sizeof(uint32_t));
+    LoScalar rec;
+    uint32_t start = 0;
+    if (db.get(table, userUuid, rec) != LODB_OK || !rec.getUint32(LoBBSQuotaField::FIELD_CYCLE_START, start) || start == 0)
+        return 0;
+    if (getTime() >= start + periodSec)
+        return 0;
+    for (size_t i = 0; i < n; i++)
+        rec.getUint32(LoBBSQuotaField::FIELD_USED + (uint32_t)i, used[i]);
+    return start;
+}
+
+void lobbsQuotaUsed(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, uint32_t *used, size_t n)
+{
+    quotaLoad(db, table, userUuid, periodSec, used, n);
+}
+
+bool lobbsQuotaAdd(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, const uint32_t *add, size_t n)
+{
+    if (n > LOBBS_QUOTA_MAX_COUNTERS)
+        return false;
+    uint32_t used[LOBBS_QUOTA_MAX_COUNTERS];
+    uint32_t start = quotaLoad(db, table, userUuid, periodSec, used, n);
+    if (start == 0)
+        start = getTime();
+    LoScalar rec;
+    rec.setUint64(LoBBSQuotaField::FIELD_USER_UUID, userUuid);
+    rec.setUint32(LoBBSQuotaField::FIELD_CYCLE_START, start);
+    for (size_t i = 0; i < n; i++)
+        rec.setUint32(LoBBSQuotaField::FIELD_USED + (uint32_t)i, used[i] + add[i]);
+    return db.upsert(table, userUuid, rec) == LODB_OK;
 }
 
 #endif
