@@ -23,7 +23,7 @@ static void replyGrid(LoBBSCommandCtx &ctx, bool markSeen)
     WallDal &wall = ctx.mod->wall().dal();
     char buf[LOBBS_REPLY_BYTES + 1];
     if (!wall.formatGridLines(buf, sizeof(buf))) {
-        lobbsCommandReply(ctx, "Canvas error.");
+        lobbsCommandReplyError(ctx, "Canvas error.");
         return;
     }
     if (markSeen && lobbsCtxLoggedIn(ctx))
@@ -39,13 +39,13 @@ static void wallSubLimit(LoBBSCommandCtx &ctx)
     uint32_t period = 0;
     uint32_t cells = 0;
     if (!lobbsArgShiftUint(ctx, period) || !lobbsArgShiftUint(ctx, cells) || lobbsArgHasMore(ctx)) {
-        lobbsCommandReply(ctx, "Usage: /wall limit SEC CELLS");
+        lobbsCommandReplyError(ctx, "Usage: /wall limit SEC CELLS");
         return;
     }
     char err[48];
     WallDal &wall = ctx.mod->wall().dal();
     if (!wall.setConfig(period, cells, err, sizeof(err))) {
-        lobbsCommandReply(ctx, err[0] ? err : "Failed.");
+        lobbsCommandReplyError(ctx, err[0] ? err : "Failed.");
         return;
     }
     char reply[64];
@@ -78,7 +78,7 @@ static void handleWall(LoBBSCommandCtx &ctx)
 
     char err[48];
     if (!ctx.mod->wall().dal().applyPaintTokens(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n, err, sizeof(err))) {
-        lobbsCommandReply(ctx, err[0] ? err : "Paint failed.");
+        lobbsCommandReplyError(ctx, err[0] ? err : "Paint failed.");
         return;
     }
     replyGrid(ctx, true);

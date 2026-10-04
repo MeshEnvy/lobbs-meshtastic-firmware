@@ -22,7 +22,7 @@ static void replyYarnView(LoBBSCommandCtx &ctx, bool markSeen)
 {
     char buf[LOBBS_REPLY_BYTES + 1];
     if (!ctx.mod->yarn().dal().formatYarnView(buf, sizeof(buf))) {
-        lobbsCommandReply(ctx, "Yarn error.");
+        lobbsCommandReplyError(ctx, "Yarn error.");
         return;
     }
     if (markSeen && lobbsCtxLoggedIn(ctx))
@@ -40,12 +40,12 @@ static void yarnSubLimit(LoBBSCommandCtx &ctx)
     uint32_t chars = 0;
     if (!lobbsArgShiftUint(ctx, period) || !lobbsArgShiftUint(ctx, words) || !lobbsArgShiftUint(ctx, chars) ||
         lobbsArgHasMore(ctx)) {
-        lobbsCommandReply(ctx, "Usage: /yarn limit SEC WORDS CHARS");
+        lobbsCommandReplyError(ctx, "Usage: /yarn limit SEC WORDS CHARS");
         return;
     }
     char err[48];
     if (!ctx.mod->yarn().dal().setConfig(period, words, chars, err, sizeof(err))) {
-        lobbsCommandReply(ctx, err[0] ? err : "Failed.");
+        lobbsCommandReplyError(ctx, err[0] ? err : "Failed.");
         return;
     }
     char reply[72];
@@ -78,7 +78,7 @@ static void handleYarn(LoBBSCommandCtx &ctx)
 
     char err[48];
     if (!ctx.mod->yarn().dal().appendWords(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n, err, sizeof(err))) {
-        lobbsCommandReply(ctx, err[0] ? err : "Failed.");
+        lobbsCommandReplyError(ctx, err[0] ? err : "Failed.");
         return;
     }
     replyYarnView(ctx, true);

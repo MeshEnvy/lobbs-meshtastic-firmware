@@ -24,36 +24,46 @@ static size_t lobbsResponsePayloadBytes(const LoBBSResponse &resp)
     return n;
 }
 
-void lobbsReplyCacheGc(LoBBSModule *mod, uint32_t nowSec)
+void lobbsReplyCacheGc(uint32_t nowSec)
 {
-    (void)mod;
     for (auto it = lobbsReplyCacheBySession.begin(); it != lobbsReplyCacheBySession.end();) {
         if (nowSec > it->second.expiresSec)
             it = lobbsReplyCacheBySession.erase(it);
         else
             ++it;
     }
+    while (lobbsReplyCacheBySession.size() > LOBBS_REPLY_CACHE_MAX_ENTRIES) {
+        lobbsReplyCacheBySession.erase(lobbsReplyCacheBySession.begin());
+    }
 }
 
-bool lobbsReplyCacheStore(LoBBSModule *mod, uint32_t sessionNodeId, const LoBBSResponse &resp)
+void lobbsReplyCacheErase(uint32_t sessionNodeId)
 {
-    (void)mod;
+    lobbsReplyCacheBySession.erase(sessionNodeId);
+}
+
+bool lobbsReplyCacheStore(uint32_t sessionNodeId, const LoBBSResponse &resp)
+{
     if (!resp.ok)
         return false;
 
-    if (lobbsResponsePayloadBytes(resp) > LOBBS_REPLY_CACHE_MAX_BYTES)
+    if (lobbsResponsePayloadBytes(resp) > LOBBS_REPLY_CACHE_MAX_BYTES) {
+        lobbsReplyCacheErase(sessionNodeId);
         return false;
+    }
 
     LobbsReplyCacheEntry entry;
     entry.resp = resp;
     entry.expiresSec = getTime() + LOBBS_REPLY_CACHE_TTL_SEC;
     lobbsReplyCacheBySession[sessionNodeId] = std::move(entry);
+    while (lobbsReplyCacheBySession.size() > LOBBS_REPLY_CACHE_MAX_ENTRIES) {
+        lobbsReplyCacheBySession.erase(lobbsReplyCacheBySession.begin());
+    }
     return true;
 }
 
-bool lobbsReplyCacheLoad(LoBBSModule *mod, uint32_t sessionNodeId, LoBBSResponse &out)
+bool lobbsReplyCacheLoad(uint32_t sessionNodeId, LoBBSResponse &out)
 {
-    (void)mod;
     auto it = lobbsReplyCacheBySession.find(sessionNodeId);
     if (it == lobbsReplyCacheBySession.end())
         return false;

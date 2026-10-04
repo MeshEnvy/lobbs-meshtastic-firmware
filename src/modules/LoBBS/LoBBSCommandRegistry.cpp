@@ -478,14 +478,14 @@ void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, cons
     ctx.session = session;
     ctx.page = 1;
 
-    lobbsReplyCacheGc(mod, getTime());
+    lobbsReplyCacheGc(getTime());
 
     char *verb = nullptr;
     char *rest = nullptr;
     if (!lobbsPeelSlashLine(line, ctx, &verb, &rest))
         return;
     if (!verb[0]) {
-        lobbsCommandReply(ctx, "Missing command.");
+        lobbsCommandReplyError(ctx, "Missing command.");
         return;
     }
 

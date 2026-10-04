@@ -18,6 +18,7 @@ void lobbsRecordPush(std::vector<LoScalar> &list, const char *title, const char 
 void lobbsResponseAppendRecord(LoBBSResponse &resp, const LoScalar &record);
 
 void lobbsCommandReplyResponse(LoBBSCommandCtx &ctx, const LoBBSResponse &resp);
+void lobbsCommandReplyError(LoBBSCommandCtx &ctx, const char *message);
 void lobbsReplySendCachedPage(LoBBSCommandCtx &ctx);
 
 #endif

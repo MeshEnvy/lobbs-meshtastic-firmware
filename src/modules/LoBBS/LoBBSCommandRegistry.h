@@ -10,6 +10,7 @@ class LoBBSModule;
 typedef struct _meshtastic_MeshPacket meshtastic_MeshPacket;
 
 void lobbsCommandReply(LoBBSCommandCtx &ctx, const char *body);
+void lobbsCommandReplyError(LoBBSCommandCtx &ctx, const char *message);
 bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx);
 uint64_t lobbsCtxUserUuid(const LoBBSCommandCtx &ctx);
 bool lobbsCtxUsername(const LoBBSCommandCtx &ctx, char *buf, size_t bufCap);

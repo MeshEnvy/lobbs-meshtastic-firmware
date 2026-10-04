@@ -12,8 +12,13 @@
 #define LOBBS_REPLY_CACHE_MAX_BYTES 8192
 #endif
 
-void lobbsReplyCacheGc(class LoBBSModule *mod, uint32_t nowSec);
-bool lobbsReplyCacheStore(class LoBBSModule *mod, uint32_t sessionNodeId, const LoBBSResponse &resp);
-bool lobbsReplyCacheLoad(class LoBBSModule *mod, uint32_t sessionNodeId, LoBBSResponse &out);
+#ifndef LOBBS_REPLY_CACHE_MAX_ENTRIES
+#define LOBBS_REPLY_CACHE_MAX_ENTRIES 32
+#endif
+
+void lobbsReplyCacheGc(uint32_t nowSec);
+void lobbsReplyCacheErase(uint32_t sessionNodeId);
+bool lobbsReplyCacheStore(uint32_t sessionNodeId, const LoBBSResponse &resp);
+bool lobbsReplyCacheLoad(uint32_t sessionNodeId, LoBBSResponse &out);
 
 #endif

@@ -81,12 +81,18 @@ static bool lobbsRenderPage(LoBBSCommandCtx &ctx, const LoBBSResponse &resp)
     return true;
 }
 
+void lobbsCommandReplyError(LoBBSCommandCtx &ctx, const char *message)
+{
+    lobbsReplyCacheErase(ctx.session.nodeId);
+    lobbsSendSentence(ctx, message ? message : "");
+}
+
 void lobbsReplySendCachedPage(LoBBSCommandCtx &ctx)
 {
     if (!ctx.mod || !ctx.mp)
         return;
     LoBBSResponse resp;
-    if (!lobbsReplyCacheLoad(ctx.mod, ctx.session.nodeId, resp)) {
+    if (!lobbsReplyCacheLoad(ctx.session.nodeId, resp)) {
         lobbsSendSentence(ctx, "No cached reply.");
         return;
     }
@@ -98,15 +104,13 @@ void lobbsCommandReplyResponse(LoBBSCommandCtx &ctx, const LoBBSResponse &resp)
     if (!ctx.mod || !ctx.mp)
         return;
 
-    lobbsReplyCacheGc(ctx.mod, getTime());
-
     if (!resp.ok) {
+        lobbsReplyCacheErase(ctx.session.nodeId);
         lobbsSendSentence(ctx, resp.error.c_str());
         return;
     }
 
-    ctx.page = 1;
-    lobbsReplyCacheStore(ctx.mod, ctx.session.nodeId, resp);
+    lobbsReplyCacheStore(ctx.session.nodeId, resp);
     lobbsRenderPage(ctx, resp);
 }
 

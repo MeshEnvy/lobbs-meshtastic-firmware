@@ -27,11 +27,11 @@ static void handleTime(LoBBSCommandCtx &ctx)
         return;
     uint32_t sec = 0;
     if (!lobbsArgShiftUint(ctx, sec)) {
-        lobbsCommandReply(ctx, "Invalid time.");
+        lobbsCommandReplyError(ctx, "Invalid time.");
         return;
     }
     if (lobbsArgHasMore(ctx)) {
-        lobbsCommandReply(ctx, "Usage: /time\nUsage: /time unix (sysop)");
+        lobbsCommandReplyError(ctx, "Usage: /time\nUsage: /time unix (sysop)");
         return;
     }
     struct timeval tv;
@@ -41,9 +41,9 @@ static void handleTime(LoBBSCommandCtx &ctx)
     if (r == RTCSetResultSuccess)
         lobbsCommandReply(ctx, "Time set.");
     else if (r == RTCSetResultInvalidTime)
-        lobbsCommandReply(ctx, "Invalid time.");
+        lobbsCommandReplyError(ctx, "Invalid time.");
     else
-        lobbsCommandReply(ctx, "Could not set time.");
+        lobbsCommandReplyError(ctx, "Could not set time.");
 }
 
 static const LoBBSSubHelpEntry timeHelp[] = {

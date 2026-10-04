@@ -291,8 +291,7 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_o
 
     if (file_size == 0 || file_size != total_size) {
         LODB_LOG_ERROR("Record read bad size: %s (%u of %u)", file_path, (unsigned)file_size, (unsigned)total_size);
-        LoFS::remove(file_path);
-        return LODB_ERR_NOT_FOUND;
+        return LODB_ERR_IO;
     }
 
     buffer[file_size] = '\0';
@@ -302,7 +301,6 @@ LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_o
     record_out.clear();
     if (!record_out.decode(buffer.get(), file_size)) {
         LODB_LOG_ERROR("Failed to decode LoScalar from " LODB_UUID_FMT, LODB_UUID_ARGS(uuid));
-        LoFS::remove(file_path);
         return LODB_ERR_DECODE;
     }
 

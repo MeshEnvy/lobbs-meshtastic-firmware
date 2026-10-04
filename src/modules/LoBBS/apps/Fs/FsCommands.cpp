@@ -4,6 +4,7 @@
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSHooks.h"
 #include "../../LoBBSReply.h"
+#include "../../LoBBSReplyCache.h"
 #include "../../LoBBSResponse.h"
 #include <cstdio>
 #include <cstring>
@@ -175,7 +176,7 @@ static bool fsMatchFileCb(void *ctx, const char *basename, bool isDirectory)
 static bool fsResolveOneFilePath(const char *spec, char *dir, size_t dirCap, char *outPath, size_t outCap, LoBBSCommandCtx &ctx)
 {
     if (fsGlobBeforeLastName(spec)) {
-        lobbsCommandReply(ctx, "glob only on the last name");
+        lobbsCommandReplyError(ctx, "glob only on the last name");
         return false;
     }
 
@@ -194,15 +195,15 @@ static bool fsResolveOneFilePath(const char *spec, char *dir, size_t dirCap, cha
     m.dirPath[sizeof(m.dirPath) - 1] = '\0';
 
     if (!LoFS::list(dir, &m, fsMatchFileCb)) {
-        lobbsCommandReply(ctx, "No such directory.");
+        lobbsCommandReplyError(ctx, "No such directory.");
         return false;
     }
     if (m.count == 0) {
-        lobbsCommandReply(ctx, "No match.");
+        lobbsCommandReplyError(ctx, "No match.");
         return false;
     }
     if (m.count > 1) {
-        lobbsCommandReply(ctx, "Many matches.");
+        lobbsCommandReplyError(ctx, "Many matches.");
         return false;
     }
     strncpy(outPath, m.filePath, outCap - 1);
@@ -231,7 +232,7 @@ static void handleLs(LoBBSCommandCtx &ctx)
     if (pathTok && !lobbsTokenIsPage(pathTok))
         spec = lobbsArgShift(ctx);
     if (fsGlobBeforeLastName(spec)) {
-        lobbsCommandReply(ctx, "glob only on the last name");
+        lobbsCommandReplyError(ctx, "glob only on the last name");
         return;
     }
 
@@ -242,7 +243,7 @@ static void handleLs(LoBBSCommandCtx &ctx)
     fsLsCollectScratch = {};
     fsLsCollectScratch.pattern = pat;
     if (!LoFS::list(dir, &fsLsCollectScratch, fsLsCollectCb)) {
-        lobbsCommandReply(ctx, "No such directory.");
+        lobbsCommandReplyError(ctx, "No such directory.");
         return;
     }
 
@@ -263,32 +264,48 @@ static void fsReplyFileText(LoBBSCommandCtx &ctx, const char *path, bool hex)
 {
     File f = LoFS::open(path, FILE_O_READ);
     if (!f) {
-        lobbsCommandReply(ctx, "No such file.");
+        lobbsCommandReplyError(ctx, "No such file.");
         return;
     }
     if (f.isDirectory()) {
         f.close();
-        lobbsCommandReply(ctx, "Is a directory.");
+        lobbsCommandReplyError(ctx, "Is a directory.");
         return;
     }
 
     std::string body;
     body.reserve(4096);
+    static constexpr size_t kMaxBody = LOBBS_REPLY_CACHE_MAX_BYTES;
     uint8_t chunk[64];
+    bool truncated = false;
     while (true) {
         size_t n = f.read(chunk, sizeof(chunk));
         if (n == 0)
             break;
         if (hex) {
             for (size_t i = 0; i < n; i++) {
+                if (body.size() + 3 > kMaxBody) {
+                    truncated = true;
+                    break;
+                }
                 char pair[4];
                 snprintf(pair, sizeof(pair), "%02x ", chunk[i]);
                 body += pair;
             }
         } else {
+            size_t room = kMaxBody > body.size() ? kMaxBody - body.size() : 0;
+            if (n > room) {
+                body.append((const char *)chunk, room);
+                truncated = true;
+                break;
+            }
             body.append((const char *)chunk, n);
         }
+        if (truncated)
+            break;
     }
+    if (truncated)
+        body += "[...]";
     f.close();
 
     LoScalar rec;
@@ -304,7 +321,7 @@ static void handleCat(LoBBSCommandCtx &ctx)
         return;
     const char *spec = lobbsArgShift(ctx);
     if (!spec) {
-        lobbsCommandReply(ctx, "Usage: /cat path");
+        lobbsCommandReplyError(ctx, "Usage: /cat path");
         return;
     }
 
@@ -321,7 +338,7 @@ static void handleHex(LoBBSCommandCtx &ctx)
         return;
     const char *spec = lobbsArgShift(ctx);
     if (!spec) {
-        lobbsCommandReply(ctx, "Usage: /hex path");
+        lobbsCommandReplyError(ctx, "Usage: /hex path");
         return;
     }
 
@@ -338,27 +355,30 @@ static void handleRm(LoBBSCommandCtx &ctx)
         return;
     const char *spec = lobbsArgShift(ctx);
     if (!spec) {
-        lobbsCommandReply(ctx, "Usage: /rm path");
+        lobbsCommandReplyError(ctx, "Usage: /rm path");
         return;
     }
     if (fsPathHasAnyGlob(spec)) {
-        lobbsCommandReply(ctx, "No glob.");
+        lobbsCommandReplyError(ctx, "No glob.");
         return;
     }
 
     File f = LoFS::open(spec, FILE_O_READ);
     if (!f) {
-        lobbsCommandReply(ctx, "No such file.");
+        lobbsCommandReplyError(ctx, "No such file.");
         return;
     }
     if (f.isDirectory()) {
         f.close();
-        lobbsCommandReply(ctx, "Is a directory.");
+        lobbsCommandReplyError(ctx, "Is a directory.");
         return;
     }
     f.close();
 
-    lobbsCommandReply(ctx, LoFS::remove(spec) ? "Removed." : "Failed.");
+    if (LoFS::remove(spec))
+        lobbsCommandReply(ctx, "Removed.");
+    else
+        lobbsCommandReplyError(ctx, "Failed.");
 }
 
 static void handleRmdir(LoBBSCommandCtx &ctx)
@@ -367,27 +387,27 @@ static void handleRmdir(LoBBSCommandCtx &ctx)
         return;
     const char *spec = lobbsArgShift(ctx);
     if (!spec) {
-        lobbsCommandReply(ctx, "Usage: /rmdir path");
+        lobbsCommandReplyError(ctx, "Usage: /rmdir path");
         return;
     }
     if (fsPathHasAnyGlob(spec)) {
-        lobbsCommandReply(ctx, "No glob.");
+        lobbsCommandReplyError(ctx, "No glob.");
         return;
     }
 
     if (!LoFS::exists(spec)) {
-        lobbsCommandReply(ctx, "No such directory.");
+        lobbsCommandReplyError(ctx, "No such directory.");
         return;
     }
 
     File probe = LoFS::open(spec, FILE_O_READ);
     if (!probe) {
-        lobbsCommandReply(ctx, "Failed.");
+        lobbsCommandReplyError(ctx, "Failed.");
         return;
     }
     if (!probe.isDirectory()) {
         probe.close();
-        lobbsCommandReply(ctx, "Not a directory.");
+        lobbsCommandReplyError(ctx, "Not a directory.");
         return;
     }
     probe.close();
@@ -402,15 +422,18 @@ static void handleRmdir(LoBBSCommandCtx &ctx)
         return false;
     };
     if (!LoFS::list(spec, &dec, dirHasEntry)) {
-        lobbsCommandReply(ctx, "Failed.");
+        lobbsCommandReplyError(ctx, "Failed.");
         return;
     }
     if (!dec.empty) {
-        lobbsCommandReply(ctx, "Not empty.");
+        lobbsCommandReplyError(ctx, "Not empty.");
         return;
     }
 
-    lobbsCommandReply(ctx, LoFS::rmdir(spec, false) ? "Removed." : "Failed.");
+    if (LoFS::rmdir(spec, false))
+        lobbsCommandReply(ctx, "Removed.");
+    else
+        lobbsCommandReplyError(ctx, "Failed.");
 }
 
 static void handleRmtree(LoBBSCommandCtx &ctx)
@@ -420,25 +443,28 @@ static void handleRmtree(LoBBSCommandCtx &ctx)
     const char *a = lobbsArgShift(ctx);
     const char *b = lobbsArgShift(ctx);
     if (!a || !b || strcmp(a, b) != 0 || lobbsArgHasMore(ctx)) {
-        lobbsCommandReply(ctx, "Usage: /rmtree path path");
+        lobbsCommandReplyError(ctx, "Usage: /rmtree path path");
         return;
     }
 
     const char *path = a;
     if (fsIsProtectedRmtreeRoot(path)) {
-        lobbsCommandReply(ctx, "Refused.");
+        lobbsCommandReplyError(ctx, "Refused.");
         return;
     }
     if (fsPathHasAnyGlob(path)) {
-        lobbsCommandReply(ctx, "No glob.");
+        lobbsCommandReplyError(ctx, "No glob.");
         return;
     }
     if (!LoFS::exists(path)) {
-        lobbsCommandReply(ctx, "No such directory.");
+        lobbsCommandReplyError(ctx, "No such directory.");
         return;
     }
 
-    lobbsCommandReply(ctx, LoFS::rmdir(path, true) ? "Removed." : "Failed.");
+    if (LoFS::rmdir(path, true))
+        lobbsCommandReply(ctx, "Removed.");
+    else
+        lobbsCommandReplyError(ctx, "Failed.");
 }
 
 static const LoBBSSubHelpEntry fsHelp[] = {
