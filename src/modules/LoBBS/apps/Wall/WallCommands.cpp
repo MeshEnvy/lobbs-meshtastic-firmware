@@ -106,10 +106,13 @@ static void filterWallHelpIndex(void *value, LoBBSCommandCtx *ctx)
 
 void lobbsWallRegisterCommands()
 {
-    lobbsRegisterFilter("commands", filterWallCommands);
-    lobbsRegisterFilter("status_lines", filterWallStatusLines);
-    lobbsRegisterFilter("help_topics", filterWallHelpTopics);
-    lobbsRegisterFilter("help_index", filterWallHelpIndex);
+    LoBBSAppHooks hooks{};
+    hooks.commands = filterWallCommands;
+    hooks.status_lines = filterWallStatusLines;
+    hooks.help_topics = filterWallHelpTopics;
+    hooks.help_index = filterWallHelpIndex;
+    hooks.priority = LOBBS_FILTER_PRIORITY_FEATURE;
+    lobbsAppRegisterHooks(hooks);
 }
 
 #endif

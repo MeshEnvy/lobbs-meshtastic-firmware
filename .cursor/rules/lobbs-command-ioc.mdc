@@ -15,15 +15,24 @@ Operator and client docs: [README.md](../../README.md) (command reference, [SysO
 | Layer | Role | May include |
 | --- | --- | --- |
 | `LoBBSDispatch.cpp` | Trim line, session/auth lookup, call handler | `LoBBSCommandRegistry.h`, `AuthDal` for session only |
-| `LoBBSHooks.*` | `lobbsRegisterFilter`, `lobbsApplyFilters`, command/line filter value types | No plugin or DAL headers |
+| `LoBBSHooks.*` | `lobbsAppRegisterHooks`, `lobbsRegisterFilter` (optional priority), `lobbsApplyFilters` | No plugin or DAL headers |
 | `LoBBSCommandRegistry.*` | Parse `/[id] verb …`, dispatch table, reply/page/subcommand helpers | `LoBBSHooks.h` only (no `apps/*Commands.h`) |
 | `LoBBSWireup.cpp` | **Only** plugin list: reset filters, call each `lobbs*RegisterCommands`, apply `commands`, `lobbsCommandsInstall` | All plugin `*Commands.h` |
 | `apps/<App>/*Commands.*` | Handlers + filter registration | That app's DAL, `LoBBSHooks`, registry helpers |
+| `apps/AppUtil.*` | Core auth directory (load user, username lookup) | Auth DAL internally; feature commands use this, not `AuthDal.h` |
 | `apps/<App>/<App>.cpp` | Construct app / DAL wiring | No command switch |
+
+## Session and core auth
+
+- `LoBBSSession` on `LoBBSCommandCtx` (`nodeId`, `userUuid`, `username`, `isSysop`). Dispatch resolves it once via Auth.
+- Registry helpers: `lobbsCtxLoggedIn`, `lobbsCtxUserUuid`, `lobbsCtxUsername`, `lobbsCommandRequireLogin`, `lobbsCommandRequireSysop`.
+- Feature plugins must not `#include` `AuthDal.h`. Use session + `AppUtil` for user display and uuid lookup.
 
 ## Do
 
-- Extend LoBBS only through `lobbsRegisterFilter` from each plugin's `lobbs*RegisterCommands()`.
+- Register hooks from each plugin's `lobbs*RegisterCommands()` via `lobbsAppRegisterHooks` (`LoBBSAppHooks`: nullable `commands`, `status_lines`, `help_topics`, `help_index`, plus `priority`).
+- Lower `priority` runs first when multiple plugins subscribe to the same filter (e.g. `/status` line order: Auth, then Mail/News/Yarn/Wall). Tie-break: registration order. Constants: `LOBBS_FILTER_PRIORITY_HELP`, `_AUTH`, `_FEATURE`, `_STATUS`.
+- Direct `lobbsRegisterFilter` is fine for one-off hooks; prefer `lobbsAppRegisterHooks` for standard plugins.
 - Root verbs: subscribe to the `commands` filter and use `lobbsFilterCommandsAdd`.
 - `/status`, `/hi`, `/time`: Status plugin. `/status` and `/hi` are public (no login gate). `/hi` greets by name when authed and shows a generic welcome plus `/login` when not. `/time` shows Unix seconds and RTC source; sysop `/time unix` sets clock via `perhapsSetRTC(..., forceUpdate=true)`. Status handler applies `status_lines`. Logged out: Auth/Mail/News/Yarn push system totals with `(all time)` suffix. Logged in: Mail/News unread counts; Yarn new words since last `/yarn` view (`Yarn: N`); Wall canvas dirty vs user's last seen CRC (`Wall: new` / `Wall: seen`, authed only).
 - Auth: `/login`, `/logout`, `/whoami`, `/passwd` (self `new confirm`; sysop `user new confirm`), `/users` subcommands in Auth plugin.
@@ -31,7 +40,7 @@ Operator and client docs: [README.md](../../README.md) (command reference, [SysO
 - Call `lobbsWireup()` once from `LoBBSModule` construction.
 - Use `LoBBSCommandCtx` in handlers; reply via `lobbsCommandReply(ctx, …)`.
 - Multi-word app commands (`/mail list`, `/users find`, …) use `lobbsCommandDispatchSub` with a `LoBBSSubcommand[]` table, not a hand-rolled `strcasecmp` chain.
-- New plugin: add `lobbsXRegisterCommands()` plus one call in `LoBBSWireup.cpp`.
+- New plugin: fill `LoBBSAppHooks`, call `lobbsAppRegisterHooks`, add one `lobbsXRegisterCommands()` call in `LoBBSWireup.cpp` (no second-phase help registration).
 
 ## Don't
 

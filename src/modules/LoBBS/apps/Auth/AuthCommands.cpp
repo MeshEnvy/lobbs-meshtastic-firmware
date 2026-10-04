@@ -240,7 +240,7 @@ static void filterAuthCommands(void *value, LoBBSCommandCtx *ctx)
     lobbsFilterCommandsAdd(*cmds, "users", handleUsers);
 }
 
-static void filterAuthHelpTopicsEarly(void *value, LoBBSCommandCtx *ctx)
+static void filterAuthHelpTopics(void *value, LoBBSCommandCtx *ctx)
 {
     (void)ctx;
     auto *topics = (LoBBSFilterHelpTopics *)value;
@@ -248,13 +248,7 @@ static void filterAuthHelpTopicsEarly(void *value, LoBBSCommandCtx *ctx)
     lobbsFilterHelpTopicAdd(*topics, "login", "Login Help", loginHelp, sizeof(loginHelp) / sizeof(loginHelp[0]));
     lobbsFilterHelpTopicAdd(*topics, "logout", "Logout Help", logoutHelp, sizeof(logoutHelp) / sizeof(logoutHelp[0]));
     lobbsFilterHelpTopicAdd(*topics, "passwd", "Passwd Help", passwdHelp, sizeof(passwdHelp) / sizeof(passwdHelp[0]));
-}
-
-static void filterAuthHelpTopicsUsers(void *value, LoBBSCommandCtx *ctx)
-{
-    (void)ctx;
-    lobbsFilterHelpTopicAdd(*(LoBBSFilterHelpTopics *)value, "users", "Users Help", usersHelp,
-                            sizeof(usersHelp) / sizeof(usersHelp[0]));
+    lobbsFilterHelpTopicAdd(*topics, "users", "Users Help", usersHelp, sizeof(usersHelp) / sizeof(usersHelp[0]));
 }
 
 static void filterAuthStatusLines(void *value, LoBBSCommandCtx *ctx)
@@ -270,7 +264,7 @@ static void filterAuthStatusLines(void *value, LoBBSCommandCtx *ctx)
     lobbsFilterLinesPush(*(LoBBSFilterLines *)value, line);
 }
 
-static void filterAuthHelpIndexEarly(void *value, LoBBSCommandCtx *ctx)
+static void filterAuthHelpIndex(void *value, LoBBSCommandCtx *ctx)
 {
     if (!ctx)
         return;
@@ -279,29 +273,21 @@ static void filterAuthHelpIndexEarly(void *value, LoBBSCommandCtx *ctx)
         lobbsFilterLinesPush(*index, "whoami");
         lobbsFilterLinesPush(*index, "logout");
         lobbsFilterLinesPush(*index, "passwd");
+        lobbsFilterLinesPush(*index, "users");
     } else {
         lobbsFilterLinesPush(*index, "login");
     }
 }
 
-static void filterAuthHelpIndexUsers(void *value, LoBBSCommandCtx *ctx)
-{
-    if (ctx && lobbsCtxLoggedIn(*ctx))
-        lobbsFilterLinesPush(*(LoBBSFilterLines *)value, "users");
-}
-
 void lobbsAuthRegisterCommands()
 {
-    lobbsRegisterFilter("commands", filterAuthCommands);
-    lobbsRegisterFilter("status_lines", filterAuthStatusLines);
-    lobbsRegisterFilter("help_topics", filterAuthHelpTopicsEarly);
-    lobbsRegisterFilter("help_index", filterAuthHelpIndexEarly);
-}
-
-void lobbsAuthRegisterHelpTopicsAfterApps()
-{
-    lobbsRegisterFilter("help_topics", filterAuthHelpTopicsUsers);
-    lobbsRegisterFilter("help_index", filterAuthHelpIndexUsers);
+    LoBBSAppHooks hooks{};
+    hooks.commands = filterAuthCommands;
+    hooks.status_lines = filterAuthStatusLines;
+    hooks.help_topics = filterAuthHelpTopics;
+    hooks.help_index = filterAuthHelpIndex;
+    hooks.priority = LOBBS_FILTER_PRIORITY_AUTH;
+    lobbsAppRegisterHooks(hooks);
 }
 
 #endif

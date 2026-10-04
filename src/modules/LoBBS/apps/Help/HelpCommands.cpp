@@ -69,7 +69,10 @@ static void filterHelpCommands(void *value, LoBBSCommandCtx *ctx)
 
 void lobbsHelpRegisterCommands()
 {
-    lobbsRegisterFilter("commands", filterHelpCommands);
+    LoBBSAppHooks hooks{};
+    hooks.commands = filterHelpCommands;
+    hooks.priority = LOBBS_FILTER_PRIORITY_HELP;
+    lobbsAppRegisterHooks(hooks);
 }
 
 #endif

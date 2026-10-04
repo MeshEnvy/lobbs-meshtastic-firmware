@@ -46,8 +46,24 @@ struct LoBBSFilterHelpTopics {
     int count = 0;
 };
 
+// Lower priority runs first when lobbsApplyFilters matches multiple callbacks.
+static constexpr int LOBBS_FILTER_PRIORITY_DEFAULT = 10;
+static constexpr int LOBBS_FILTER_PRIORITY_HELP = 0;
+static constexpr int LOBBS_FILTER_PRIORITY_AUTH = 10;
+static constexpr int LOBBS_FILTER_PRIORITY_FEATURE = 20;
+static constexpr int LOBBS_FILTER_PRIORITY_STATUS = 30;
+
+struct LoBBSAppHooks {
+    LoBBSFilterFn commands = nullptr;
+    LoBBSFilterFn status_lines = nullptr;
+    LoBBSFilterFn help_topics = nullptr;
+    LoBBSFilterFn help_index = nullptr;
+    int priority = LOBBS_FILTER_PRIORITY_DEFAULT;
+};
+
 void lobbsFiltersReset();
-bool lobbsRegisterFilter(const char *name, LoBBSFilterFn fn);
+bool lobbsRegisterFilter(const char *name, LoBBSFilterFn fn, int priority = LOBBS_FILTER_PRIORITY_DEFAULT);
+void lobbsAppRegisterHooks(const LoBBSAppHooks &hooks);
 void lobbsApplyFilters(const char *name, void *value, LoBBSCommandCtx *ctx);
 
 bool lobbsFilterCommandsAdd(LoBBSFilterCommands &cmds, const char *name, LoBBSCommandHandler handler);

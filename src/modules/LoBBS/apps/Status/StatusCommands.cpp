@@ -111,9 +111,12 @@ static void filterStatusHelpIndex(void *value, LoBBSCommandCtx *ctx)
 
 void lobbsStatusRegisterCommands()
 {
-    lobbsRegisterFilter("commands", filterStatusCommands);
-    lobbsRegisterFilter("help_topics", filterStatusHelpTopics);
-    lobbsRegisterFilter("help_index", filterStatusHelpIndex);
+    LoBBSAppHooks hooks{};
+    hooks.commands = filterStatusCommands;
+    hooks.help_topics = filterStatusHelpTopics;
+    hooks.help_index = filterStatusHelpIndex;
+    hooks.priority = LOBBS_FILTER_PRIORITY_STATUS;
+    lobbsAppRegisterHooks(hooks);
 }
 
 #endif

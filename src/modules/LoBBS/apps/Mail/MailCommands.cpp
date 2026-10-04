@@ -225,10 +225,13 @@ static void filterMailHelpIndex(void *value, LoBBSCommandCtx *ctx)
 
 void lobbsMailRegisterCommands()
 {
-    lobbsRegisterFilter("commands", filterMailCommands);
-    lobbsRegisterFilter("status_lines", filterMailStatusLines);
-    lobbsRegisterFilter("help_topics", filterMailHelpTopics);
-    lobbsRegisterFilter("help_index", filterMailHelpIndex);
+    LoBBSAppHooks hooks{};
+    hooks.commands = filterMailCommands;
+    hooks.status_lines = filterMailStatusLines;
+    hooks.help_topics = filterMailHelpTopics;
+    hooks.help_index = filterMailHelpIndex;
+    hooks.priority = LOBBS_FILTER_PRIORITY_FEATURE;
+    lobbsAppRegisterHooks(hooks);
 }
 
 #endif

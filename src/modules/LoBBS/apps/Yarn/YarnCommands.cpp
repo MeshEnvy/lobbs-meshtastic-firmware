@@ -110,10 +110,13 @@ static void filterYarnHelpIndex(void *value, LoBBSCommandCtx *ctx)
 
 void lobbsYarnRegisterCommands()
 {
-    lobbsRegisterFilter("commands", filterYarnCommands);
-    lobbsRegisterFilter("status_lines", filterYarnStatusLines);
-    lobbsRegisterFilter("help_topics", filterYarnHelpTopics);
-    lobbsRegisterFilter("help_index", filterYarnHelpIndex);
+    LoBBSAppHooks hooks{};
+    hooks.commands = filterYarnCommands;
+    hooks.status_lines = filterYarnStatusLines;
+    hooks.help_topics = filterYarnHelpTopics;
+    hooks.help_index = filterYarnHelpIndex;
+    hooks.priority = LOBBS_FILTER_PRIORITY_FEATURE;
+    lobbsAppRegisterHooks(hooks);
 }
 
 #endif

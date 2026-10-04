@@ -20,7 +20,6 @@ void lobbsWireup()
     lobbsNewsRegisterCommands();
     lobbsYarnRegisterCommands();
     lobbsWallRegisterCommands();
-    lobbsAuthRegisterHelpTopicsAfterApps();
     lobbsStatusRegisterCommands();
 
     LoBBSFilterCommands cmds{};

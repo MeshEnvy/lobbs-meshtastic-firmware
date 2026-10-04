@@ -216,10 +216,13 @@ static void filterNewsHelpIndex(void *value, LoBBSCommandCtx *ctx)
 
 void lobbsNewsRegisterCommands()
 {
-    lobbsRegisterFilter("commands", filterNewsCommands);
-    lobbsRegisterFilter("status_lines", filterNewsStatusLines);
-    lobbsRegisterFilter("help_topics", filterNewsHelpTopics);
-    lobbsRegisterFilter("help_index", filterNewsHelpIndex);
+    LoBBSAppHooks hooks{};
+    hooks.commands = filterNewsCommands;
+    hooks.status_lines = filterNewsStatusLines;
+    hooks.help_topics = filterNewsHelpTopics;
+    hooks.help_index = filterNewsHelpIndex;
+    hooks.priority = LOBBS_FILTER_PRIORITY_FEATURE;
+    lobbsAppRegisterHooks(hooks);
 }
 
 #endif
