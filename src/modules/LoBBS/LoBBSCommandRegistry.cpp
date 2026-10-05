@@ -2,6 +2,7 @@
 
 #include "LoBBSCommandRegistry.h"
 #include "LoBBSHooks.h"
+#include "LoBBSInstall.h"
 #include "LoBBSModule.h"
 #include "LoBBSReply.h"
 #include "LoBBSReplyCache.h"
@@ -363,6 +364,24 @@ void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, cons
     if (lobbsCommandIsPageOnly(verb, rest, pageOnly)) {
         ctx.page = pageOnly;
         lobbsReplySendCachedPage(ctx);
+        return;
+    }
+
+    const LoBBSInstallState install = mod->installState();
+    const bool isHelp = strcasecmp(verb, "help") == 0;
+    const bool isInstall = strcasecmp(verb, "install") == 0;
+    if (install != LoBBSInstallState::Ready && !isHelp && !isInstall) {
+        if (install == LoBBSInstallState::Blank) {
+            char mounts[48];
+            lobbsInstallMountList(mounts, sizeof(mounts));
+            char msg[160];
+            snprintf(msg, sizeof(msg), "New LoBBS. Sysop: /install <%s> <user> <pass>", mounts[0] ? mounts : "flash");
+            lobbsCommandReplyError(ctx, msg);
+        } else {
+            char msg[96];
+            snprintf(msg, sizeof(msg), "LoBBS offline: %s not mounted.", lobbsInstallOfflineMount(*mod));
+            lobbsCommandReplyError(ctx, msg);
+        }
         return;
     }
 

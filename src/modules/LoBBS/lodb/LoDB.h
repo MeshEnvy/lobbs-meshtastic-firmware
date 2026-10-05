@@ -12,9 +12,7 @@
 /**
  * LoDB - Synchronous LoScalar Database
  *
- * Filesystem-backed records under a configurable prefix (default `/lodb/...` for
- * compatibility with older installs; use `LoFS::FSType::INTERNAL` or `SD` for explicit
- * `/internal/lodb/...` or `/sd/lodb/...`). I/O goes through LoFS (locking inside LoFS).
+ * Filesystem-backed records under `<root>/lodb/<name>` after `open(root)`. I/O goes through LoFS.
  */
 
 #ifndef LODB_VERSION
@@ -79,9 +77,11 @@ uint32_t lodb_now_unix(void);
 class LoDb
 {
   public:
-    LoDb(const char *db_name, LoFS::FSType filesystem = LoFS::FSType::AUTO);
+    LoDb(const char *db_name);
     ~LoDb();
 
+    bool isOpen() const { return opened_; }
+    LoDbError open(const char *root);
     LoDbError registerTable(const char *table_name);
     LoDbError insert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record);
     LoDbError get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_out);
@@ -100,8 +100,10 @@ class LoDb
 
     std::string db_name;
     char db_path[128];
+    bool opened_ = false;
     std::map<std::string, TableMetadata> tables;
 
     TableMetadata *getTable(const char *table_name);
     bool recordPath(const char *table_name, lodb_uuid_t uuid, char *out, size_t cap);
+    static bool mkdirPathSegments(const char *path);
 };

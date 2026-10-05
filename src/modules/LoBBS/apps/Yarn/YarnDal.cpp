@@ -5,6 +5,7 @@
 #include "YarnRecords.h"
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 YarnDal::YarnDal(LoDb &lodb) : lodb_(lodb)
 {
@@ -191,30 +192,25 @@ const char *YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *co
             return "Too many chars.";
     }
 
-    char candidate[LOBBS_YARN_BODY_MAX + 64];
-    candidate[0] = '\0';
-    if (cur.text[0])
-        strncpy(candidate, cur.text, sizeof(candidate) - 1);
-    candidate[sizeof(candidate) - 1] = '\0';
-    size_t pos = strlen(candidate);
+    static constexpr size_t kCandidateCap = LOBBS_YARN_BODY_MAX + 64;
+    std::string candidate(cur.text);
     for (int i = 0; i < wordCount; i++) {
         const char *w = words[i];
         size_t wlen = strlen(w);
-        if (pos > 0) {
-            if (pos + 1 >= sizeof(candidate))
+        if (!candidate.empty()) {
+            if (candidate.size() + 1 >= kCandidateCap)
                 break;
-            candidate[pos++] = ' ';
+            candidate += ' ';
         }
-        if (pos + wlen >= sizeof(candidate))
+        if (candidate.size() + wlen >= kCandidateCap)
             break;
-        memcpy(candidate + pos, w, wlen);
-        pos += wlen;
-        candidate[pos] = '\0';
+        candidate += w;
     }
-    trimTailToMax(candidate);
-    if (strlen(candidate) > LOBBS_YARN_BODY_MAX)
+    char *text = &candidate[0];
+    trimTailToMax(text);
+    if (strlen(text) > LOBBS_YARN_BODY_MAX)
         return "Too many chars.";
-    strncpy(cur.text, candidate, LOBBS_YARN_BODY_MAX);
+    strncpy(cur.text, text, LOBBS_YARN_BODY_MAX);
     cur.text[LOBBS_YARN_BODY_MAX] = '\0';
     cur.total_words_appended += (uint32_t)wordCount;
     if (!saveCurrent(cur))

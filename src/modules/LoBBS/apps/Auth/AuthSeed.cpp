@@ -12,7 +12,7 @@ void lobbsSeedAuth(LoBBSModule &mod)
 {
     AuthDal &auth = mod.auth().dal();
     static constexpr const char *kPass = "demo1";
-    auth.createUser("sysop", kPass, 0xDE000001);
+    auth.createUser("sysop", kPass, 0xDE000001, true);
     auth.logoutUser(0xDE000001);
     for (int i = 1; i <= 12; i++) {
         char name[16];

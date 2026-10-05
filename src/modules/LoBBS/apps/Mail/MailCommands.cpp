@@ -22,7 +22,8 @@ static void mailAppendListRecord(LoBBSModule *mod, LoBBSResponse &resp, uint32_t
     char name[LOBBS_USERNAME_BUFFER_SIZE];
     char when[LOBBS_TIME_AGO_BUFFER_SIZE];
     char trunc[LOBBS_LIST_LINE_TRUNC_BUFFER_SIZE];
-    char msg[LOBBS_MESSAGE_BODY_BUFFER_SIZE];
+    // One char past the preview limit is enough for lobbsAppTruncMsg to add "...".
+    char msg[LOBBS_LIST_LINE_TRUNC_MAX_CHARS + 2];
     char line[LOBBS_REPLY_BYTES + 1];
     lobbsAppUsernameForUuid(mod, MailDal::mailFromUuid(mail), name, sizeof(name));
     lobbsAppTimeAgo(MailDal::mailTimestamp(mail), when, sizeof(when));
@@ -114,7 +115,7 @@ static void mailSubRead(LoBBSCommandCtx &ctx, bool numericShorthand)
     char name[LOBBS_USERNAME_BUFFER_SIZE];
     char when[LOBBS_TIME_AGO_BUFFER_SIZE];
     char body[LOBBS_MESSAGE_READ_BODY_BUFFER_SIZE];
-    char header[LOBBS_REPLY_BYTES + 1];
+    char header[LOBBS_USERNAME_BUFFER_SIZE + LOBBS_TIME_AGO_BUFFER_SIZE + 16];
     lobbsAppUsernameForUuid(ctx.mod, MailDal::mailFromUuid(m), name, sizeof(name));
     MailDal::mailMessage(m, body, sizeof(body));
     lobbsAppTimeAgo(MailDal::mailTimestamp(m), when, sizeof(when));

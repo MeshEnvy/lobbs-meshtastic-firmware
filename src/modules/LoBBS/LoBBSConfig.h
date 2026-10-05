@@ -1,6 +1,5 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
-
 #define LOBBS_MAX_USERNAME_LEN 32
 #define LOBBS_USERNAME_BUFFER_SIZE (LOBBS_MAX_USERNAME_LEN + 1)
 
@@ -19,6 +18,10 @@
 #define LOBBS_CWD_BUFFER_SIZE 128
 /** Shared in /hi and /help root (omit topic for list, or name a command). */
 #define LOBBS_HELP_HINT "Use /help [topic] for help"
+
+#ifndef LOBBS_EXTRA_QSPI
+#define LOBBS_EXTRA_QSPI 0
+#endif
 
 #if defined(LOBBS_DEMO_MODE) || defined(PIO_UNIT_TESTING)
 #define LOBBS_SEED 1

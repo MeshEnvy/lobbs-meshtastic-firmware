@@ -11,21 +11,25 @@ static constexpr int LOBBS_PAGER_MAX_PAGES = 64;
 static constexpr char LOBBS_LINE_TRUNC[] = "[...]";
 static constexpr size_t LOBBS_LINE_TRUNC_LEN = sizeof(LOBBS_LINE_TRUNC) - 1;
 
-static bool lobbsHumanTruncateLine(char *line, size_t lineCap, size_t maxBytes)
+static size_t lobbsHumanLineLen(const std::string &line, size_t maxBytes)
 {
-    size_t len = strlen(line);
+    size_t len = strlen(line.c_str());
     if (len <= maxBytes)
-        return true;
-    if (maxBytes <= LOBBS_LINE_TRUNC_LEN) {
-        line[0] = '\0';
-        return false;
+        return len;
+    return maxBytes <= LOBBS_LINE_TRUNC_LEN ? 0 : maxBytes;
+}
+
+static void lobbsHumanAppendLine(std::string &out, const std::string &line, size_t maxBytes)
+{
+    size_t len = strlen(line.c_str());
+    if (len <= maxBytes) {
+        out.append(line, 0, len);
+        return;
     }
-    size_t copyLen = maxBytes - LOBBS_LINE_TRUNC_LEN;
-    if (copyLen >= lineCap)
-        copyLen = lineCap - 1;
-    line[copyLen] = '\0';
-    strncat(line, LOBBS_LINE_TRUNC, lineCap - copyLen - 1);
-    return true;
+    if (maxBytes <= LOBBS_LINE_TRUNC_LEN)
+        return;
+    out.append(line, 0, maxBytes - LOBBS_LINE_TRUNC_LEN);
+    out += LOBBS_LINE_TRUNC;
 }
 
 static bool lobbsHumanPackPages(const std::vector<std::string> &lines, size_t maxBytes, bool reserveFooter, uint32_t *pageStarts,
@@ -39,13 +43,9 @@ static bool lobbsHumanPackPages(const std::vector<std::string> &lines, size_t ma
         pageStarts[pageCountOut] = idx;
         size_t used = 0;
         while (idx < lines.size()) {
-            char lineBuf[512];
-            strncpy(lineBuf, lines[idx].c_str(), sizeof(lineBuf) - 1);
-            lineBuf[sizeof(lineBuf) - 1] = '\0';
             size_t footerReserve = reserveFooter ? LOBBS_PAGER_FOOTER_MAX : 0;
             size_t maxLine = maxBytes > footerReserve ? maxBytes - footerReserve : 0;
-            lobbsHumanTruncateLine(lineBuf, sizeof(lineBuf), maxLine);
-            size_t lineLen = strlen(lineBuf);
+            size_t lineLen = lobbsHumanLineLen(lines[idx], maxLine);
             size_t add = lineLen + (used > 0 ? 1 : 0);
             if (used + add + footerReserve > maxBytes) {
                 if (used > 0)
@@ -57,12 +57,7 @@ static bool lobbsHumanPackPages(const std::vector<std::string> &lines, size_t ma
             used += add;
             idx++;
             if (idx < lines.size()) {
-                char nextBuf[512];
-                strncpy(nextBuf, lines[idx].c_str(), sizeof(nextBuf) - 1);
-                nextBuf[sizeof(nextBuf) - 1] = '\0';
-                lobbsHumanTruncateLine(nextBuf, sizeof(nextBuf), maxLine);
-                size_t nextLen = strlen(nextBuf);
-                size_t nextAdd = nextLen + 1;
+                size_t nextAdd = lobbsHumanLineLen(lines[idx], maxLine) + 1;
                 if (used + nextAdd + footerReserve > maxBytes)
                     break;
             }
@@ -123,11 +118,7 @@ bool lobbsPaginatePlainText(const std::string &text, uint32_t page1, std::string
     for (uint32_t i = from; i < to; i++) {
         if (i > from)
             pageOut.push_back('\n');
-        char lineBuf[512];
-        strncpy(lineBuf, lines[i].c_str(), sizeof(lineBuf) - 1);
-        lineBuf[sizeof(lineBuf) - 1] = '\0';
-        lobbsHumanTruncateLine(lineBuf, sizeof(lineBuf), maxLine);
-        pageOut += lineBuf;
+        lobbsHumanAppendLine(pageOut, lines[i], maxLine);
     }
     if ((uint32_t)pageCount > 1) {
         char footer[LOBBS_PAGER_FOOTER_MAX];

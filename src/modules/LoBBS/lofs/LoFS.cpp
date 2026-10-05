@@ -5,11 +5,15 @@
 #include <string.h>
 #include <string>
 
+#if LOBBS_EXTRA_QSPI
+#include <CustomLFS_QSPIFlash.h>
+static CustomLFS_QSPIFlash lobfsQspiFlash;
+#endif
+
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
 #include <SD.h>
 #include <SPI.h>
 
-// Use the same SPI handler setup as FSCommon.cpp
 #ifdef SDCARD_USE_SPI1
 extern SPIClass SPI_HSPI;
 #define SDHandler SPI_HSPI
@@ -22,189 +26,242 @@ extern SPIClass SPI_HSPI;
 #endif
 #endif
 
-bool LoFS::isSDCardAvailable()
+LoFS::Mount LoFS::mounts[4];
+int LoFS::mountCount = 0;
+bool LoFS::begun = false;
+
+static bool lobfsSdPresent()
 {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-    // Check current card type
     uint8_t cardType = SD.cardType();
-
-    // If card type is NONE, try to initialize the SD card
     if (cardType == CARD_NONE) {
         concurrency::LockGuard g(spiLock);
         SDHandler.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-        if (SD.begin(SDCARD_CS, SDHandler, SD_SPI_FREQUENCY)) {
+        if (SD.begin(SDCARD_CS, SDHandler, SD_SPI_FREQUENCY))
             cardType = SD.cardType();
-        }
     }
-
-    return (cardType != CARD_NONE);
+    return cardType != CARD_NONE;
 #else
-    return false; // SD card support not compiled in or disabled
+    return false;
 #endif
 }
 
-// Helper to convert mode to SD library mode
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-// ESP32/RP2040: SD library uses string modes
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
 static const char *convertToSDMode(const char *modeStr)
 {
-    // Already a string, return as-is
     return modeStr;
 }
-
 static const char *convertToSDMode(uint8_t mode)
 {
-    // Convert uint8_t to string: 0 = read, non-zero = write
     return (mode == 0) ? "r" : "w";
 }
 #else
-// STM32WL/NRF52: SD library uses uint8_t modes
 static uint8_t convertToSDMode(const char *modeStr)
 {
-    if (strcmp(modeStr, "r") == 0) {
-        return FILE_READ;
-    }
-    return FILE_WRITE;
+    return (strcmp(modeStr, "r") == 0) ? FILE_READ : FILE_WRITE;
 }
-
 static uint8_t convertToSDMode(uint8_t mode)
 {
-    // STM32WL/NRF52: FILE_O_READ=0, FILE_O_WRITE=1
     return (mode == 0) ? FILE_READ : FILE_WRITE;
 }
 #endif
 #endif
 
-LoFS::FSType LoFS::parsePath(const char *filepath, char *strippedPath, size_t bufferSize)
+void LoFS::begin()
 {
-    if (!filepath || !strippedPath || bufferSize == 0) {
-        return FSType::INVALID;
-    }
+    if (begun)
+        return;
+    mountCount = 0;
 
-    // Check for /internal/ prefix
-    if (strncmp(filepath, "/internal/", 10) == 0) {
-        size_t len = strlen(filepath + 10);
-        if (len + 1 > bufferSize) {
-            return FSType::INVALID;
-        }
-        strcpy(strippedPath, filepath + 10);
-        // Ensure leading slash for internal filesystem
-        if (strippedPath[0] != '/') {
-            memmove(strippedPath + 1, strippedPath, len + 1);
-            strippedPath[0] = '/';
-        }
-        return FSType::INTERNAL;
-    }
+    mounts[mountCount++] = Mount{"flash", Backend::Flash, true};
 
-    // Check for /sd/ prefix
-    if (strncmp(filepath, "/sd/", 4) == 0) {
-        // Check if SD card is actually available (compile-time or runtime)
-        if (!LoFS::isSDCardAvailable()) {
-            return FSType::INVALID; // SD card not available
-        }
-        size_t len = strlen(filepath + 4);
-        if (len + 1 > bufferSize) {
-            return FSType::INVALID;
-        }
-        strcpy(strippedPath, filepath + 4);
-        // SD card paths typically don't need leading slash
-        if (strippedPath[0] == '/') {
-            memmove(strippedPath, strippedPath + 1, len);
-        }
-        return FSType::SD;
-    }
+#if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
+    if (lobfsSdPresent())
+        mounts[mountCount++] = Mount{"sd", Backend::Sd, true};
+#endif
 
-    // Default to internal filesystem if no prefix (backward compatibility)
-    size_t len = strlen(filepath);
-    if (len + 1 > bufferSize) {
-        return FSType::INVALID;
-    }
-    strcpy(strippedPath, filepath);
-    return FSType::INTERNAL;
+#if LOBBS_EXTRA_QSPI
+    concurrency::LockGuard g(spiLock);
+    if (lobfsQspiFlash.begin())
+        mounts[mountCount++] = Mount{"extra", Backend::Extra, true};
+#endif
+
+    begun = true;
 }
 
-LoFS::FSType LoFS::parsePath(const char *filepath, char **strippedPath)
+LoFS::Mount *LoFS::findByName(const char *name, size_t len)
 {
-    if (!filepath) {
-        *strippedPath = nullptr;
-        return FSType::INVALID;
+    for (int i = 0; i < mountCount; i++) {
+        if (strncmp(mounts[i].name, name, len) == 0 && mounts[i].name[len] == '\0' && mounts[i].present)
+            return &mounts[i];
+    }
+    return nullptr;
+}
+
+bool LoFS::mountPresent(const char *name)
+{
+    return findByName(name, strlen(name)) != nullptr;
+}
+
+void LoFS::eachPresentMount(void (*fn)(void *ctx, const char *name), void *ctx)
+{
+    if (!fn)
+        return;
+    for (int i = 0; i < mountCount; i++) {
+        if (mounts[i].present)
+            fn(ctx, mounts[i].name);
+    }
+}
+
+bool LoFS::resolve(const char *filepath, Resolved &out)
+{
+    out = {};
+    if (!filepath || filepath[0] != '/')
+        return false;
+
+    if (filepath[1] == '\0') {
+        out.kind = PathKind::VirtualRoot;
+        return true;
     }
 
-    size_t maxLen = strlen(filepath) + 10; // Extra space for path manipulation
-    *strippedPath = (char *)malloc(maxLen);
-    if (!*strippedPath) {
-        return FSType::INVALID;
+    const char *p = filepath + 1;
+    const char *slash = strchr(p, '/');
+    size_t nameLen = slash ? (size_t)(slash - p) : strlen(p);
+    if (nameLen == 0 || nameLen >= 16)
+        return false;
+
+    Mount *m = findByName(p, nameLen);
+    if (!m)
+        return false;
+
+    out.backend = m->backend;
+    if (!slash || slash[1] == '\0') {
+        out.kind = PathKind::MountRoot;
+        out.rel = "/";
+        return true;
     }
 
-    return parsePath(filepath, *strippedPath, maxLen);
+    out.rel = slash;
+    out.kind = PathKind::Normal;
+    return true;
+}
+
+const char *LoFS::backendPath(const Resolved &r)
+{
+    return r.backend == Backend::Sd ? r.rel + 1 : r.rel;
+}
+
+bool LoFS::isMountPoint(const char *path)
+{
+    if (!path)
+        return false;
+    if (strcmp(path, "/") == 0)
+        return true;
+    Resolved r;
+    if (!resolve(path, r))
+        return false;
+    return r.kind == PathKind::MountRoot;
+}
+
+const char *LoFS::mountNameForPath(const char *path)
+{
+    if (!path || path[0] != '/')
+        return nullptr;
+    if (path[1] == '\0')
+        return nullptr;
+    const char *p = path + 1;
+    const char *slash = strchr(p, '/');
+    size_t nameLen = slash ? (size_t)(slash - p) : strlen(p);
+    Mount *m = findByName(p, nameLen);
+    return m ? m->name : nullptr;
+}
+
+bool LoFS::isDirectory(const char *path)
+{
+    Resolved r;
+    if (!resolve(path, r))
+        return false;
+    if (r.kind == PathKind::VirtualRoot || r.kind == PathKind::MountRoot)
+        return true;
+
+    const char *bp = backendPath(r);
+
+    concurrency::LockGuard g(spiLock);
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+    File f;
+#else
+    File f(FSCom);
+#endif
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+    if (r.backend == Backend::Sd) {
+#if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
+        f = SD.open(bp, FILE_O_READ);
+#endif
+    } else if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+        f = lobfsQspiFlash.open(bp, FILE_O_READ);
+#endif
+    } else {
+        f = FSCom.open(bp, FILE_O_READ);
+    }
+#else
+    if (r.backend == Backend::Sd) {
+#if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
+        f = SD.open(bp, FILE_O_READ);
+#endif
+    } else if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+        f = lobfsQspiFlash.open(bp, FILE_O_READ);
+#endif
+    } else {
+        f = FSCom.open(bp, FILE_O_READ);
+    }
+#endif
+    if (!f)
+        return false;
+    bool isDir = f.isDirectory();
+    f.close();
+    return isDir;
+}
+
+bool LoFS::refuseMountPointMutation(const char *filepath)
+{
+    return isMountPoint(filepath);
 }
 
 File LoFS::open(const char *filepath, uint8_t mode)
 {
-    char *strippedPath = nullptr;
-    FSType fsType = parsePath(filepath, &strippedPath);
-
-    if (!strippedPath || fsType == FSType::INVALID) {
-        if (strippedPath) {
-            free(strippedPath);
-        }
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-        return File();
+    const char *modeStr = (mode == 0) ? FILE_O_READ : FILE_O_WRITE;
+    return open(filepath, modeStr);
 #else
+    Resolved r;
+    if (!resolve(filepath, r) || r.kind == PathKind::VirtualRoot) {
         return File(FSCom);
-#endif
     }
 
-#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-    File result;
-#else
-    File result(FSCom);
-#endif
+    const char *bp = backendPath(r);
 
+    concurrency::LockGuard g(spiLock);
+    if (r.backend == Backend::Sd) {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-    if (fsType == FSType::SD) {
-        concurrency::LockGuard g(spiLock);
-#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-        // ESP32/RP2040: SD library uses string modes
-        const char *sdMode = convertToSDMode(mode);
-        result = SD.open(strippedPath, sdMode);
-#else
-        // STM32WL/NRF52: SD library uses uint8_t modes
-        uint8_t sdMode = convertToSDMode(mode);
-        result = SD.open(strippedPath, sdMode);
-#endif
-    } else
-#endif
-    {
-        // Internal filesystem - handle platform-specific mode conversion
-        concurrency::LockGuard g(spiLock);
-#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-        // ESP32/RP2040: Convert uint8_t mode to string mode
-        // FILE_O_READ is "r" (string), FILE_O_WRITE is "w" (string) on these platforms
-        // mode is uint8_t: 0 = read, non-zero = write
-        const char *modeStr = (mode == 0) ? FILE_O_READ : FILE_O_WRITE;
-        result = FSCom.open(strippedPath, modeStr);
-#else
-        // STM32WL/NRF52: Use uint8_t mode directly
-        // FILE_O_READ=0, FILE_O_WRITE=1 on these platforms
-        result = FSCom.open(strippedPath, mode);
+        return SD.open(bp, convertToSDMode(mode));
 #endif
     }
-
-    free(strippedPath);
-    return result;
+    if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+        return lobfsQspiFlash.open(bp, mode);
+#endif
+    }
+    return FSCom.open(bp, mode);
+#endif
 }
 
 File LoFS::open(const char *filepath, const char *mode)
 {
-    char *strippedPath = nullptr;
-    FSType fsType = parsePath(filepath, &strippedPath);
-
-    if (!strippedPath || fsType == FSType::INVALID) {
-        if (strippedPath) {
-            free(strippedPath);
-        }
+    Resolved r;
+    if (!resolve(filepath, r) || r.kind == PathKind::VirtualRoot) {
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
         return File();
 #else
@@ -212,173 +269,144 @@ File LoFS::open(const char *filepath, const char *mode)
 #endif
     }
 
-#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-    File result;
-#else
-    File result(FSCom);
-#endif
+    const char *bp = backendPath(r);
 
+    concurrency::LockGuard g(spiLock);
+    if (r.backend == Backend::Sd) {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-    if (fsType == FSType::SD) {
-        concurrency::LockGuard g(spiLock);
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-        // ESP32/RP2040: SD library uses string modes, pass directly
-        result = SD.open(strippedPath, mode);
+        return SD.open(bp, mode);
 #else
-        // STM32WL/NRF52: SD library uses uint8_t modes
-        uint8_t sdMode = convertToSDMode(mode);
-        result = SD.open(strippedPath, sdMode);
+        return SD.open(bp, convertToSDMode(mode));
 #endif
-    } else
-#endif
-    {
-        // Internal filesystem - handle platform-specific mode
-        concurrency::LockGuard g(spiLock);
-#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-        // ESP32/RP2040: Use string mode directly
-        result = FSCom.open(strippedPath, mode);
-#else
-        // STM32WL/NRF52: Convert string mode to uint8_t
-        // "r" -> 0 (FILE_O_READ), "w" -> 1 (FILE_O_WRITE)
-        uint8_t modeInt = (strcmp(mode, "r") == 0) ? 0 : 1;
-        result = FSCom.open(strippedPath, modeInt);
 #endif
     }
-
-    free(strippedPath);
-    return result;
+    if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+        return lobfsQspiFlash.open(bp, mode);
+#else
+        uint8_t m = (strcmp(mode, "r") == 0) ? 0 : 1;
+        return lobfsQspiFlash.open(bp, m);
+#endif
+#endif
+    }
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+    return FSCom.open(bp, mode);
+#else
+    uint8_t flashMode = (mode && strcmp(mode, "r") == 0) ? 0 : 1;
+    return FSCom.open(bp, flashMode);
+#endif
 }
 
 bool LoFS::exists(const char *filepath)
 {
-    char *strippedPath = nullptr;
-    FSType fsType = parsePath(filepath, &strippedPath);
-
-    if (!strippedPath || fsType == FSType::INVALID) {
-        if (strippedPath) {
-            free(strippedPath);
-        }
+    Resolved r;
+    if (!resolve(filepath, r))
         return false;
-    }
+    if (r.kind == PathKind::VirtualRoot)
+        return true;
+    if (r.kind == PathKind::MountRoot)
+        return true;
 
-    bool result = false;
-
+    const char *bp = backendPath(r);
+    concurrency::LockGuard g(spiLock);
+    if (r.backend == Backend::Sd) {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-    if (fsType == FSType::SD) {
-        concurrency::LockGuard g(spiLock);
-        result = SD.exists(strippedPath);
-    } else
+        return SD.exists(bp);
 #endif
-    {
-        // Internal filesystem
-        concurrency::LockGuard g(spiLock);
-        result = FSCom.exists(strippedPath);
     }
-
-    free(strippedPath);
-    return result;
+    if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+        return lobfsQspiFlash.exists(bp);
+#endif
+    }
+    return FSCom.exists(bp);
 }
 
 bool LoFS::mkdir(const char *filepath)
 {
-    char *strippedPath = nullptr;
-    FSType fsType = parsePath(filepath, &strippedPath);
-
-    if (!strippedPath || fsType == FSType::INVALID) {
-        if (strippedPath) {
-            free(strippedPath);
-        }
+    if (refuseMountPointMutation(filepath))
         return false;
-    }
 
-    bool result = false;
+    Resolved r;
+    if (!resolve(filepath, r) || r.kind == PathKind::VirtualRoot)
+        return false;
 
+    const char *bp = backendPath(r);
+
+    concurrency::LockGuard g(spiLock);
+    if (r.backend == Backend::Sd) {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-    if (fsType == FSType::SD) {
-        concurrency::LockGuard g(spiLock);
-        result = SD.mkdir(strippedPath);
-    } else
+        return SD.mkdir(bp);
 #endif
-    {
-        // Internal filesystem
-        concurrency::LockGuard g(spiLock);
-        result = FSCom.mkdir(strippedPath);
     }
-
-    free(strippedPath);
-    return result;
+    if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+        return lobfsQspiFlash.mkdir(bp);
+#endif
+    }
+    return FSCom.mkdir(bp);
 }
 
 bool LoFS::remove(const char *filepath)
 {
-    char *strippedPath = nullptr;
-    FSType fsType = parsePath(filepath, &strippedPath);
-
-    if (!strippedPath || fsType == FSType::INVALID) {
-        if (strippedPath) {
-            free(strippedPath);
-        }
+    if (refuseMountPointMutation(filepath))
         return false;
-    }
 
-    bool result = false;
+    Resolved r;
+    if (!resolve(filepath, r) || r.kind == PathKind::VirtualRoot || r.kind == PathKind::MountRoot)
+        return false;
 
+    const char *bp = backendPath(r);
+
+    concurrency::LockGuard g(spiLock);
+    if (r.backend == Backend::Sd) {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-    if (fsType == FSType::SD) {
-        concurrency::LockGuard g(spiLock);
-        result = SD.remove(strippedPath);
-    } else
+        return SD.remove(bp);
 #endif
-    {
-        // Internal filesystem
-        concurrency::LockGuard g(spiLock);
-        result = FSCom.remove(strippedPath);
     }
-
-    free(strippedPath);
-    return result;
+    if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+        return lobfsQspiFlash.remove(bp);
+#endif
+    }
+    return FSCom.remove(bp);
 }
 
 bool LoFS::rename(const char *oldfilepath, const char *newfilepath)
 {
-    char *oldStripped = nullptr;
-    char *newStripped = nullptr;
-    FSType oldType = parsePath(oldfilepath, &oldStripped);
-    FSType newType = parsePath(newfilepath, &newStripped);
-
-    if (!oldStripped || !newStripped || oldType == FSType::INVALID || newType == FSType::INVALID) {
-        if (oldStripped) {
-            free(oldStripped);
-        }
-        if (newStripped) {
-            free(newStripped);
-        }
+    if (refuseMountPointMutation(oldfilepath) || refuseMountPointMutation(newfilepath))
         return false;
-    }
 
-    bool result = false;
-    if (oldType == newType) {
+    Resolved oldR;
+    Resolved newR;
+    if (!resolve(oldfilepath, oldR) || !resolve(newfilepath, newR))
+        return false;
+    if (oldR.kind == PathKind::VirtualRoot || newR.kind == PathKind::VirtualRoot)
+        return false;
+    if (oldR.backend != newR.backend)
+        return false;
+
+    const char *oldBp = backendPath(oldR);
+    const char *newBp = backendPath(newR);
+
+    concurrency::LockGuard g(spiLock);
+    if (oldR.backend == Backend::Sd) {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-        if (oldType == FSType::SD) {
-            concurrency::LockGuard g(spiLock);
-            result = SD.rename(oldStripped, newStripped);
-        } else
+        return SD.rename(oldBp, newBp);
 #endif
-        {
-            concurrency::LockGuard g(spiLock);
-            result = FSCom.rename(oldStripped, newStripped);
-        }
     }
-
-    free(oldStripped);
-    free(newStripped);
-    return result;
+    if (oldR.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+        return lobfsQspiFlash.rename(oldBp, newBp);
+#endif
+    }
+    return FSCom.rename(oldBp, newBp);
 }
 
-static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn, bool invokeCallback)
+static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn)
 {
-    if (!fn && invokeCallback)
-        return false;
     while (true) {
         File file = dir.openNextFile();
         if (!file)
@@ -394,7 +422,7 @@ static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn, bool 
         if (entryName == "." || entryName == "..")
             continue;
 
-        if (invokeCallback && !fn(ctx, entryName.c_str(), isDir))
+        if (!fn(ctx, entryName.c_str(), isDir))
             return false;
     }
     return true;
@@ -405,6 +433,20 @@ bool LoFS::list(const char *dirpath, void *ctx, ListCallback fn)
     if (!dirpath || !fn)
         return false;
 
+    Resolved r;
+    if (!resolve(dirpath, r))
+        return false;
+
+    if (r.kind == PathKind::VirtualRoot) {
+        for (int i = 0; i < mountCount; i++) {
+            if (!mounts[i].present)
+                continue;
+            if (!fn(ctx, mounts[i].name, true))
+                return false;
+        }
+        return true;
+    }
+
     File dir = open(dirpath, FILE_O_READ);
     if (!dir)
         return false;
@@ -413,23 +455,172 @@ bool LoFS::list(const char *dirpath, void *ctx, ListCallback fn)
         return false;
     }
 
-    bool ok = lobfsEachDirEntry(dir, ctx, fn, true);
+    bool ok = lobfsEachDirEntry(dir, ctx, fn);
     dir.close();
     return ok;
 }
 
-bool LoFS::rmdir(const char *filepath, bool recursive)
+bool LoFS::stat(const char *filepath, uint32_t *sizeOut, bool *isDirOut)
 {
-    if (!exists(filepath)) {
-        return true; // Already doesn't exist, consider it success
+    if (sizeOut)
+        *sizeOut = 0;
+    if (isDirOut)
+        *isDirOut = false;
+
+    Resolved r;
+    if (!resolve(filepath, r))
+        return false;
+    if (r.kind == PathKind::VirtualRoot || r.kind == PathKind::MountRoot) {
+        if (isDirOut)
+            *isDirOut = true;
+        return true;
     }
 
-    // If recursive, first remove all contents
+    File f = open(filepath, FILE_O_READ);
+    if (!f)
+        return false;
+    if (isDirOut)
+        *isDirOut = f.isDirectory();
+    if (sizeOut && !f.isDirectory())
+        *sizeOut = (uint32_t)f.size();
+    f.close();
+    return true;
+}
+
+bool LoFS::copy(const char *src, const char *dst)
+{
+    if (refuseMountPointMutation(src) || refuseMountPointMutation(dst))
+        return false;
+    if (exists(dst))
+        return false;
+
+    Resolved srcR;
+    Resolved dstR;
+    if (!resolve(src, srcR) || !resolve(dst, dstR))
+        return false;
+    if (srcR.kind == PathKind::VirtualRoot || srcR.kind == PathKind::MountRoot)
+        return false;
+    if (dstR.kind == PathKind::VirtualRoot || dstR.kind == PathKind::MountRoot)
+        return false;
+
+    File srcFile = open(src, FILE_O_READ);
+    if (!srcFile)
+        return false;
+    if (srcFile.isDirectory()) {
+        srcFile.close();
+        return false;
+    }
+
+    File dstFile = open(dst, FILE_O_WRITE);
+    if (!dstFile) {
+        srcFile.close();
+        return false;
+    }
+
+    unsigned char buffer[128];
+    bool ok = true;
+    while (true) {
+        size_t n = 0;
+        {
+            concurrency::LockGuard g(spiLock);
+            n = srcFile.read(buffer, sizeof(buffer));
+        }
+        if (n == 0)
+            break;
+        size_t w = 0;
+        {
+            concurrency::LockGuard g(spiLock);
+            w = dstFile.write(buffer, n);
+        }
+        if (w != n) {
+            ok = false;
+            break;
+        }
+    }
+
+    {
+        concurrency::LockGuard g(spiLock);
+        dstFile.flush();
+        dstFile.close();
+        srcFile.close();
+    }
+
+    if (!ok)
+        remove(dst);
+    return ok;
+}
+
+uint64_t LoFS::totalBytes(const char *mountRoot)
+{
+    Resolved r;
+    if (!resolve(mountRoot, r) || r.kind != PathKind::MountRoot)
+        return 0;
+    concurrency::LockGuard g(spiLock);
+    if (r.backend == Backend::Sd) {
+#if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
+        return SD.totalBytes();
+#endif
+    }
+    if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+        return lobfsQspiFlash.totalBytes();
+#endif
+#endif
+    }
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+    return FSCom.totalBytes();
+#else
+    return 0;
+#endif
+}
+
+uint64_t LoFS::usedBytes(const char *mountRoot)
+{
+    Resolved r;
+    if (!resolve(mountRoot, r) || r.kind != PathKind::MountRoot)
+        return 0;
+    concurrency::LockGuard g(spiLock);
+    if (r.backend == Backend::Sd) {
+#if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
+        return SD.usedBytes();
+#endif
+    }
+    if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+        return lobfsQspiFlash.usedBytes();
+#endif
+#endif
+    }
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+    return FSCom.usedBytes();
+#else
+    return 0;
+#endif
+}
+
+uint64_t LoFS::freeBytes(const char *mountRoot)
+{
+    uint64_t total = totalBytes(mountRoot);
+    uint64_t used = usedBytes(mountRoot);
+    if (total == 0)
+        return 0;
+    return total - used;
+}
+
+bool LoFS::rmdir(const char *filepath, bool recursive)
+{
+    if (refuseMountPointMutation(filepath))
+        return false;
+
+    if (!exists(filepath))
+        return true;
+
     if (recursive) {
         File dir = open(filepath, FILE_O_READ);
-        if (!dir) {
+        if (!dir)
             return false;
-        }
 
         if (!dir.isDirectory()) {
             dir.close();
@@ -437,7 +628,6 @@ bool LoFS::rmdir(const char *filepath, bool recursive)
         }
 
         bool result = true;
-
         while (true) {
             File file = dir.openNextFile();
             if (!file)
@@ -453,9 +643,7 @@ bool LoFS::rmdir(const char *filepath, bool recursive)
             if (entryName == "." || entryName == "..")
                 continue;
 
-            char fullPathBuf[256];
-            snprintf(fullPathBuf, sizeof(fullPathBuf), "%s/%s", filepath, entryName.c_str());
-            std::string fullPath = fullPathBuf;
+            std::string fullPath = std::string(filepath) + "/" + entryName;
 
             if (isDir) {
                 if (!rmdir(fullPath.c_str(), true))
@@ -467,36 +655,26 @@ bool LoFS::rmdir(const char *filepath, bool recursive)
         }
         dir.close();
 
-        if (!result) {
+        if (!result)
             return false;
-        }
     }
 
-    // Now remove the directory itself (or if non-recursive, just try to remove empty directory)
-    char *strippedPath = nullptr;
-    FSType fsType = parsePath(filepath, &strippedPath);
-
-    if (!strippedPath || fsType == FSType::INVALID) {
-        if (strippedPath) {
-            free(strippedPath);
-        }
+    Resolved r;
+    if (!resolve(filepath, r) || r.kind == PathKind::VirtualRoot || r.kind == PathKind::MountRoot)
         return false;
-    }
 
-    bool result = false;
+    const char *bp = backendPath(r);
 
+    concurrency::LockGuard g(spiLock);
+    if (r.backend == Backend::Sd) {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
-    if (fsType == FSType::SD) {
-        concurrency::LockGuard g(spiLock);
-        result = SD.rmdir(strippedPath);
-    } else
+        return SD.rmdir(bp);
 #endif
-    {
-        // Internal filesystem
-        concurrency::LockGuard g(spiLock);
-        result = FSCom.rmdir(strippedPath);
     }
-
-    free(strippedPath);
-    return result;
+    if (r.backend == Backend::Extra) {
+#if LOBBS_EXTRA_QSPI
+        return lobfsQspiFlash.rmdir(bp);
+#endif
+    }
+    return FSCom.rmdir(bp);
 }

@@ -2,6 +2,7 @@
 
 #include "LoBBSWireup.h"
 #include "LoBBSHooks.h"
+#include "LoBBSInstall.h"
 #include "apps/Auth/AuthCommands.h"
 #include "apps/Fs/FsCommands.h"
 #include "apps/Help/HelpCommands.h"
@@ -17,6 +18,7 @@ void lobbsWireup()
 {
     lobbsHooksReset();
     lobbsMsgRegisterDisplay();
+    lobbsInstallRegisterCommands();
     lobbsHelpRegisterCommands();
     lobbsAuthRegisterCommands();
     lobbsMailRegisterCommands();

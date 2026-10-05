@@ -25,13 +25,21 @@
 
 [Install on MeshForge](https://meshforge.org/MeshEnvy/lobbs-meshtastic-firmware) or compile and flash from source.
 
-Demo builds: add `-D LOBBS_DEMO_MODE` to `build_flags` (or `PLATFORMIO_BUILD_FLAGS="-D LOBBS_DEMO_MODE" pio run -e <env>`) to wipe `/lodb/lobbs` on every boot and seed demo data. Accounts: `sysop` and `demo01` through `demo12`, password `demo1` (sysop is the first account). Sample mail, news, wall paint, and yarn text are included for paging tests.
+Demo builds: add `-D LOBBS_DEMO_MODE` to `build_flags` (or `PLATFORMIO_BUILD_FLAGS="-D LOBBS_DEMO_MODE" pio run -e <env>`) to wipe `/flash/lodb/lobbs` on every boot and seed demo data. Accounts: `sysop` and `demo01` through `demo12`, password `demo1`. Sample mail, news, wall paint, and yarn text are included for paging tests.
+
+### First-time install (SysOp)
+
+A new LoBBS node has no database until you install it. Only `/help` and `/install` work until then. The install hint lists mounts that are present on this hardware (`flash`, plus `sd` when a card is present and `extra` on builds with `LOBBS_EXTRA_QSPI=1`).
+
+`/install <flash|extra|sd> <user> <pass>` creates the database on that mount and makes `<user>` the SysOp. Use it from the local client (phone app connected over serial/BLE) or from a remote DM encrypted with a configured admin key. If the target already holds a LoBBS database, the same command adopts it and you must supply an existing SysOp username and password.
+
+The choice is stored in `/flash/lobbs.ls`. If that mount is missing on a later boot, every command fails with an offline message until the hardware is fixed or you delete the marker and reinstall.
 
 ## How to use LoBBS
 
 DM the node a line that starts with `/`. For how verbs, help, and plugin hooks fit together, see [docs/lobbs-commands.md](docs/lobbs-commands.md).
 
-`/login username password` signs in or creates the account. The first account is the SysOp.
+`/login username password` signs in or creates a normal account after install. SysOp accounts are created only by `/install`.
 
 Long replies are cached on the node for your session (about five minutes). Run the list command once, then `/p2`, `/p3`, and so on for the next pages. A new command replaces the cache. Machine clients use the same pattern with a fresh message id per page (`/43 p2`).
 
@@ -110,9 +118,11 @@ Rows `a`–`l`, columns `1`–`12`. `a4x` paints `x` at row a, column 4. `-a4` c
 
 ## SysOp commands
 
-The first registered account is the SysOp. Other users get `SysOp only.`
+SysOp-only lines reply `SysOp only.` to everyone else.
 
 | Command                       | Notes                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- |
+| `/install flash user pass`    | First-time setup (see [First-time install](#first-time-install-sysop)); blank node only        |
 | ----------------------------- | ---------------------------------------------------------------------------------------------- |
 | `/passwd user new confirm`    | Reset a user's password                                                                        |
 | `/users kick user`            | Log that user out                                                                              |
@@ -132,6 +142,13 @@ The first registered account is the SysOp. Other users get `SysOp only.`
 | `/rm /path`                   | Delete a file (absolute path only)                                                             |
 | `/rmdir /path`                | Remove an empty directory (absolute path only)                                                 |
 | `/rmtree /path /path`         | Recursive delete (absolute path, typed twice)                                                  |
+| `/mkdir path`                 | Create a directory under a mount (`/flash/...`, etc.)                                          |
+| `/cp src dst`                 | Copy a file (no overwrite; directories refused)                                                |
+| `/mv src dst`                 | Rename on one mount, or copy then delete across mounts (files only)                            |
+| `/stat path`                  | `file N` or `dir`                                                                              |
+| `/df`                         | Used/total KB per mount (`?` when unknown)                                                     |
+
+Paths use mount prefixes: `/flash/...`, `/sd/...`, `/extra/...` on builds with `LOBBS_EXTRA_QSPI=1` and a QSPI flash chip. `/` lists mounts. Do not `/rmtree` `/flash/lodb` unless you intend to wipe the BBS.
 
 SysOps painting the wall or adding yarn do not use quota.
 

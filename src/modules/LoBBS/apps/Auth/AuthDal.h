@@ -24,7 +24,7 @@ class AuthDal
                           uint64_t *authUserUuidOut = nullptr, std::string *cwdOut = nullptr);
     bool setSessionCwd(uint32_t nodeId, const char *cwd);
     std::vector<LoScalar> listUsers(const char *filterSubstr);
-    bool createUser(const char *username, const char *password, uint32_t nodeId);
+    bool createUser(const char *username, const char *password, uint32_t nodeId, bool asSysop = false);
     bool verifyPassword(const LoScalar *user, const char *password);
     bool loginUser(const char *username, uint32_t nodeId);
     bool logoutUser(uint32_t nodeId);

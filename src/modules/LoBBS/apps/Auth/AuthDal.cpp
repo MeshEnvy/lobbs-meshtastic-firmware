@@ -198,24 +198,23 @@ bool AuthDal::setSessionCwd(uint32_t nodeId, const char *cwd)
     return lodb_.update("sessions", (lodb_uuid_t)nodeId, session) == LODB_OK;
 }
 
-bool AuthDal::createUser(const char *username, const char *password, uint32_t nodeId)
+bool AuthDal::createUser(const char *username, const char *password, uint32_t nodeId, bool asSysop)
 {
     lodb_uuid_t userUuid = usernameToUuid(username);
-    bool isFirstUser = (lodb_.count("users") == 0);
 
     LoScalar user;
     user.setString(AuthUser::FIELD_USERNAME, username);
     uint8_t hash[32];
     hashPassword(password, hash);
     user.setBytesHex(AuthUser::FIELD_PASSWORD, hash, 32);
-    user.setBool(AuthUser::FIELD_SYSOP, isFirstUser);
+    user.setBool(AuthUser::FIELD_SYSOP, asSysop);
     LoDbError err = lodb_.insert("users", userUuid, user);
     if (err != LODB_OK) {
         LOG_ERROR("Failed to create user: %s", username);
         return false;
     }
 
-    LOG_INFO("Created user: %s (sysop: %s)", username, isFirstUser ? "yes" : "no");
+    LOG_INFO("Created user: %s (sysop: %s)", username, asSysop ? "yes" : "no");
     return loginUser(username, nodeId);
 }
 

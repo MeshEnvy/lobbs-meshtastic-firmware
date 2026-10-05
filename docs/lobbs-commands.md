@@ -68,6 +68,22 @@ In `lobbs*RegisterCommands()`:
 
 Do not add a central verb switch. Do not pre-split the full line into `argv`.
 
+## Filesystem mounts and install
+
+LoFS exposes a virtual root `/` that lists mount names. Writable paths always start with `/<mount>/…` (`flash`, optional `sd`, optional `extra` when built with `LOBBS_EXTRA_QSPI=1` and a QSPI flash chip answers). There is no legacy `/internal` alias.
+
+Install state is tracked outside the database in `/flash/lobbs.ls` (LoScalar field `LOBBS_INSTALL_FIELD_ROOT` holds the database root, e.g. `/flash` or `/extra`). `lobbsInstallInit` runs after `LoFS::begin()`:
+
+- **Blank** — no marker; only `/help` and `/install` run; other commands get the install hint with present mounts.
+- **Ready** — marker mount is present and `LoDb::open(root)` succeeded.
+- **Offline** — marker names a mount that is absent this boot; all non-help commands error.
+
+`/install` authorization matches admin PKI checks in `AdminModule` (`mp.from == 0` for local client, or `pki_encrypted` with a matching `config.security.admin_key`). `AuthDal::createUser` no longer promotes the first signup to SysOp; only `/install` passes `asSysop=true`.
+
+SysOp fs commands use a per-session cwd (`/cd`, `/pwd`). `ls`, `cat`, `hex`, `stat`, `mkdir`, `cp`, and `mv` accept relative paths under cwd. `rm`, `rmdir`, and `rmtree` require absolute paths. Mount roots and `/` cannot be removed or used as move/copy sources. Cross-mount `mv` copies files then deletes the source when space allows; directories require same-mount `rename`.
+
+Fs subcommands are registered as a `LoBBSVerb` table with `LOBBS_V_SYSOP` and top-level verbs (`/ls`, not `/fs ls`).
+
 ## LoDB from plugins
 
 Use `LoDb::upsert` when saving singleton or keyed rows instead of open-coding get/update/insert. Wall and yarn DALs load defaults in memory on miss without writing until the user saves.

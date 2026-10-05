@@ -100,38 +100,56 @@ lodb_uuid_t lodb_new_uuid(const char *str, uint64_t salt)
     return uuid;
 }
 
-LoDb::LoDb(const char *db_name, LoFS::FSType filesystem) : db_name(db_name)
+LoDb::LoDb(const char *db_name) : db_name(db_name)
 {
-    static const char kSeg[] = "/lodb";
+    db_path[0] = '\0';
+}
 
-    if (filesystem == LoFS::FSType::SD) {
-        if (LoFS::isSDCardAvailable()) {
-            snprintf(db_path, sizeof(db_path), "/sd%s/%s", kSeg, db_name);
-        } else {
-            LODB_LOG_WARN("SD requested but not available; using /internal%s", kSeg);
-            snprintf(db_path, sizeof(db_path), "/internal%s/%s", kSeg, db_name);
-        }
-    } else if (filesystem == LoFS::FSType::INTERNAL) {
-        snprintf(db_path, sizeof(db_path), "/internal%s/%s", kSeg, db_name);
-    } else {
-        snprintf(db_path, sizeof(db_path), "%s/%s", kSeg, db_name);
+bool LoDb::mkdirPathSegments(const char *path)
+{
+    if (!path || path[0] != '/')
+        return false;
+    char buf[128];
+    size_t len = strlen(path);
+    if (len >= sizeof(buf))
+        return false;
+    memcpy(buf, path, len + 1);
+
+    for (size_t i = 1; i < len; i++) {
+        if (buf[i] != '/')
+            continue;
+        buf[i] = '\0';
+        if (!LoFS::mkdir(buf))
+            LODB_LOG_DEBUG("mkdir segment may exist: %s", buf);
+        buf[i] = '/';
+    }
+    if (!LoFS::mkdir(buf))
+        LODB_LOG_DEBUG("Database directory may already exist: %s", buf);
+    return true;
+}
+
+LoDbError LoDb::open(const char *root)
+{
+    if (!root || root[0] != '/')
+        return LODB_ERR_INVALID;
+
+    if (snprintf(db_path, sizeof(db_path), "%s/lodb/%s", root, db_name.c_str()) >= (int)sizeof(db_path))
+        return LODB_ERR_INVALID;
+
+    if (!mkdirPathSegments(db_path))
+        return LODB_ERR_IO;
+
+    for (auto &entry : tables) {
+        if (snprintf(entry.second.table_path, sizeof(entry.second.table_path), "%s/%s", db_path, entry.first.c_str()) >=
+            (int)sizeof(entry.second.table_path))
+            return LODB_ERR_INVALID;
+        if (!LoFS::mkdir(entry.second.table_path))
+            LODB_LOG_DEBUG("Table directory may already exist: %s", entry.second.table_path);
     }
 
-    if (strncmp(db_path, "/lodb/", 6) == 0) {
-        LoFS::mkdir("/lodb");
-    } else if (strncmp(db_path, "/internal/lodb/", 15) == 0) {
-        LoFS::mkdir("/internal");
-        LoFS::mkdir("/internal/lodb");
-    } else if (strncmp(db_path, "/sd/lodb/", 9) == 0) {
-        LoFS::mkdir("/sd");
-        LoFS::mkdir("/sd/lodb");
-    }
-
-    if (!LoFS::mkdir(db_path)) {
-        LODB_LOG_DEBUG("Database directory may already exist: %s", db_path);
-    }
-
-    LODB_LOG_INFO("Initialized LoDB database: %s", db_path);
+    opened_ = true;
+    LODB_LOG_INFO("Opened LoDB database: %s", db_path);
+    return LODB_OK;
 }
 
 LoDb::~LoDb() {}
@@ -190,15 +208,16 @@ LoDbError LoDb::registerTable(const char *table_name)
 
     TableMetadata metadata;
     metadata.table_name = table_name;
+    metadata.table_path[0] = '\0';
 
-    snprintf(metadata.table_path, sizeof(metadata.table_path), "%s/%s", db_path, table_name);
-
-    if (!LoFS::mkdir(metadata.table_path)) {
-        LODB_LOG_DEBUG("Table directory may already exist: %s", metadata.table_path);
+    if (opened_) {
+        snprintf(metadata.table_path, sizeof(metadata.table_path), "%s/%s", db_path, table_name);
+        if (!LoFS::mkdir(metadata.table_path))
+            LODB_LOG_DEBUG("Table directory may already exist: %s", metadata.table_path);
     }
 
     tables[table_name] = metadata;
-    LODB_LOG_INFO("Registered table: %s at %s", table_name, metadata.table_path);
+    LODB_LOG_INFO("Registered table: %s", table_name);
     return LODB_OK;
 }
 
@@ -266,6 +285,8 @@ static LoDbError writeUpdatedRecord(const char *file_path, lodb_uuid_t uuid, con
 
 LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const LoScalar &record)
 {
+    if (!opened_)
+        return LODB_ERR_IO;
     char file_path[LODB_RECORD_PATH_BYTES];
     if (!recordPath(table_name, uuid, file_path, sizeof(file_path)))
         return LODB_ERR_INVALID;
@@ -296,6 +317,8 @@ LoDbError LoDb::insert(const char *table_name, lodb_uuid_t uuid, const LoScalar 
 
 LoDbError LoDb::get(const char *table_name, lodb_uuid_t uuid, LoScalar &record_out)
 {
+    if (!opened_)
+        return LODB_ERR_IO;
     char file_path[LODB_RECORD_PATH_BYTES];
     if (!recordPath(table_name, uuid, file_path, sizeof(file_path)))
         return LODB_ERR_INVALID;
@@ -377,6 +400,8 @@ LoDbError LoDb::upsert(const char *table_name, lodb_uuid_t uuid, const LoScalar 
 
 LoDbError LoDb::deleteRecord(const char *table_name, lodb_uuid_t uuid)
 {
+    if (!opened_)
+        return LODB_ERR_IO;
     char file_path[LODB_RECORD_PATH_BYTES];
     if (!recordPath(table_name, uuid, file_path, sizeof(file_path)))
         return LODB_ERR_INVALID;
@@ -394,6 +419,8 @@ LoDbError LoDb::deleteRecord(const char *table_name, lodb_uuid_t uuid)
 std::vector<LoScalar> LoDb::select(const char *table_name, LoDbFilter filter, LoDbComparator comparator, size_t limit)
 {
     std::vector<LoScalar> results;
+    if (!opened_)
+        return results;
 
     if (!table_name) {
         LODB_LOG_ERROR("Invalid table_name");
@@ -436,6 +463,8 @@ std::vector<LoScalar> LoDb::select(const char *table_name, LoDbFilter filter, Lo
 
 int LoDb::count(const char *table_name, LoDbFilter filter)
 {
+    if (!opened_)
+        return 0;
     if (!table_name) {
         LODB_LOG_ERROR("Invalid table_name");
         return -1;

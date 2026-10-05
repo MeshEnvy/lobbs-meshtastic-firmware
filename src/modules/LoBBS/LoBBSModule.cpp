@@ -3,7 +3,9 @@
 #include "LoBBSModule.h"
 #include "LoBBSConfig.h"
 #include "LoBBSDispatch.h"
+#include "LoBBSInstall.h"
 #include "LoBBSWireup.h"
+#include <lofs/LoFS.h>
 #if LOBBS_SEED
 #include "LoBBSSeed.h"
 #endif
@@ -12,24 +14,23 @@
 #include <cstdio>
 #include <cstring>
 
-static LoDb *lobbsOpenDb()
-{
-#ifdef LOBBS_DEMO_MODE
-    // Demo builds boot with an empty BBS (path mirrors LoDb's default layout).
-    LoFS::rmdir("/lodb/lobbs", true);
-    LOG_WARN("LoBBS demo mode: wiped /lodb/lobbs");
-#endif
-    return new LoDb("lobbs");
-}
-
 LoBBSModule::LoBBSModule()
-    : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(lobbsOpenDb()), auth_(*lodb_), mail_(*lodb_),
+    : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(new LoDb("lobbs")), auth_(*lodb_), mail_(*lodb_),
       news_(*lodb_), yarn_(*lodb_), wall_(*lodb_)
 {
+    LoFS::begin();
     lobbsWireup();
 #ifdef LOBBS_DEMO_MODE
+    lobbsInstallAutoSeed(*this);
     lobbsSeedAll(*this);
+#else
+    lobbsInstallInit(*this);
 #endif
+}
+
+LoBBSInstallState LoBBSModule::installState() const
+{
+    return lobbsInstallState(*this);
 }
 
 LoBBSModule::~LoBBSModule()

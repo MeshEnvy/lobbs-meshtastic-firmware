@@ -1,6 +1,7 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
+#include "LoBBSInstall.h"
 #include "LoBBSVersion.h"
 #include "MeshModule.h"
 #include "SinglePortModule.h"
@@ -32,6 +33,8 @@ class LoBBSModule : public SinglePortModule
     NewsApp &news() { return news_; }
     WallApp &wall() { return wall_; }
     YarnApp &yarn() { return yarn_; }
+    LoDb *lodb() { return lodb_; }
+    LoBBSInstallState installState() const;
 
   protected:
     virtual ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;

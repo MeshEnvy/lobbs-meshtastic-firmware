@@ -3,6 +3,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS && LOBBS_SEED
 
 #include "LoBBSDispatch.h"
+#include "LoBBSInstall.h"
 #include "LoBBSModule.h"
 #include "LoBBSReplyCache.h"
 #include "LoBBSSeed.h"
@@ -55,11 +56,28 @@ static void lobbsTestFixtureSetUp()
     setRTCSystemTimeForTests(&tv);
     lobbsTestNodeDb = std::make_unique<LobbsTestNodeDB>();
     nodeDB = lobbsTestNodeDb.get();
-    LoFS::rmdir("/lodb/lobbs", true);
     lobbsTestReplies.clear();
     lobbsTestReplySink = &lobbsTestReplies;
     lobbsTestModule = std::make_unique<LoBBSModule>();
+    lobbsInstallAutoSeed(*lobbsTestModule);
     lobbsSeedAll(*lobbsTestModule);
+}
+
+static void lobbsTestSendLocalLine(const char *line)
+{
+    meshtastic_MeshPacket mp = {};
+    mp.from = 0;
+    mp.to = kLobbsTestBbsNode;
+    size_t len = strlen(line);
+    memcpy(mp.decoded.payload.bytes, line, len);
+    mp.decoded.payload.size = len;
+    lobbsDispatchReceived(lobbsTestModule.get(), mp);
+}
+
+static void lobbsTestReboot()
+{
+    lobbsTestModule.reset();
+    lobbsTestModule = std::make_unique<LoBBSModule>();
 }
 
 static void lobbsTestFixtureTearDown()
@@ -142,8 +160,87 @@ static void test_command_fs_cwd()
     TEST_ASSERT_EQUAL_STRING("No such directory.", lobbsTestLastReply());
     lobbsTestSendLine("/rm relative.txt");
     TEST_ASSERT_EQUAL_STRING("Absolute path only.", lobbsTestLastReply());
-    lobbsTestSendLine("/rmtree /internal/.. /internal/..");
+    lobbsTestSendLine("/rmtree /flash/.. /flash/..");
     TEST_ASSERT_EQUAL_STRING("Refused.", lobbsTestLastReply());
+    lobbsTestSendLine("/cd /flash");
+    lobbsTestSendLine("/cd ..");
+    TEST_ASSERT_EQUAL_STRING("/", lobbsTestLastReply());
+}
+
+static void test_command_fs_mounts_and_tools()
+{
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestReplies.clear();
+    lobbsTestSendLine("/ls /");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "flash"));
+    lobbsTestSendLine("/mkdir /flash/lobbs-test-dir");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Created."));
+    lobbsTestSendLine("/stat /flash/lobbs-test-dir");
+    TEST_ASSERT_EQUAL_STRING("dir", lobbsTestLastReply());
+    lobbsTestSendLine("/mkdir /flash/lobbs-test-dir");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Already exists."));
+    lobbsTestSendLine("/df");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "flash"));
+    lobbsTestSendLine("/rmdir /flash/lobbs-test-dir");
+}
+
+static void test_command_fs_cp_mv()
+{
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestSendLine("/cp /flash/lobbs.ls /flash/lobbs-copy.ls");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Copied."));
+    lobbsTestSendLine("/cp /flash/lobbs.ls /flash/lobbs-copy.ls");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Destination exists."));
+    lobbsTestSendLine("/mv /flash/lobbs-copy.ls /flash/lobbs-moved.ls");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Moved."));
+    lobbsTestSendLine("/rm /flash/lobbs-moved.ls");
+}
+
+static void test_command_install_guards()
+{
+    lobbsTestSendLine("/install flash hacker pass");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Not authorized."));
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestSendLine("/install flash other pass");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Already installed."));
+    lobbsTestSendLine("/login demo99 demo1");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Welcome demo99"));
+}
+
+static void test_command_install_offline()
+{
+    lobbsInstallWriteMarker("/sd");
+    lobbsTestReboot();
+    lobbsTestSendLine("/login sysop demo1");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "offline"));
+}
+
+static void test_command_install_blank_and_local()
+{
+    LoFS::remove(LOBBS_INSTALL_MARKER_PATH);
+    LoFS::rmdir("/flash/lodb/lobbs", true);
+    lobbsTestReboot();
+    lobbsTestSendLine("/whoami");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "/install <flash>"));
+    lobbsTestSendLine("/install flash boss pw");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Not authorized."));
+    lobbsTestSendLocalLine("/install sd boss pw");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Mount not available."));
+    lobbsTestSendLocalLine("/install flash boss pw");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Installed."));
+    lobbsTestSendLine("/login newbie pw");
+    lobbsTestSendLine("/df");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "SysOp only."));
+}
+
+static void test_command_install_adopts_existing()
+{
+    LoFS::remove(LOBBS_INSTALL_MARKER_PATH);
+    lobbsTestReboot();
+    lobbsTestSendLocalLine("/install flash demo01 demo1");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "sysop credentials required"));
+    lobbsTestSendLocalLine("/install flash sysop demo1");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Installed."));
 }
 
 static void test_command_users_kick()
@@ -186,6 +283,12 @@ inline void lobbsRunCommandTests()
     RUN_TEST(test_command_error_keeps_cache);
     RUN_TEST(test_command_cache_expires);
     RUN_TEST(test_command_fs_cwd);
+    RUN_TEST(test_command_fs_mounts_and_tools);
+    RUN_TEST(test_command_fs_cp_mv);
+    RUN_TEST(test_command_install_guards);
+    RUN_TEST(test_command_install_offline);
+    RUN_TEST(test_command_install_blank_and_local);
+    RUN_TEST(test_command_install_adopts_existing);
     RUN_TEST(test_command_users_kick);
     RUN_TEST(test_command_subcommand_with_args);
     RUN_TEST(test_command_help_catalog_and_topics);
