@@ -198,7 +198,7 @@ static void mailSubSend(LoBBSCommandCtx &ctx)
 }
 
 static const LoBBSVerb mailVerbs[] = {
-    {"list", mailSubList, LOBBS_V_LOGIN, "list — inbox (/p2 …)"},
+    {"list", mailSubList, LOBBS_V_LOGIN, "list — inbox"},
     {"list", nullptr, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "list user — sysop: another inbox"},
     {"read", mailSubReadCmd, LOBBS_V_LOGIN, "read N — read message (/mail N)"},
     {"read", nullptr, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "read user N — sysop: read without marking read"},

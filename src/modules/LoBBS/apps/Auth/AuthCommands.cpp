@@ -272,8 +272,8 @@ static void usersSubDemote(LoBBSCommandCtx &ctx)
 }
 
 static const LoBBSVerb usersVerbs[] = {
-    {"list", usersSubList, LOBBS_V_LOGIN, "list — all users (/p2 …)"},
-    {"find", usersSubFind, LOBBS_V_LOGIN, "find text — filter by username (/p2 …)"},
+    {"list", usersSubList, LOBBS_V_LOGIN, "list — all users"},
+    {"find", usersSubFind, LOBBS_V_LOGIN, "find text — filter by username"},
     {"kick", usersSubKick, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "kick user — sysop: clear sessions"},
     {"promote", usersSubPromote, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "promote user — sysop: grant sysop"},
     {"demote", usersSubDemote, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "demote user — sysop: revoke sysop"},

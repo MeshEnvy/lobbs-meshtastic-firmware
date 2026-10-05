@@ -176,7 +176,7 @@ static void newsSubReadCmd(LoBBSCommandCtx &ctx)
 }
 
 static const LoBBSVerb newsVerbs[] = {
-    {"list", newsSubList, LOBBS_V_LOGIN, "list — news index (/p2 …)"},
+    {"list", newsSubList, LOBBS_V_LOGIN, "list — news index"},
     {"read", newsSubReadCmd, LOBBS_V_LOGIN, "read N — read and mark read"},
     {"unread", newsSubUnread, LOBBS_V_LOGIN, "unread N — mark unread"},
     {"delete", newsSubDelete, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "delete N — delete (sysop)"},
