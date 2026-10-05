@@ -106,14 +106,13 @@ static void slashHelp(LoBBSCommandCtx *ctx, const LoScalar &args)
     replyTopicHelp(*ctx, work);
 }
 
-static const LoBBSSubHelpEntry pagingHelp[] = {
-    {"pN", "pN — next page of last reply (/p2, /43 p2 machine)"},
+static const LoBBSVerb pagingHelpVerbs[] = {
+    {"pN", nullptr, 0, "pN — next page of last reply (/p2, /43 p2 machine)"},
 };
 
 static void filterHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
-    (void)ctx;
-    lobbsHelpForTopic(value, args, "pN", pagingHelp, sizeof(pagingHelp) / sizeof(pagingHelp[0]));
+    lobbsHelpForTable(ctx, value, args, "pN", pagingHelpVerbs, sizeof(pagingHelpVerbs) / sizeof(pagingHelpVerbs[0]));
 }
 
 void lobbsHelpRegisterCommands()

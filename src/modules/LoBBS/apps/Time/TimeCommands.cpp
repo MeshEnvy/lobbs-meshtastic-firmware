@@ -46,9 +46,9 @@ static void handleTime(LoBBSCommandCtx &ctx)
         lobbsCommandReplyError(ctx, "Could not set time.");
 }
 
-static const LoBBSSubHelpEntry timeHelp[] = {
-    {"time", "time — show Unix time and source"},
-    {"time", "time unix — sysop: set clock to Unix epoch"},
+static const LoBBSVerb timeHelpVerbs[] = {
+    {"time", nullptr, 0, "time — show Unix time and source"},
+    {"time", nullptr, LOBBS_V_SYSOP, "time unix — sysop: set clock to Unix epoch"},
 };
 
 static void slashTime(LoBBSCommandCtx *ctx, const LoScalar &args)
@@ -67,8 +67,7 @@ static void filterTimeHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &to
 
 static void filterTimeHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
-    (void)ctx;
-    lobbsHelpForTopic(value, args, "time", timeHelp, sizeof(timeHelp) / sizeof(timeHelp[0]));
+    lobbsHelpForTable(ctx, value, args, "time", timeHelpVerbs, sizeof(timeHelpVerbs) / sizeof(timeHelpVerbs[0]));
 }
 
 void lobbsTimeRegisterCommands()

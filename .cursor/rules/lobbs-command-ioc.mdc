@@ -20,19 +20,19 @@ Player docs: [README.md](../../README.md). Bus behavior: [docs/lobbs-commands.md
 ## Session and core auth
 
 - `LoBBSSession` on `LoBBSCommandCtx` (`nodeId`, `userUuid`, `username`, `isSysop`). Dispatch resolves it once via Auth.
-- Registry helpers: `lobbsCtxLoggedIn`, `lobbsCtxUserUuid`, `lobbsCtxUsername`, `lobbsCommandRequireLogin`, `lobbsCommandRequireSysop`.
+- Registry helpers: `lobbsCtxLoggedIn`, `lobbsCtxIsSysop`, `lobbsCtxUserUuid`, `lobbsCtxUsername`, `lobbsCommandRequireLogin`, `lobbsCommandRequireSysop`.
 - Feature plugins must not `#include` `AuthDal.h`. Use session + `AppUtil`.
 
 ## Actions
 
 - **`slash_cmd`**: `lobbsDoAction("slash_cmd", ctx, args)`. Every subscriber runs; compare `verb` and return silently if not yours. No claim flag. No central unknown-command reply.
 - Dispatch sets `ctx.rest` to the mutable remainder; handlers use `lobbsArgShift`, `lobbsArgRest`, `lobbsArgShiftMany`, and `lobbsArgShiftUint` / `lobbsArgPeekIsUint` (full-token decimal, no `atoi` partial parse).
-- Subcommand apps: `LoBBSVerb` table + `lobbsDispatchSub` (see Mail). Flags: `LOBBS_V_LOGIN`, `LOBBS_V_SYSOP`.
+- Subcommand apps: `LoBBSVerb` table + `lobbsDispatchSub` (see Mail). Flags: `LOBBS_V_LOGIN`, `LOBBS_V_SYSOP`. `fn == nullptr` rows are help-only (dispatch skips them).
 
 ## Filters
 
 - **`help_topics`**: append catalog rows for `/help` (title + short description). Help plugin seeds `help`, `hi`, `pN`.
-- **`help_for_topic`**: query in `args` `LODB_F_TITLE`; set `value` `LODB_F_DESCRIPTION` when matched. Use `lobbsHelpForTable` or `lobbsHelpForTopic`.
+- **`help_for_topic`**: query in `args` `LODB_F_TITLE`; set `value` `LODB_F_DESCRIPTION` when matched. Use `lobbsHelpForTable` on the same `LoBBSVerb` table as dispatch.
 - **`status_lines`**: append one line each; `/status` pages the vector.
 - **`display_human`**: mail/news list and read formatting live in `MsgCommon` (single registration from wireup).
 

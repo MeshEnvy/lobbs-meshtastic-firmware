@@ -175,36 +175,13 @@ bool lobbsSlashVerbIs(const LoScalar &args, const char *verb)
     return verb && args.getString(LOBBS_ARG_VERB, v) && strcasecmp(v.c_str(), verb) == 0;
 }
 
-void lobbsHelpForTopic(LoScalar &value, const LoScalar &args, const char *topic, const LoBBSSubHelpEntry *entries, size_t count)
+static bool lobbsHelpVisible(const LoBBSCommandCtx *ctx, uint8_t flags)
 {
-    std::string query;
-    if (!topic || !entries || !args.getString(LODB_F_TITLE, query) || !lobbsHelpQueryMatches(query.c_str(), topic))
-        return;
-
-    std::string body;
-    bool whole = strcasecmp(query.c_str(), topic) == 0;
-    for (size_t i = 0; i < count; i++) {
-        if (!entries[i].line)
-            continue;
-        if (!whole) {
-            if (!entries[i].verb)
-                continue;
-            char path[80];
-            snprintf(path, sizeof(path), "%s %s", topic, entries[i].verb);
-            if (strcasecmp(query.c_str(), path) != 0)
-                continue;
-        }
-        if (!body.empty())
-            body.push_back('\n');
-        body += entries[i].line;
-        if (!whole)
-            break;
-    }
-    if (!body.empty())
-        value.setString(LODB_F_DESCRIPTION, body);
+    return !(flags & LOBBS_V_SYSOP) || (ctx && lobbsCtxIsSysop(*ctx));
 }
 
-void lobbsHelpForTable(LoScalar &value, const LoScalar &args, const char *topic, const LoBBSVerb *table, size_t count)
+void lobbsHelpForTable(const LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args, const char *topic,
+                       const LoBBSVerb *table, size_t count)
 {
     std::string query;
     if (!topic || !table || !args.getString(LODB_F_TITLE, query) || !lobbsHelpQueryMatches(query.c_str(), topic))
@@ -213,7 +190,7 @@ void lobbsHelpForTable(LoScalar &value, const LoScalar &args, const char *topic,
     std::string body;
     bool whole = strcasecmp(query.c_str(), topic) == 0;
     for (size_t i = 0; i < count; i++) {
-        if (!table[i].help || !table[i].verb)
+        if (!table[i].help || !table[i].verb || !lobbsHelpVisible(ctx, table[i].flags))
             continue;
         if (!whole) {
             char path[80];
@@ -231,16 +208,15 @@ void lobbsHelpForTable(LoScalar &value, const LoScalar &args, const char *topic,
         value.setString(LODB_F_DESCRIPTION, body);
 }
 
-bool lobbsDispatchSub(LoBBSCommandCtx &ctx, const char *topic, const LoBBSVerb *table, size_t count)
+bool lobbsDispatchSub(LoBBSCommandCtx &ctx, const LoBBSVerb *table, size_t count)
 {
-    (void)topic;
     if (!table || count == 0)
         return false;
 
     const char *sub = lobbsArgPeek(ctx);
     if (!sub || strcasecmp(sub, "list") == 0) {
         for (size_t i = 0; i < count; i++) {
-            if (!table[i].verb || strcasecmp(table[i].verb, "list") != 0)
+            if (!table[i].verb || !table[i].fn || strcasecmp(table[i].verb, "list") != 0)
                 continue;
             if (sub && strcasecmp(sub, "list") == 0)
                 lobbsArgShift(ctx);
@@ -257,7 +233,7 @@ bool lobbsDispatchSub(LoBBSCommandCtx &ctx, const char *topic, const LoBBSVerb *
         return false;
 
     for (size_t i = 0; i < count; i++) {
-        if (!table[i].verb || strcasecmp(sub, table[i].verb) != 0)
+        if (!table[i].verb || !table[i].fn || strcasecmp(sub, table[i].verb) != 0)
             continue;
         if ((table[i].flags & LOBBS_V_LOGIN) && !lobbsCommandRequireLogin(ctx))
             return true;
@@ -272,6 +248,11 @@ bool lobbsDispatchSub(LoBBSCommandCtx &ctx, const char *topic, const LoBBSVerb *
 bool lobbsCtxLoggedIn(const LoBBSCommandCtx &ctx)
 {
     return ctx.session.userUuid != 0;
+}
+
+bool lobbsCtxIsSysop(const LoBBSCommandCtx &ctx)
+{
+    return lobbsCtxLoggedIn(ctx) && ctx.session.isSysop;
 }
 
 uint64_t lobbsCtxUserUuid(const LoBBSCommandCtx &ctx)
@@ -303,7 +284,7 @@ bool lobbsCommandRequireLogin(LoBBSCommandCtx &ctx)
 
 bool lobbsCommandRequireSysop(LoBBSCommandCtx &ctx)
 {
-    if (lobbsCtxLoggedIn(ctx) && ctx.session.isSysop)
+    if (lobbsCtxIsSysop(ctx))
         return true;
     LoBBSResponse resp;
     lobbsResponseSetError(resp, "SysOp only.");

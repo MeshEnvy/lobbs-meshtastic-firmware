@@ -216,8 +216,6 @@ static void usersSubFind(LoBBSCommandCtx &ctx)
 
 static void usersSubKick(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireSysop(ctx))
-        return;
     const char *sub = lobbsArgShift(ctx);
     const char *user = lobbsArgShift(ctx);
     if (!sub || strcasecmp(sub, "kick") != 0 || !user) {
@@ -233,8 +231,6 @@ static void usersSubKick(LoBBSCommandCtx &ctx)
 
 static void usersSubPromote(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireSysop(ctx))
-        return;
     const char *sub = lobbsArgShift(ctx);
     const char *user = lobbsArgShift(ctx);
     if (!sub || strcasecmp(sub, "promote") != 0 || !user) {
@@ -250,8 +246,6 @@ static void usersSubPromote(LoBBSCommandCtx &ctx)
 
 static void usersSubDemote(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireSysop(ctx))
-        return;
     const char *sub = lobbsArgShift(ctx);
     const char *user = lobbsArgShift(ctx);
     if (!sub || strcasecmp(sub, "demote") != 0 || !user) {
@@ -277,59 +271,40 @@ static void usersSubDemote(LoBBSCommandCtx &ctx)
     lobbsCommandReplyResponse(ctx, resp);
 }
 
-static const LoBBSSubHelpEntry usersHelp[] = {
-    {"list", "list — all users (/p2 …)"},
-    {"find", "find text — filter by username (/p2 …)"},
-    {"kick", "kick user — sysop: clear sessions"},
-    {"promote", "promote user — sysop: grant sysop"},
-    {"demote", "demote user — sysop: revoke sysop"},
+static const LoBBSVerb usersVerbs[] = {
+    {"list", usersSubList, LOBBS_V_LOGIN, "list — all users (/p2 …)"},
+    {"find", usersSubFind, LOBBS_V_LOGIN, "find text — filter by username (/p2 …)"},
+    {"kick", usersSubKick, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "kick user — sysop: clear sessions"},
+    {"promote", usersSubPromote, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "promote user — sysop: grant sysop"},
+    {"demote", usersSubDemote, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "demote user — sysop: revoke sysop"},
 };
 
-static const LoBBSSubHelpEntry whoamiHelp[] = {
-    {"whoami", "whoami — show logged-in user"},
+static const LoBBSVerb whoamiHelpVerbs[] = {
+    {"whoami", nullptr, LOBBS_V_LOGIN, "whoami — show logged-in user"},
 };
 
-static const LoBBSSubHelpEntry loginHelp[] = {
-    {"login", "login user pass — sign in or create account (pass min 5 chars)"},
+static const LoBBSVerb loginHelpVerbs[] = {
+    {"login", nullptr, 0, "login user pass — sign in or create account (pass min 5 chars)"},
 };
 
-static const LoBBSSubHelpEntry logoutHelp[] = {
-    {"logout", "logout — end session"},
+static const LoBBSVerb logoutHelpVerbs[] = {
+    {"logout", nullptr, LOBBS_V_LOGIN, "logout — end session"},
 };
 
-static const LoBBSSubHelpEntry passwdHelp[] = {
-    {"passwd", "passwd new confirm — change your password"},
-    {"passwd", "passwd user new confirm — sysop: reset user password"},
+static const LoBBSVerb passwdHelpVerbs[] = {
+    {"passwd", nullptr, LOBBS_V_LOGIN, "passwd new confirm — change your password"},
+    {"passwd", nullptr, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "passwd user new confirm — sysop: reset user password"},
 };
 
 static void handleUsers(LoBBSCommandCtx &ctx)
 {
     if (!lobbsCommandRequireLogin(ctx))
         return;
-    const char *sub = lobbsArgPeek(ctx);
-    if (!sub || strcasecmp(sub, "list") == 0) {
-        usersSubList(ctx);
-        return;
+    if (!lobbsDispatchSub(ctx, usersVerbs, sizeof(usersVerbs) / sizeof(usersVerbs[0]))) {
+        LoBBSResponse resp;
+        lobbsResponseSetError(resp, "Unknown command. Try /help users");
+        lobbsCommandReplyResponse(ctx, resp);
     }
-    if (strcasecmp(sub, "find") == 0) {
-        usersSubFind(ctx);
-        return;
-    }
-    if (strcasecmp(sub, "kick") == 0) {
-        usersSubKick(ctx);
-        return;
-    }
-    if (strcasecmp(sub, "promote") == 0) {
-        usersSubPromote(ctx);
-        return;
-    }
-    if (strcasecmp(sub, "demote") == 0) {
-        usersSubDemote(ctx);
-        return;
-    }
-    LoBBSResponse resp;
-    lobbsResponseSetError(resp, "Unknown command. Try /help users");
-    lobbsCommandReplyResponse(ctx, resp);
 }
 
 static void slashAuth(LoBBSCommandCtx *ctx, const LoScalar &args)
@@ -378,12 +353,11 @@ static void filterAuthHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &to
 
 static void filterAuthHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
-    (void)ctx;
-    lobbsHelpForTopic(value, args, "whoami", whoamiHelp, sizeof(whoamiHelp) / sizeof(whoamiHelp[0]));
-    lobbsHelpForTopic(value, args, "login", loginHelp, sizeof(loginHelp) / sizeof(loginHelp[0]));
-    lobbsHelpForTopic(value, args, "logout", logoutHelp, sizeof(logoutHelp) / sizeof(logoutHelp[0]));
-    lobbsHelpForTopic(value, args, "passwd", passwdHelp, sizeof(passwdHelp) / sizeof(passwdHelp[0]));
-    lobbsHelpForTopic(value, args, "users", usersHelp, sizeof(usersHelp) / sizeof(usersHelp[0]));
+    lobbsHelpForTable(ctx, value, args, "whoami", whoamiHelpVerbs, sizeof(whoamiHelpVerbs) / sizeof(whoamiHelpVerbs[0]));
+    lobbsHelpForTable(ctx, value, args, "login", loginHelpVerbs, sizeof(loginHelpVerbs) / sizeof(loginHelpVerbs[0]));
+    lobbsHelpForTable(ctx, value, args, "logout", logoutHelpVerbs, sizeof(logoutHelpVerbs) / sizeof(logoutHelpVerbs[0]));
+    lobbsHelpForTable(ctx, value, args, "passwd", passwdHelpVerbs, sizeof(passwdHelpVerbs) / sizeof(passwdHelpVerbs[0]));
+    lobbsHelpForTable(ctx, value, args, "users", usersVerbs, sizeof(usersVerbs) / sizeof(usersVerbs[0]));
 }
 
 static void filterAuthStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)

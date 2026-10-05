@@ -136,12 +136,6 @@ static void newsSubDelete(LoBBSCommandCtx &ctx)
         lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    if (!ctx.session.isSysop) {
-        LoBBSResponse resp;
-        lobbsResponseSetError(resp, "SysOp only.");
-        lobbsCommandReplyResponse(ctx, resp);
-        return;
-    }
     uint64_t uuid = NewsDal::newsUuid(newsItems[idx - 1].news);
     LoBBSResponse resp;
     lobbsRecordPush(resp.records, news.deleteNewsUuid(uuid) ? "Deleted." : "Failed.");
@@ -199,7 +193,7 @@ static void handleNews(LoBBSCommandCtx &ctx)
         return;
     }
 
-    if (!lobbsDispatchSub(ctx, "news", newsVerbs, sizeof(newsVerbs) / sizeof(newsVerbs[0]))) {
+    if (!lobbsDispatchSub(ctx, newsVerbs, sizeof(newsVerbs) / sizeof(newsVerbs[0]))) {
         LoBBSResponse resp;
         lobbsResponseSetError(resp, "Unknown command. Try /help news");
         lobbsCommandReplyResponse(ctx, resp);
@@ -223,8 +217,7 @@ static void filterNewsHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &to
 
 static void filterNewsHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
-    (void)ctx;
-    lobbsHelpForTable(value, args, "news", newsVerbs, sizeof(newsVerbs) / sizeof(newsVerbs[0]));
+    lobbsHelpForTable(ctx, value, args, "news", newsVerbs, sizeof(newsVerbs) / sizeof(newsVerbs[0]));
 }
 
 static void filterNewsStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)

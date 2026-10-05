@@ -14,12 +14,6 @@
 
 #include "LoBBSStackGuard.h"
 
-static const LoBBSSubHelpEntry yarnHelp[] = {
-    {"view", "view — /yarn shows the tail (no login)"},
-    {"add", "add — /yarn word … (login, quota)"},
-    {"limit", "limit — sysop: /yarn limit SEC WORDS CHARS"},
-};
-
 static void replyYarnView(LoBBSCommandCtx &ctx, bool markSeen)
 {
     char buf[LOBBS_REPLY_BYTES + 1];
@@ -34,8 +28,6 @@ static void replyYarnView(LoBBSCommandCtx &ctx, bool markSeen)
 
 static void yarnSubLimit(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireSysop(ctx))
-        return;
     lobbsArgShift(ctx);
     uint32_t period = 0;
     uint32_t words = 0;
@@ -54,6 +46,12 @@ static void yarnSubLimit(LoBBSCommandCtx &ctx)
     lobbsCommandReply(ctx, reply);
 }
 
+static const LoBBSVerb yarnVerbs[] = {
+    {"view", nullptr, 0, "view — /yarn shows the tail (no login)"},
+    {"add", nullptr, LOBBS_V_LOGIN, "add — /yarn word … (login, quota)"},
+    {"limit", yarnSubLimit, LOBBS_V_SYSOP, "limit — sysop: /yarn limit SEC WORDS CHARS"},
+};
+
 static void handleYarn(LoBBSCommandCtx &ctx)
 {
     const char *peek = lobbsArgPeek(ctx);
@@ -62,10 +60,8 @@ static void handleYarn(LoBBSCommandCtx &ctx)
         return;
     }
 
-    if (strcasecmp(peek, "limit") == 0) {
-        yarnSubLimit(ctx);
+    if (lobbsDispatchSub(ctx, yarnVerbs, sizeof(yarnVerbs) / sizeof(yarnVerbs[0])))
         return;
-    }
 
     if (!lobbsCommandRequireLogin(ctx))
         return;
@@ -100,8 +96,7 @@ static void filterYarnHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &to
 
 static void filterYarnHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
-    (void)ctx;
-    lobbsHelpForTopic(value, args, "yarn", yarnHelp, sizeof(yarnHelp) / sizeof(yarnHelp[0]));
+    lobbsHelpForTable(ctx, value, args, "yarn", yarnVerbs, sizeof(yarnVerbs) / sizeof(yarnVerbs[0]));
 }
 
 static void filterYarnStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)

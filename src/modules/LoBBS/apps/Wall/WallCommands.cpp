@@ -14,12 +14,6 @@
 
 #include "LoBBSStackGuard.h"
 
-static const LoBBSSubHelpEntry wallHelp[] = {
-    {"view", "view — /wall shows 12x12 grid (no login)"},
-    {"paint", "paint — a4x set; -a4 blank; 1/cycle default"},
-    {"limit", "limit — sysop: /wall limit SEC CELLS"},
-};
-
 static void replyGrid(LoBBSCommandCtx &ctx, bool markSeen)
 {
     WallDal &wall = ctx.mod->wall().dal();
@@ -35,8 +29,6 @@ static void replyGrid(LoBBSCommandCtx &ctx, bool markSeen)
 
 static void wallSubLimit(LoBBSCommandCtx &ctx)
 {
-    if (!lobbsCommandRequireSysop(ctx))
-        return;
     lobbsArgShift(ctx);
     uint32_t period = 0;
     uint32_t cells = 0;
@@ -53,6 +45,12 @@ static void wallSubLimit(LoBBSCommandCtx &ctx)
     lobbsCommandReply(ctx, reply);
 }
 
+static const LoBBSVerb wallVerbs[] = {
+    {"view", nullptr, 0, "view — /wall shows 12x12 grid (no login)"},
+    {"paint", nullptr, LOBBS_V_LOGIN, "paint — a4x set; -a4 blank; 1/cycle default"},
+    {"limit", wallSubLimit, LOBBS_V_SYSOP, "limit — sysop: /wall limit SEC CELLS"},
+};
+
 static void handleWall(LoBBSCommandCtx &ctx)
 {
     const char *peek = lobbsArgPeek(ctx);
@@ -61,10 +59,8 @@ static void handleWall(LoBBSCommandCtx &ctx)
         return;
     }
 
-    if (strcasecmp(peek, "limit") == 0) {
-        wallSubLimit(ctx);
+    if (lobbsDispatchSub(ctx, wallVerbs, sizeof(wallVerbs) / sizeof(wallVerbs[0])))
         return;
-    }
 
     if (!lobbsCommandRequireLogin(ctx))
         return;
@@ -99,8 +95,7 @@ static void filterWallHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &to
 
 static void filterWallHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
-    (void)ctx;
-    lobbsHelpForTopic(value, args, "wall", wallHelp, sizeof(wallHelp) / sizeof(wallHelp[0]));
+    lobbsHelpForTable(ctx, value, args, "wall", wallVerbs, sizeof(wallVerbs) / sizeof(wallVerbs[0]));
 }
 
 static void filterWallStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)

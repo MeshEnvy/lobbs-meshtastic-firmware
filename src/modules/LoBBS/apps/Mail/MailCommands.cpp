@@ -198,8 +198,10 @@ static void mailSubSend(LoBBSCommandCtx &ctx)
 }
 
 static const LoBBSVerb mailVerbs[] = {
-    {"list", mailSubList, LOBBS_V_LOGIN, "list — inbox; sysop: list user (then /p2 …)"},
-    {"read", mailSubReadCmd, LOBBS_V_LOGIN, "read N — read message (/mail N); sysop: read user N"},
+    {"list", mailSubList, LOBBS_V_LOGIN, "list — inbox (/p2 …)"},
+    {"list", nullptr, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "list user — sysop: another inbox"},
+    {"read", mailSubReadCmd, LOBBS_V_LOGIN, "read N — read message (/mail N)"},
+    {"read", nullptr, LOBBS_V_LOGIN | LOBBS_V_SYSOP, "read user N — sysop: read without marking read"},
     {"unread", mailSubUnread, LOBBS_V_LOGIN, "unread N — mark message unread"},
     {"delete", mailSubDelete, LOBBS_V_LOGIN, "delete N — delete message from inbox"},
     {"send", mailSubSend, LOBBS_V_LOGIN, "send user message... — send mail"},
@@ -215,7 +217,7 @@ static void handleMail(LoBBSCommandCtx &ctx)
         return;
     }
 
-    if (!lobbsDispatchSub(ctx, "mail", mailVerbs, sizeof(mailVerbs) / sizeof(mailVerbs[0]))) {
+    if (!lobbsDispatchSub(ctx, mailVerbs, sizeof(mailVerbs) / sizeof(mailVerbs[0]))) {
         LoBBSResponse resp;
         lobbsResponseSetError(resp, "Unknown command. Try /help mail");
         lobbsCommandReplyResponse(ctx, resp);
@@ -239,8 +241,7 @@ static void filterMailHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &to
 
 static void filterMailHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
-    (void)ctx;
-    lobbsHelpForTable(value, args, "mail", mailVerbs, sizeof(mailVerbs) / sizeof(mailVerbs[0]));
+    lobbsHelpForTable(ctx, value, args, "mail", mailVerbs, sizeof(mailVerbs) / sizeof(mailVerbs[0]));
 }
 
 static void filterMailStatusLines(LoBBSCommandCtx *ctx, std::vector<LoScalar> &lines, const LoScalar &args)

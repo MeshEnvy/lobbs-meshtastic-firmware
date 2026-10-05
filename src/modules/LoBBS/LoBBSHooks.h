@@ -30,11 +30,6 @@
  * `slash_cmd` args use LOBBS_ARG_VERB / LOBBS_ARG_REST; C++ handlers parse ctx->rest.
  */
 
-struct LoBBSSubHelpEntry {
-    const char *verb;
-    const char *line;
-};
-
 static constexpr int LOBBS_HOOK_PRIORITY_HELP = 0;
 static constexpr int LOBBS_HOOK_PRIORITY_AUTH = 10;
 static constexpr int LOBBS_HOOK_PRIORITY_FEATURE = 20;

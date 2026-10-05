@@ -777,7 +777,7 @@ static void slashFs(LoBBSCommandCtx *ctx, const LoScalar &args)
 static void filterFsHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
 {
     (void)args;
-    if (!ctx || !lobbsCtxLoggedIn(*ctx) || !ctx->session.isSysop)
+    if (!ctx || !lobbsCtxIsSysop(*ctx))
         return;
     lobbsRecordPush(topics, "cd", "set working directory");
     lobbsRecordPush(topics, "pwd", "show working directory");
@@ -796,13 +796,11 @@ static void filterFsHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topi
 
 static void filterFsHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
-    (void)ctx;
     const size_t n = sizeof(fsVerbs) / sizeof(fsVerbs[0]);
     for (size_t i = 0; i < n; i++) {
         if (!fsVerbs[i].verb || !fsVerbs[i].help)
             continue;
-        LoBBSSubHelpEntry e{fsVerbs[i].verb, fsVerbs[i].help};
-        lobbsHelpForTopic(value, args, fsVerbs[i].verb, &e, 1);
+        lobbsHelpForTable(ctx, value, args, fsVerbs[i].verb, &fsVerbs[i], 1);
     }
 }
 

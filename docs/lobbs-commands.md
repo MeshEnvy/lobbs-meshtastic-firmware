@@ -24,7 +24,7 @@ List and read responses are `LoBBSResponse` records; plain-text serialization ru
 
 `/hi` is a welcome screen (not the full command catalog). `/status` uses **`status_lines`**, not help.
 
-Subcommand tables can use `LoBBSVerb` with `lobbsHelpForTable`, or legacy `LoBBSSubHelpEntry` with `lobbsHelpForTopic`.
+Subcommands use one `LoBBSVerb` table for dispatch (`lobbsDispatchSub`) and help (`lobbsHelpForTable`). Rows with `fn == nullptr` are help-only. Rows flagged `LOBBS_V_SYSOP` are hidden from help and blocked at dispatch unless the caller is a sysop.
 
 ## Slash handlers
 
