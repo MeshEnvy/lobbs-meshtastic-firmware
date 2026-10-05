@@ -16,9 +16,9 @@ Planned major release **2.0.0** (not tagged yet).
 
 ### Added
 
-- Stateless slash CLI: `/[id] command args…`, replies optionally prefixed `<id>`. No menu stack or page cache on device.
+- Stateless slash CLI: `/[id] command args…`, replies optionally prefixed `<id>`. No menu stack. The last successful reply is cached for `/pN` paging.
 - Plugin command IoC: Auth, Mail, News, Help, Status, Wall, Yarn apps register via filters.
-- Lists paginate with `pN` (re-query offset/limit).
+- Long replies page with `/p2`, `/p3`, … against the cached last reply, with or without a request id.
 - `/wall`: shared 12×12 ASCII canvas, batch paint, erase tokens, paint quota, new/seen on `/status` when logged in.
 - `/news`: announcement feed (list, read, post, unread, sysop delete).
 - `/yarn`: collaborative word tail and sysop quotas.

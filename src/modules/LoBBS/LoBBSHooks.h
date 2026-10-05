@@ -21,6 +21,7 @@
  * | Hook             | Kind   | Initial value (caller)          | args                  |
  * |------------------|--------|---------------------------------|-----------------------|
  * | `slash_cmd`      | action | n/a                             | verb, rest            |
+ * | `seed`           | action | n/a                             | none                  |
  * | `help_topics`    | list   | builtin topics                  | none                  |
  * | `help_for_topic` | record | title = topic, no description   | title = query         |
  * | `status_lines`   | list   | empty                           | none                  |
