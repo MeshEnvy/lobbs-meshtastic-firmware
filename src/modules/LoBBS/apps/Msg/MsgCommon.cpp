@@ -9,6 +9,8 @@
 #include <lodb/LoDB.h>
 #include <string>
 
+#include "LoBBSStackGuard.h"
+
 bool lobbsMsgShiftIndex(LoBBSCommandCtx &ctx, size_t count, const char *usage, const char *badNumMsg, uint32_t &idxOut)
 {
     for (size_t i = 0; i < count; i++)

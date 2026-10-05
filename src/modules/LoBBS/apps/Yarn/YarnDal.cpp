@@ -7,6 +7,8 @@
 #include <cstring>
 #include <string>
 
+#include "LoBBSStackGuard.h"
+
 YarnDal::YarnDal(LoDb &lodb) : lodb_(lodb)
 {
     lodb_.registerTable("yarn_current");

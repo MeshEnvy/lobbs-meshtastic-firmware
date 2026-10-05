@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "LoBBSStackGuard.h"
+
 WallDal::WallDal(LoDb &lodb) : lodb_(lodb)
 {
     lodb_.registerTable("wall_canvas");

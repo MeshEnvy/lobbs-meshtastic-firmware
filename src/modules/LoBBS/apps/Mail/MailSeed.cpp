@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <vector>
 
+#include "LoBBSStackGuard.h"
+
 void lobbsSeedMail(LoBBSModule &mod)
 {
     MailDal &mail = mod.mail().dal();

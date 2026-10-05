@@ -8,6 +8,8 @@
 #include "WallDal.h"
 #include "WallSeed.h"
 
+#include "LoBBSStackGuard.h"
+
 void lobbsSeedWall(LoBBSModule &mod)
 {
     WallDal &wall = mod.wall().dal();

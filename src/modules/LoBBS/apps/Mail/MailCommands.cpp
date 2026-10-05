@@ -17,6 +17,8 @@
 #include <lodb/LoDB.h>
 #include <vector>
 
+#include "LoBBSStackGuard.h"
+
 static void mailAppendListRecord(LoBBSModule *mod, LoBBSResponse &resp, uint32_t oneBasedIndex, const LoScalar &mail)
 {
     char name[LOBBS_USERNAME_BUFFER_SIZE];

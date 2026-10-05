@@ -10,6 +10,8 @@
 #include <cstring>
 #include <vector>
 
+#include "LoBBSStackGuard.h"
+
 static void normalizeUsername(const char *username, char *normalized)
 {
     size_t len = strlen(username);

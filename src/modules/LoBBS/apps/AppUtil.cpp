@@ -12,6 +12,8 @@
 #include <cstring>
 #include <lodb/LoDB.h>
 
+#include "LoBBSStackGuard.h"
+
 void lobbsAppCopyCapped(char *dst, size_t dstCap, const char *src, size_t srcCap)
 {
     size_t n = 0;

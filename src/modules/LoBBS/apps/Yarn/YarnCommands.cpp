@@ -12,6 +12,8 @@
 #include <lodb/LoDB.h>
 #include <strings.h>
 
+#include "LoBBSStackGuard.h"
+
 static const LoBBSSubHelpEntry yarnHelp[] = {
     {"view", "view — /yarn shows the tail (no login)"},
     {"add", "add — /yarn word … (login, quota)"},

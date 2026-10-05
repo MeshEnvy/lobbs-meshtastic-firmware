@@ -15,6 +15,8 @@
 #include <lofs/LoFS.h>
 #include <loscalar/LoScalar.h>
 
+#include "LoBBSStackGuard.h"
+
 static LoBBSInstallState gInstallState = LoBBSInstallState::Blank;
 static char gInstallRoot[32] = {0};
 static char gOfflineMount[16] = {0};

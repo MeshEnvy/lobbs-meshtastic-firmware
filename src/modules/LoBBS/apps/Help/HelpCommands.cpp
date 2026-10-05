@@ -9,6 +9,8 @@
 #include <cstring>
 #include <lodb/LoDB.h>
 
+#include "LoBBSStackGuard.h"
+
 static void lobbsTrimRestInPlace(char *s)
 {
     if (!s)

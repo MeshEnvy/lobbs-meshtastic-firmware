@@ -14,6 +14,8 @@
 #include "apps/Wall/WallCommands.h"
 #include "apps/Yarn/YarnCommands.h"
 
+#include "LoBBSStackGuard.h"
+
 void lobbsWireup()
 {
     lobbsHooksReset();

@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "LoBBSStackGuard.h"
+
 NewsDal::NewsDal(LoDb &lodb) : lodb_(lodb)
 {
     lodb_.registerTable("news");

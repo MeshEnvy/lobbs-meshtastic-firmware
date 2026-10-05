@@ -5,6 +5,8 @@
 #include "../../LoBBSHooks.h"
 #include "../../LoBBSResponse.h"
 
+#include "LoBBSStackGuard.h"
+
 static void handleStatus(LoBBSCommandCtx &ctx)
 {
     LoBBSResponse resp;

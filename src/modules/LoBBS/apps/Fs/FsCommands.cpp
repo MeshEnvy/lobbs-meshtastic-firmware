@@ -13,6 +13,8 @@
 #include <lofs/LoFS.h>
 #include <string>
 
+#include "LoBBSStackGuard.h"
+
 static constexpr int FS_LS_MAX_NAMES = 128;
 static constexpr size_t FS_NAME_BYTES = 48;
 

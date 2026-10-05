@@ -8,6 +8,8 @@
 #include "LoBBSModule.h"
 #include "LoBBSSeed.h"
 
+#include "LoBBSStackGuard.h"
+
 void lobbsSeedAll(LoBBSModule &mod)
 {
     LoBBSCommandCtx ctx;

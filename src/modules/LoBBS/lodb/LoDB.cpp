@@ -18,6 +18,8 @@
 #include <memory>
 #include <new>
 
+#include "LoBBSStackGuard.h"
+
 static_assert(LODB_FILE_IO_BUFFER_SIZE <= LODB_MAX_RECORD_FILE_BYTES,
               "encode buffer cannot exceed max on-disk record (get would reject writes)");
 

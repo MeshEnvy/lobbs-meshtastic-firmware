@@ -8,6 +8,8 @@
 #include "YarnDal.h"
 #include "YarnSeed.h"
 
+#include "LoBBSStackGuard.h"
+
 void lobbsSeedYarn(LoBBSModule &mod)
 {
     YarnDal &yarn = mod.yarn().dal();

@@ -4,6 +4,8 @@
 #include "LoBBSHooks.h"
 #include <lodb/LoDB.h>
 
+#include "LoBBSStackGuard.h"
+
 static void lobbsDisplayGeneric(const LoScalar &record, std::string &lineOut)
 {
     std::string title;

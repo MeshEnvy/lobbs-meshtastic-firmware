@@ -6,6 +6,8 @@
 #include <cstring>
 #include <vector>
 
+#include "LoBBSStackGuard.h"
+
 static constexpr size_t LOBBS_PAGER_FOOTER_MAX = 16;
 static constexpr int LOBBS_PAGER_MAX_PAGES = 64;
 static constexpr char LOBBS_LINE_TRUNC[] = "[...]";

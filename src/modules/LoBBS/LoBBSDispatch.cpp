@@ -8,6 +8,8 @@
 #include "mesh/NodeDB.h"
 #include <cstring>
 
+#include "LoBBSStackGuard.h"
+
 static void lobbsTrimLine(char *line)
 {
     if (!line)
@@ -63,6 +65,15 @@ ProcessMessage lobbsDispatchReceived(LoBBSModule *mod, const meshtastic_MeshPack
 
     const LoBBSSession session = lobbsResolveSession(mod, getFrom(&mp));
     lobbsCommandsHandle(mod, mp, session, mod->msgBuffer);
+#ifdef ARCH_NRF52
+    // The loop stack has no overflow trap; warn once while there is still room to see the log.
+    static bool lowStackWarned = false;
+    unsigned headroom = (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t));
+    if (!lowStackWarned && headroom < 1024) {
+        lowStackWarned = true;
+        LOG_WARN("LoBBS loop stack headroom low: %u B", headroom);
+    }
+#endif
     return ProcessMessage::CONTINUE;
 }
 

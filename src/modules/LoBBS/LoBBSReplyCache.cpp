@@ -6,6 +6,8 @@
 #include <map>
 #include <string>
 
+#include "LoBBSStackGuard.h"
+
 struct LobbsReplyCacheEntry {
     LoBBSResponse resp;
     uint32_t expiresSec = 0;

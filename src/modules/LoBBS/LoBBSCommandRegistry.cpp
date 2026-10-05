@@ -14,6 +14,8 @@
 #include <cstring>
 #include <lodb/LoDB.h>
 
+#include "LoBBSStackGuard.h"
+
 static void lobbsSkipWs(char *&p)
 {
     while (p && (*p == ' ' || *p == '\t'))

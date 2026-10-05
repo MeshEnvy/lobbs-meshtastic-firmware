@@ -4,6 +4,8 @@
 #include "LoBBSReply.h"
 #include <cstdio>
 
+#include "LoBBSStackGuard.h"
+
 bool lobbsPaginateMachine(uint32_t reqId, const std::string &document, uint32_t page1, std::string &pageOut, const char **errMsg)
 {
     pageOut.clear();

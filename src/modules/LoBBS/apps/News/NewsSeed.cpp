@@ -9,6 +9,8 @@
 #include "NewsSeed.h"
 #include <cstdio>
 
+#include "LoBBSStackGuard.h"
+
 void lobbsSeedNews(LoBBSModule &mod)
 {
     NewsDal &news = mod.news().dal();

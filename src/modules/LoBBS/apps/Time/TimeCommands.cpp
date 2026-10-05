@@ -12,6 +12,8 @@
 #include <stdint.h>
 #include <sys/time.h>
 
+#include "LoBBSStackGuard.h"
+
 static void handleTime(LoBBSCommandCtx &ctx)
 {
     const char *peek = lobbsArgPeek(ctx);

@@ -8,6 +8,8 @@
 #include "AuthSeed.h"
 #include <cstdio>
 
+#include "LoBBSStackGuard.h"
+
 void lobbsSeedAuth(LoBBSModule &mod)
 {
     AuthDal &auth = mod.auth().dal();

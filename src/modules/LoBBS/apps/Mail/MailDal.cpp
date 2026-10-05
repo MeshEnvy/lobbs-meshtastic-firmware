@@ -7,6 +7,8 @@
 #include "gps/RTC.h"
 #include <cstring>
 
+#include "LoBBSStackGuard.h"
+
 MailDal::MailDal(LoDb &lodb) : lodb_(lodb)
 {
     lodb_.registerTable("mail");

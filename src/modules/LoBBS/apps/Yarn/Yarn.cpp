@@ -2,6 +2,8 @@
 
 #include "Yarn.h"
 
+#include "LoBBSStackGuard.h"
+
 YarnApp::YarnApp(LoDb &lodb) : dal_(lodb) {}
 
 #endif

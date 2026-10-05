@@ -14,6 +14,8 @@
 #include <lodb/LoDB.h>
 #include <string>
 
+#include "LoBBSStackGuard.h"
+
 static void authAppendUserRecord(LoBBSResponse &resp, const LoScalar &user)
 {
     char name[LOBBS_USERNAME_BUFFER_SIZE];

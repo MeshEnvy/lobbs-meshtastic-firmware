@@ -12,6 +12,8 @@
 #include <lodb/LoDB.h>
 #include <strings.h>
 
+#include "LoBBSStackGuard.h"
+
 static const LoBBSSubHelpEntry wallHelp[] = {
     {"view", "view — /wall shows 12x12 grid (no login)"},
     {"paint", "paint — a4x set; -a4 blank; 1/cycle default"},

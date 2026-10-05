@@ -4,6 +4,8 @@
 #include "configuration.h"
 #include <cstring>
 
+#include "LoBBSStackGuard.h"
+
 enum class LobbsHookKind : uint8_t { Action, Record, List };
 
 struct LobbsHookEntry {

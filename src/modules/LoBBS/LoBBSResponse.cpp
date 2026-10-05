@@ -13,6 +13,8 @@
 #include <cstring>
 #include <lodb/LoDB.h>
 
+#include "LoBBSStackGuard.h"
+
 void lobbsResponseSetError(LoBBSResponse &resp, const char *message)
 {
     resp.ok = false;

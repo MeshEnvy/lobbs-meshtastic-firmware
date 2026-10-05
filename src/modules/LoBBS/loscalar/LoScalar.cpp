@@ -3,6 +3,8 @@
 #include <cstring>
 #include <loscalar/LoScalar.h>
 
+#include "LoBBSStackGuard.h"
+
 static constexpr uint32_t kLoScalarFieldMax = 99;
 
 static bool loscalarFieldOk(uint32_t field)

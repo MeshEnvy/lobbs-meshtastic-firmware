@@ -26,6 +26,8 @@ extern SPIClass SPI_HSPI;
 #endif
 #endif
 
+#include "LoBBSStackGuard.h"
+
 LoFS::Mount LoFS::mounts[4];
 int LoFS::mountCount = 0;
 bool LoFS::begun = false;

@@ -18,6 +18,8 @@
 #include <lodb/LoDB.h>
 #include <vector>
 
+#include "LoBBSStackGuard.h"
+
 static void newsAppendListRecord(LoBBSModule *mod, LoBBSResponse &resp, uint32_t oneBasedIndex, const LoBBSNewsEntry &entry)
 {
     const LoScalar &news = entry.news;
