@@ -1,8 +1,14 @@
+---
+description: LoBBS slash CLI — action/filter bus and plugin registration
+globs: src/modules/LoBBS/**/*
+alwaysApply: false
+---
+
 # LoBBS command IoC
 
 LoBBS is a stateless slash CLI over mesh DMs. **Plugins own verbs and filter lines.** The registry peels one verb and runs the bus. One wireup file lists plugins.
 
-Player docs: [README.md](../../README.md). Bus behavior: [lobbs-commands.md](../../src/modules/LoBBS/docs/lobbs-commands.md).
+Player docs: [README.md](../../README.md) and [lobbs-daily.md](../../src/modules/LoBBS/docs/lobbs-daily.md). Bus behavior: [lobbs-internals.md](../../src/modules/LoBBS/docs/lobbs-internals.md). New apps: [lobbs-plugins.md](../../src/modules/LoBBS/docs/lobbs-plugins.md). Keep docs current: [lobbs-docs.mdc](lobbs-docs.mdc).
 
 ## Required layout
 
@@ -26,6 +32,7 @@ Player docs: [README.md](../../README.md). Bus behavior: [lobbs-commands.md](../
 ## Actions
 
 - **`slash_cmd`**: `lobbsDoAction("slash_cmd", ctx, args)`. Every subscriber runs; compare `verb` and return silently if not yours. No claim flag. No central unknown-command reply.
+- **`seed`**: `lobbsDoAction("seed", ctx, args)` on demo and test builds (`LOBBS_SEED`). Each app seeds its own tables.
 - Dispatch sets `ctx.rest` to the mutable remainder; handlers use `lobbsArgShift`, `lobbsArgRest`, `lobbsArgShiftMany`, and `lobbsArgShiftUint` / `lobbsArgPeekIsUint` (full-token decimal, no `atoi` partial parse).
 - Subcommand apps: `LoBBSVerb` table + `lobbsDispatchSub` (see Mail). Flags: `LOBBS_V_LOGIN`, `LOBBS_V_SYSOP`. `fn == nullptr` rows are help-only (dispatch skips them).
 
@@ -33,7 +40,7 @@ Player docs: [README.md](../../README.md). Bus behavior: [lobbs-commands.md](../
 
 - **`help_topics`**: append catalog rows for `/help` (title + short description). Help plugin seeds `help`, `hi`, `pN`.
 - **`help_for_topic`**: query in `args` `LODB_F_TITLE`; set `value` `LODB_F_DESCRIPTION` when matched. Use `lobbsHelpForTable` on the same `LoBBSVerb` table as dispatch.
-- **`status_lines`**: append one line each; `/status` pages the vector.
+- **`status_lines`**: append `{title, description}` records; `/status` renders them as `title (description)`.
 - **`display_human`**: mail/news list and read formatting live in `MsgCommon` (single registration from wireup).
 
 Priority constants: `LOBBS_HOOK_PRIORITY_*` in `LoBBSHooks.h`. Hooks insert in priority order at register time.
@@ -46,6 +53,7 @@ Priority constants: `LOBBS_HOOK_PRIORITY_*` in `LoBBSHooks.h`. Hooks insert in p
 - Fs verbs are top-level (`ls`, `cat`, …) with sysop gate inside handlers.
 - Call `lobbsWireup()` once from `LoBBSModule` construction.
 - Use `lobbsRecordPush` for status/help line records. Use `LoDb::upsert` for idempotent saves in DALs.
+- Include `LoBBSStackGuard.h` last in every LoBBS `.cpp` (512-byte stack cap per function on nRF52).
 
 ## Don't
 
