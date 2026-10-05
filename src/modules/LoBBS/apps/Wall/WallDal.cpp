@@ -41,13 +41,7 @@ static void wallSealCells(char *cells)
 
 uint32_t WallDal::computeCrc32(const uint8_t *data, size_t len)
 {
-    uint32_t crc = 0xffffffff;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (int b = 0; b < 8; b++)
-            crc = (crc >> 1) ^ (0xedb88320 & (~((crc & 1) - 1)));
-    }
-    return ~crc;
+    return lobbsCrc32(data, len);
 }
 
 void WallDal::loadCanvas(CanvasState &out)

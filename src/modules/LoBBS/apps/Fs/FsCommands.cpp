@@ -7,9 +7,14 @@
 #include "../../LoBBSReply.h"
 #include "../../LoBBSReplyCache.h"
 #include "../../LoBBSResponse.h"
+#include "../AppUtil.h"
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <lodb/LoDB.h>
+#include <lofs/Glob.h>
 #include <lofs/LoFS.h>
 #include <string>
 
@@ -17,60 +22,6 @@
 
 static constexpr int FS_LS_MAX_NAMES = 128;
 static constexpr size_t FS_NAME_BYTES = 48;
-
-static bool fsHasGlobMeta(const char *s)
-{
-    for (; s && *s; s++) {
-        if (*s == '*' || *s == '?')
-            return true;
-    }
-    return false;
-}
-
-static bool fsGlobMatch(const char *pat, const char *str)
-{
-    if (!*pat)
-        return !*str;
-    if (*pat == '*') {
-        if (!pat[1])
-            return true;
-        for (; *str; str++) {
-            if (fsGlobMatch(pat + 1, str))
-                return true;
-        }
-        return fsGlobMatch(pat + 1, str);
-    }
-    if (*pat == '?') {
-        if (!*str)
-            return false;
-        return fsGlobMatch(pat + 1, str + 1);
-    }
-    if (*pat != *str)
-        return false;
-    return fsGlobMatch(pat + 1, str + 1);
-}
-
-static bool fsGlobBeforeLastName(const char *path)
-{
-    if (!path)
-        return false;
-    const char *lastSlash = strrchr(path, '/');
-    const char *end = lastSlash ? lastSlash : path;
-    for (const char *p = path; p < end; p++) {
-        if (*p == '*' || *p == '?')
-            return true;
-    }
-    return false;
-}
-
-static bool fsLastComponentHasGlob(const char *path)
-{
-    if (!path)
-        return false;
-    const char *lastSlash = strrchr(path, '/');
-    const char *last = lastSlash ? lastSlash + 1 : path;
-    return fsHasGlobMeta(last);
-}
 
 struct FsLsCollect {
     const char *pattern;
@@ -86,7 +37,7 @@ static bool fsLsCollectCb(void *ctx, const char *basename, bool isDirectory)
 {
     (void)isDirectory;
     auto *c = (FsLsCollect *)ctx;
-    if (!fsGlobMatch(c->pattern, basename))
+    if (!lobfsGlobMatch(c->pattern, basename))
         return true;
     if (c->count >= FS_LS_MAX_NAMES) {
         c->truncated = true;
@@ -102,64 +53,26 @@ static bool fsLsCollectCb(void *ctx, const char *basename, bool isDirectory)
     return true;
 }
 
-struct FsMatchCtx {
-    const char *pattern;
-    const char *dirPath;
-    char *out;
-    size_t outCap;
-    int count;
-};
-
-static bool fsMatchFileCb(void *ctx, const char *basename, bool isDirectory)
-{
-    if (isDirectory)
-        return true;
-    auto *mc = (FsMatchCtx *)ctx;
-    if (!fsGlobMatch(mc->pattern, basename))
-        return true;
-    if (mc->count == 0)
-        snprintf(mc->out, mc->outCap, "%s/%s", mc->dirPath, basename);
-    mc->count++;
-    return true;
-}
-
 /** Absolute `path` with an optional glob on the last name -> one file in `out`. Splits `path` in place while listing. */
 static bool fsResolveOneFilePath(char *path, char *out, size_t outCap, LoBBSCommandCtx &ctx)
 {
-    if (fsGlobBeforeLastName(path)) {
+    switch (lobfsGlobResolveOneFile(path, out, outCap)) {
+    case LobfsGlobResolve::Ok:
+        return true;
+    case LobfsGlobResolve::GlobBeforeLast:
         lobbsCommandReplyError(ctx, "glob only on the last name");
         return false;
-    }
-
-    if (!fsLastComponentHasGlob(path)) {
-        strncpy(out, path, outCap - 1);
-        out[outCap - 1] = '\0';
-        return true;
-    }
-
-    char *lastSlash = strrchr(path, '/');
-    FsMatchCtx m{};
-    m.pattern = lastSlash + 1;
-    m.dirPath = lastSlash == path ? "/" : path;
-    m.out = out;
-    m.outCap = outCap;
-    *lastSlash = '\0';
-    bool listed = LoFS::list(m.dirPath, &m, fsMatchFileCb);
-    *lastSlash = '/';
-
-    if (!listed) {
+    case LobfsGlobResolve::NoDir:
         lobbsCommandReplyError(ctx, "No such directory.");
         return false;
-    }
-    if (m.count == 0) {
+    case LobfsGlobResolve::NoMatch:
         lobbsCommandReplyError(ctx, "No match.");
         return false;
-    }
-    if (m.count > 1) {
+    case LobfsGlobResolve::ManyMatches:
         lobbsCommandReplyError(ctx, "Many matches.");
         return false;
     }
-    return true;
+    return false;
 }
 
 /** Append `src`'s components to out[0..len), folding `.` and `..`. False if the result does not fit. */
@@ -264,14 +177,14 @@ static void handleLs(LoBBSCommandCtx &ctx)
     const char *pathTok = lobbsArgShift(ctx);
     if (!fsResolveOrReply(ctx, pathTok ? pathTok : ".", spec, sizeof(spec)))
         return;
-    if (fsGlobBeforeLastName(spec)) {
+    if (lobfsGlobBeforeLastName(spec)) {
         lobbsCommandReplyError(ctx, "glob only on the last name");
         return;
     }
 
     const char *dir = spec;
     const char *pat = "*";
-    if (fsLastComponentHasGlob(spec)) {
+    if (lobfsGlobLastComponentHasMeta(spec)) {
         char *lastSlash = strrchr(spec, '/');
         pat = lastSlash + 1;
         *lastSlash = '\0';
@@ -403,7 +316,7 @@ static void handleRm(LoBBSCommandCtx &ctx)
     char spec[256];
     if (!fsResolveAbsoluteOrReply(ctx, arg, spec, sizeof(spec)))
         return;
-    if (fsHasGlobMeta(spec)) {
+    if (lobfsGlobHasMeta(spec)) {
         lobbsCommandReplyError(ctx, "No glob.");
         return;
     }
@@ -437,7 +350,7 @@ static void handleRmdir(LoBBSCommandCtx &ctx)
     char spec[256];
     if (!fsResolveAbsoluteOrReply(ctx, arg, spec, sizeof(spec)))
         return;
-    if (fsHasGlobMeta(spec)) {
+    if (lobfsGlobHasMeta(spec)) {
         lobbsCommandReplyError(ctx, "No glob.");
         return;
     }
@@ -496,7 +409,7 @@ static void handleRmtree(LoBBSCommandCtx &ctx)
     }
     if (fsRefuseCwdTarget(ctx, path, "rmtree"))
         return;
-    if (fsHasGlobMeta(path)) {
+    if (lobfsGlobHasMeta(path)) {
         lobbsCommandReplyError(ctx, "No glob.");
         return;
     }
@@ -607,6 +520,163 @@ static struct {
     char dst[256];
 } fsPairScratch;
 
+static constexpr size_t FS_UPLOAD_DECODE_MAX = 160;
+static uint8_t fsUploadDecodeScratch[FS_UPLOAD_DECODE_MAX];
+
+static int fsB62CharValue(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'A' && c <= 'Z')
+        return c - 'A' + 10;
+    if (c >= 'a' && c <= 'z')
+        return c - 'a' + 36;
+    return -1;
+}
+
+static int fsB62DecodedByteCount(size_t charLen)
+{
+    switch (charLen) {
+    case 2:
+        return 1;
+    case 3:
+        return 2;
+    case 5:
+        return 3;
+    case 6:
+        return 4;
+    case 7:
+        return 5;
+    case 9:
+        return 6;
+    case 10:
+        return 7;
+    case 11:
+        return 8;
+    default:
+        return -1;
+    }
+}
+
+/** Decode one base62 chunk into out (max outCap). Returns byte count or -1. */
+static int fsB62DecodeChunk(const char *b62, uint8_t *out, size_t outCap)
+{
+    if (!b62 || !out)
+        return -1;
+    size_t charLen = strlen(b62);
+    int byteCount = fsB62DecodedByteCount(charLen);
+    if (byteCount < 0 || (size_t)byteCount > outCap)
+        return -1;
+
+    uint64_t val = 0;
+    for (size_t i = 0; i < charLen; i++) {
+        int d = fsB62CharValue(b62[i]);
+        if (d < 0)
+            return -1;
+        val = val * 62 + (uint64_t)d;
+    }
+
+    uint64_t maxVal = byteCount >= 8 ? UINT64_MAX : ((uint64_t)1 << (8 * (unsigned)byteCount)) - 1;
+    if (val > maxVal)
+        return -1;
+
+    for (int i = 0; i < byteCount; i++)
+        out[i] = (uint8_t)((val >> (8 * (byteCount - 1 - i))) & 0xff);
+    return byteCount;
+}
+
+static bool fsParentIsDirectory(const char *path)
+{
+    if (!path || path[0] != '/')
+        return false;
+    char parent[256];
+    strncpy(parent, path, sizeof(parent) - 1);
+    parent[sizeof(parent) - 1] = '\0';
+    char *slash = strrchr(parent, '/');
+    if (!slash)
+        return false;
+    if (slash == parent) {
+        parent[1] = '\0';
+        return LoFS::isDirectory(parent);
+    }
+    *slash = '\0';
+    return LoFS::isDirectory(parent);
+}
+
+static bool fsParseCrcFromBasename(const char *path, uint32_t &crcOut)
+{
+    crcOut = 0;
+    if (!path)
+        return false;
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+    const char *found = nullptr;
+    for (const char *p = base; *p;) {
+        const char *dot = strchr(p, '.');
+        size_t segLen = dot ? (size_t)(dot - p) : strlen(p);
+        if (segLen == 8) {
+            bool hex = true;
+            for (size_t i = 0; i < 8; i++) {
+                if (!isxdigit((unsigned char)p[i])) {
+                    hex = false;
+                    break;
+                }
+            }
+            if (hex)
+                found = p;
+        }
+        if (!dot)
+            break;
+        p = dot + 1;
+    }
+    if (!found)
+        return false;
+    char hex[9];
+    memcpy(hex, found, 8);
+    hex[8] = '\0';
+    char *end = nullptr;
+    unsigned long v = strtoul(hex, &end, 16);
+    if (end != hex + 8)
+        return false;
+    crcOut = (uint32_t)v;
+    return true;
+}
+
+static void fsReplyMove(LoBBSCommandCtx &ctx, LoFSMoveResult r)
+{
+    switch (r) {
+    case LoFSMoveResult::Ok:
+        lobbsCommandReply(ctx, "Moved.");
+        break;
+    case LoFSMoveResult::RefusedMount:
+        lobbsCommandReplyError(ctx, "Refused.");
+        break;
+    case LoFSMoveResult::DstExists:
+        lobbsCommandReplyError(ctx, "Destination exists.");
+        break;
+    case LoFSMoveResult::SrcMissing:
+        lobbsCommandReplyError(ctx, "No such file.");
+        break;
+    case LoFSMoveResult::SrcIsDir:
+    case LoFSMoveResult::CrossMountDir:
+        lobbsCommandReplyError(ctx, "Cross-mount directory move not supported.");
+        break;
+    case LoFSMoveResult::NoSpace:
+        lobbsCommandReplyError(ctx, "Not enough space.");
+        break;
+    case LoFSMoveResult::CopyFailed:
+    case LoFSMoveResult::Failed:
+        lobbsCommandReplyError(ctx, "Failed.");
+        break;
+    case LoFSMoveResult::SrcNotRemoved:
+        lobbsCommandReplyError(ctx, "Copied, but source not removed.");
+        break;
+    case LoFSMoveResult::CrcMismatch:
+        lobbsCommandReplyError(ctx, "CRC mismatch.");
+        break;
+    }
+}
+
 static void handleCp(LoBBSCommandCtx &ctx)
 {
     fsSessionPrep(ctx);
@@ -616,7 +686,7 @@ static void handleCp(LoBBSCommandCtx &ctx)
         lobbsCommandReplyError(ctx, "Usage: /cp src dst");
         return;
     }
-    if (fsHasGlobMeta(dstSpec)) {
+    if (lobfsGlobHasMeta(dstSpec)) {
         lobbsCommandReplyError(ctx, "No glob on destination.");
         return;
     }
@@ -656,7 +726,7 @@ static void handleMv(LoBBSCommandCtx &ctx)
         lobbsCommandReplyError(ctx, "Usage: /mv src dst");
         return;
     }
-    if (fsHasGlobMeta(dstSpec)) {
+    if (lobfsGlobHasMeta(dstSpec)) {
         lobbsCommandReplyError(ctx, "No glob on destination.");
         return;
     }
@@ -666,49 +736,153 @@ static void handleMv(LoBBSCommandCtx &ctx)
         return;
     if (!fsResolveOrReply(ctx, dstSpec, dst, sizeof(dst)))
         return;
-    if (LoFS::isMountPoint(src) || LoFS::isMountPoint(dst)) {
+    if (fsRefuseCwdTarget(ctx, src, "mv"))
+        return;
+    fsReplyMove(ctx, LoFS::move(src, dst));
+}
+
+static void handleUpload(LoBBSCommandCtx &ctx)
+{
+    fsSessionPrep(ctx);
+    const char *pathSpec = lobbsArgShift(ctx);
+    if (!pathSpec) {
+        lobbsCommandReplyError(ctx, "Usage: /upload path [offset:b62]");
+        return;
+    }
+    if (lobfsGlobHasMeta(pathSpec)) {
+        lobbsCommandReplyError(ctx, "No glob.");
+        return;
+    }
+
+    char path[256];
+    if (!fsResolveOrReply(ctx, pathSpec, path, sizeof(path)))
+        return;
+    if (LoFS::isMountPoint(path)) {
         lobbsCommandReplyError(ctx, "Refused.");
         return;
     }
-    if (fsRefuseCwdTarget(ctx, src, "mv"))
+
+    const char *chunkTok = lobbsArgShift(ctx);
+    if (!chunkTok) {
+        uint32_t size = 0;
+        bool isDir = false;
+        if (LoFS::stat(path, &size, &isDir)) {
+            if (isDir) {
+                lobbsCommandReplyError(ctx, "Is a directory.");
+                return;
+            }
+        } else if (!fsParentIsDirectory(path)) {
+            lobbsCommandReplyError(ctx, "No such directory.");
+            return;
+        }
+        char line[32];
+        snprintf(line, sizeof(line), "Size %u.", (unsigned)size);
+        lobbsCommandReply(ctx, line);
         return;
-    if (LoFS::exists(dst)) {
-        lobbsCommandReplyError(ctx, "Destination exists.");
+    }
+    if (lobbsArgHasMore(ctx)) {
+        lobbsCommandReplyError(ctx, "Usage: /upload path offset:b62");
         return;
     }
 
-    const char *srcMount = LoFS::mountNameForPath(src);
-    const char *dstMount = LoFS::mountNameForPath(dst);
-    if (srcMount && dstMount && strcmp(srcMount, dstMount) == 0) {
-        if (LoFS::rename(src, dst))
-            lobbsCommandReply(ctx, "Moved.");
-        else
-            lobbsCommandReplyError(ctx, "Failed.");
+    const char *colon = strchr(chunkTok, ':');
+    if (!colon || colon == chunkTok) {
+        lobbsCommandReplyError(ctx, "Bad offset.");
         return;
     }
 
+    char offBuf[16];
+    size_t offLen = (size_t)(colon - chunkTok);
+    if (offLen >= sizeof(offBuf)) {
+        lobbsCommandReplyError(ctx, "Bad offset.");
+        return;
+    }
+    memcpy(offBuf, chunkTok, offLen);
+    offBuf[offLen] = '\0';
+    char *end = nullptr;
+    unsigned long offVal = strtoul(offBuf, &end, 10);
+    if (end != offBuf + offLen || offVal > UINT32_MAX) {
+        lobbsCommandReplyError(ctx, "Bad offset.");
+        return;
+    }
+    const uint32_t offset = (uint32_t)offVal;
+    const char *b62 = colon + 1;
+    if (!b62[0]) {
+        lobbsCommandReplyError(ctx, "Bad data.");
+        return;
+    }
+
+    int decodedLen = fsB62DecodeChunk(b62, fsUploadDecodeScratch, FS_UPLOAD_DECODE_MAX);
+    if (decodedLen < 0) {
+        lobbsCommandReplyError(ctx, "Bad data.");
+        return;
+    }
+
+    uint32_t curSize = 0;
     bool isDir = false;
-    uint32_t sz = 0;
-    if (!LoFS::stat(src, &sz, &isDir) || isDir) {
-        lobbsCommandReplyError(ctx, "Cross-mount directory move not supported.");
+    if (LoFS::stat(path, &curSize, &isDir)) {
+        if (isDir) {
+            lobbsCommandReplyError(ctx, "Is a directory.");
+            return;
+        }
+    } else {
+        curSize = 0;
+        if (!fsParentIsDirectory(path)) {
+            lobbsCommandReplyError(ctx, "No such directory.");
+            return;
+        }
+    }
+
+    if (offset > curSize) {
+        char line[40];
+        snprintf(line, sizeof(line), "Gap: size %u.", (unsigned)curSize);
+        lobbsCommandReplyError(ctx, line);
         return;
     }
-    char dstRoot[16];
-    snprintf(dstRoot, sizeof(dstRoot), "/%s", dstMount ? dstMount : "flash");
-    uint64_t freeB = LoFS::freeBytes(dstRoot);
-    uint64_t totalB = LoFS::totalBytes(dstRoot);
-    if (totalB > 0 && freeB < sz) {
-        lobbsCommandReplyError(ctx, "Not enough space.");
-        return;
-    }
-    if (!LoFS::copy(src, dst)) {
+
+    if (!LoFS::writeAt(path, offset, fsUploadDecodeScratch, (size_t)decodedLen)) {
         lobbsCommandReplyError(ctx, "Failed.");
         return;
     }
-    if (LoFS::remove(src))
-        lobbsCommandReply(ctx, "Moved.");
-    else
-        lobbsCommandReplyError(ctx, "Copied, but source not removed.");
+
+    uint32_t newSize = 0;
+    if (!LoFS::stat(path, &newSize, &isDir) || isDir) {
+        lobbsCommandReplyError(ctx, "Failed.");
+        return;
+    }
+    char line[32];
+    snprintf(line, sizeof(line), "Size %u.", (unsigned)newSize);
+    lobbsCommandReply(ctx, line);
+}
+
+static void handleCommit(LoBBSCommandCtx &ctx)
+{
+    fsSessionPrep(ctx);
+    const char *srcSpec = lobbsArgShift(ctx);
+    const char *dstSpec = lobbsArgShift(ctx);
+    if (!srcSpec || !dstSpec || lobbsArgHasMore(ctx)) {
+        lobbsCommandReplyError(ctx, "Usage: /commit src dst");
+        return;
+    }
+    if (lobfsGlobHasMeta(srcSpec) || lobfsGlobHasMeta(dstSpec)) {
+        lobbsCommandReplyError(ctx, "No glob.");
+        return;
+    }
+    auto &src = fsPairScratch.src;
+    auto &dst = fsPairScratch.dst;
+    if (!fsResolveOrReply(ctx, srcSpec, src, sizeof(src)))
+        return;
+    if (!fsResolveOrReply(ctx, dstSpec, dst, sizeof(dst)))
+        return;
+
+    uint32_t nameCrc = 0;
+    if (!fsParseCrcFromBasename(src, nameCrc)) {
+        lobbsCommandReplyError(ctx, "No CRC in name.");
+        return;
+    }
+    if (fsRefuseCwdTarget(ctx, src, "commit"))
+        return;
+    fsReplyMove(ctx, LoFS::moveIfCrc32Matches(src, dst, nameCrc));
 }
 
 static void handleCd(LoBBSCommandCtx &ctx)
@@ -718,7 +892,7 @@ static void handleCd(LoBBSCommandCtx &ctx)
     char path[LOBBS_CWD_BUFFER_SIZE];
     if (!fsResolveOrReply(ctx, arg ? arg : "/", path, sizeof(path)))
         return;
-    if (fsHasGlobMeta(path)) {
+    if (lobfsGlobHasMeta(path)) {
         lobbsCommandReplyError(ctx, "No glob.");
         return;
     }
@@ -752,6 +926,8 @@ static const LoBBSVerb fsVerbs[] = {
     {"mkdir", handleMkdir, LOBBS_V_SYSOP, "mkdir path — create directory"},
     {"cp", handleCp, LOBBS_V_SYSOP, "cp src dst — copy file (no overwrite)"},
     {"mv", handleMv, LOBBS_V_SYSOP, "mv src dst — move/rename (files; dirs same mount only)"},
+    {"upload", handleUpload, LOBBS_V_SYSOP, "upload path [offset:b62] — chunked write or show size"},
+    {"commit", handleCommit, LOBBS_V_SYSOP, "commit src dst — move when file CRC matches name"},
     {"stat", handleStat, LOBBS_V_SYSOP, "stat path — file size or dir"},
     {"df", handleDf, LOBBS_V_SYSOP, "df — space per mount"},
 };
@@ -790,6 +966,8 @@ static void filterFsHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topi
     lobbsRecordPush(topics, "mkdir", "create a directory");
     lobbsRecordPush(topics, "cp", "copy a file");
     lobbsRecordPush(topics, "mv", "move or rename");
+    lobbsRecordPush(topics, "upload", "chunked file upload");
+    lobbsRecordPush(topics, "commit", "CRC-checked move");
     lobbsRecordPush(topics, "stat", "file or directory info");
     lobbsRecordPush(topics, "df", "filesystem space");
 }

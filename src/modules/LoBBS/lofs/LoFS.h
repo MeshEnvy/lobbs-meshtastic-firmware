@@ -20,7 +20,22 @@
 /**
  * Unified filesystem with a mount table: /flash, /sd (when present), /extra (when LOBBS_EXTRA_QSPI).
  * "/" is a virtual root that lists mounts. Every other path must start with "/<mount>/..." or "/<mount>".
+ * Absolute paths only; no glob metacharacters. Upload gap policy lives in FsCommands, not writeAt.
  */
+enum class LoFSMoveResult : uint8_t {
+    Ok,
+    RefusedMount,
+    DstExists,
+    SrcMissing,
+    SrcIsDir,
+    CrossMountDir,
+    NoSpace,
+    CopyFailed,
+    SrcNotRemoved,
+    CrcMismatch,
+    Failed,
+};
+
 class LoFS
 {
   public:
@@ -36,6 +51,12 @@ class LoFS
     static bool rmdir(const char *filepath, bool recursive = false);
 
     static bool copy(const char *src, const char *dst);
+    /** Same-mount rename or cross-mount file copy+delete. */
+    static LoFSMoveResult move(const char *src, const char *dst);
+    static bool crc32File(const char *filepath, uint32_t *crcOut);
+    static LoFSMoveResult moveIfCrc32Matches(const char *src, const char *dst, uint32_t expectedCrc);
+    /** Write len bytes at offset; extends file. Does not truncate an existing file. */
+    static bool writeAt(const char *filepath, uint32_t offset, const uint8_t *data, size_t len);
     static bool stat(const char *filepath, uint32_t *sizeOut, bool *isDirOut);
 
     static uint64_t totalBytes(const char *mountRoot);

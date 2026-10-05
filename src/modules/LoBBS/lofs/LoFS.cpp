@@ -26,7 +26,9 @@ extern SPIClass SPI_HSPI;
 #endif
 #endif
 
+#include "../apps/AppUtil.h"
 #include "LoBBSStackGuard.h"
+#include <stdio.h>
 
 LoFS::Mount LoFS::mounts[4];
 int LoFS::mountCount = 0;
@@ -489,6 +491,44 @@ bool LoFS::stat(const char *filepath, uint32_t *sizeOut, bool *isDirOut)
     return true;
 }
 
+bool LoFS::writeAt(const char *filepath, uint32_t offset, const uint8_t *data, size_t len)
+{
+    if (!filepath || !data || len == 0)
+        return false;
+    if (refuseMountPointMutation(filepath))
+        return false;
+
+    Resolved r;
+    if (!resolve(filepath, r) || r.kind != PathKind::Normal)
+        return false;
+
+    const bool creating = !exists(filepath);
+#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
+    File f = open(filepath, creating ? "w" : "r+");
+#else
+    (void)creating;
+    File f = open(filepath, (uint8_t)1);
+#endif
+    if (!f)
+        return false;
+    if (f.isDirectory()) {
+        f.close();
+        return false;
+    }
+
+    bool ok = false;
+    {
+        concurrency::LockGuard g(spiLock);
+        if (f.seek(offset)) {
+            size_t w = f.write(data, len);
+            ok = (w == len);
+        }
+        f.flush();
+        f.close();
+    }
+    return ok;
+}
+
 bool LoFS::copy(const char *src, const char *dst)
 {
     if (refuseMountPointMutation(src) || refuseMountPointMutation(dst))
@@ -550,6 +590,76 @@ bool LoFS::copy(const char *src, const char *dst)
     if (!ok)
         remove(dst);
     return ok;
+}
+
+LoFSMoveResult LoFS::move(const char *src, const char *dst)
+{
+    if (!src || !dst)
+        return LoFSMoveResult::Failed;
+    if (isMountPoint(src) || isMountPoint(dst))
+        return LoFSMoveResult::RefusedMount;
+    if (exists(dst))
+        return LoFSMoveResult::DstExists;
+
+    const char *srcMount = mountNameForPath(src);
+    const char *dstMount = mountNameForPath(dst);
+    if (srcMount && dstMount && strcmp(srcMount, dstMount) == 0) {
+        return rename(src, dst) ? LoFSMoveResult::Ok : LoFSMoveResult::Failed;
+    }
+
+    bool isDir = false;
+    uint32_t sz = 0;
+    if (!stat(src, &sz, &isDir))
+        return LoFSMoveResult::SrcMissing;
+    if (isDir)
+        return LoFSMoveResult::CrossMountDir;
+
+    char dstRoot[16];
+    snprintf(dstRoot, sizeof(dstRoot), "/%s", dstMount ? dstMount : "flash");
+    uint64_t freeB = freeBytes(dstRoot);
+    uint64_t totalB = totalBytes(dstRoot);
+    if (totalB > 0 && freeB < sz)
+        return LoFSMoveResult::NoSpace;
+
+    if (!copy(src, dst))
+        return LoFSMoveResult::CopyFailed;
+    if (remove(src))
+        return LoFSMoveResult::Ok;
+    return LoFSMoveResult::SrcNotRemoved;
+}
+
+bool LoFS::crc32File(const char *filepath, uint32_t *crcOut)
+{
+    if (!filepath || !crcOut)
+        return false;
+    File f = open(filepath, FILE_O_READ);
+    if (!f)
+        return false;
+    if (f.isDirectory()) {
+        f.close();
+        return false;
+    }
+    uint32_t crc = 0xffffffff;
+    uint8_t chunk[64];
+    while (true) {
+        size_t n = f.read(chunk, sizeof(chunk));
+        if (n == 0)
+            break;
+        crc = lobbsCrc32Update(crc, chunk, n);
+    }
+    f.close();
+    *crcOut = ~crc;
+    return true;
+}
+
+LoFSMoveResult LoFS::moveIfCrc32Matches(const char *src, const char *dst, uint32_t expectedCrc)
+{
+    uint32_t crc = 0;
+    if (!crc32File(src, &crc))
+        return LoFSMoveResult::SrcMissing;
+    if (crc != expectedCrc)
+        return LoFSMoveResult::CrcMismatch;
+    return move(src, dst);
 }
 
 uint64_t LoFS::totalBytes(const char *mountRoot)

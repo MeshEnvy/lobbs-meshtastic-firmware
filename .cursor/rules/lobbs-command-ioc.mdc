@@ -2,7 +2,7 @@
 
 LoBBS is a stateless slash CLI over mesh DMs. **Plugins own verbs and filter lines.** The registry peels one verb and runs the bus. One wireup file lists plugins.
 
-Player docs: [README.md](../../README.md). Bus behavior: [docs/lobbs-commands.md](../../docs/lobbs-commands.md).
+Player docs: [README.md](../../README.md). Bus behavior: [lobbs-commands.md](../../src/modules/LoBBS/docs/lobbs-commands.md).
 
 ## Required layout
 

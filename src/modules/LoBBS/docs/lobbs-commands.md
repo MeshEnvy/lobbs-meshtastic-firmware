@@ -1,6 +1,6 @@
 # How LoBBS commands work
 
-Command reference for players lives in the [README](../README.md). This page is for people wiring or extending the board: parsing, the hook bus, help, paging, and replies.
+Command reference for players lives in the [README](../../../../README.md). This page is for people wiring or extending the board: parsing, the hook bus, help, paging, and replies.
 
 ## One verb, rest of the line untouched
 
@@ -80,7 +80,9 @@ Install state is tracked outside the database in `/flash/lobbs.ls` (LoScalar fie
 
 `/install` authorization matches admin PKI checks in `AdminModule` (`mp.from == 0` for local client, or `pki_encrypted` with a matching `config.security.admin_key`). `AuthDal::createUser` no longer promotes the first signup to SysOp; only `/install` passes `asSysop=true`.
 
-SysOp fs commands use a per-session cwd (`/cd`, `/pwd`). `ls`, `cat`, `hex`, `stat`, `mkdir`, `cp`, and `mv` accept relative paths under cwd. `rm`, `rmdir`, and `rmtree` require absolute paths. Mount roots and `/` cannot be removed or used as move/copy sources. Cross-mount `mv` copies files then deletes the source when space allows; directories require same-mount `rename`.
+SysOp fs commands use a per-session cwd (`/cd`, `/pwd`). `ls`, `cat`, `hex`, `stat`, `mkdir`, `cp`, `mv`, `upload`, and `commit` accept relative paths under cwd. `rm`, `rmdir`, and `rmtree` require absolute paths. Mount roots and `/` cannot be removed or used as move/copy sources. Cross-mount `mv` copies files then deletes the source when space allows; directories require same-mount `rename`.
+
+Chunked uploads: `/upload path offset:b62` writes base62-decoded bytes at `offset` (idempotent). `/upload path` with no offset replies `Size N.`. Gaps (`offset` past end) reply `Gap: size N.`. `/commit src dst` parses the last 8-hex dot segment of the source basename as CRC32 and moves only on match. Host helper: [../bin/lobbs_chunkify.py](../bin/lobbs_chunkify.py).
 
 Fs subcommands are registered as a `LoBBSVerb` table with `LOBBS_V_SYSOP` and top-level verbs (`/ls`, not `/fs ls`).
 

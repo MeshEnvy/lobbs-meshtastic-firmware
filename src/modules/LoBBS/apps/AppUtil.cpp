@@ -114,6 +114,21 @@ void lobbsQuotaUsed(LoDb &db, const char *table, uint64_t userUuid, uint32_t per
     quotaLoad(db, table, userUuid, periodSec, used, n);
 }
 
+uint32_t lobbsCrc32Update(uint32_t crc, const uint8_t *data, size_t len)
+{
+    for (size_t i = 0; data && i < len; i++) {
+        crc ^= data[i];
+        for (int b = 0; b < 8; b++)
+            crc = (crc >> 1) ^ (0xedb88320 & (~((crc & 1) - 1)));
+    }
+    return crc;
+}
+
+uint32_t lobbsCrc32(const uint8_t *data, size_t len)
+{
+    return ~lobbsCrc32Update(0xffffffff, data, len);
+}
+
 bool lobbsQuotaAdd(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, const uint32_t *add, size_t n)
 {
     if (n > LOBBS_QUOTA_MAX_COUNTERS)

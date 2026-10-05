@@ -2,7 +2,7 @@
 
 LoBBS product history for [lobbs-meshtastic-firmware](https://github.com/MeshEnvy/lobbs-meshtastic-firmware). Meshtastic upstream release notes live in [meshtastic/firmware](https://github.com/meshtastic/firmware); the `[VERSION]` section in `version.properties` tracks that base.
 
-LoBBS semver is the `[LOBBS]` section in `version.properties` when present. Builds inject `LOBBS_VERSION` / `LOBBS_VERSION_SHORT` (see `bin/readprops.py`, `bin/platformio-custom.py`). Until LoBBS 2.0.0 ships, dev builds may show a pre-release `[LOBBS]` value on branch `lobbs`.
+LoBBS semver is the `[LOBBS]` section in `version.properties` when present. Builds inject `LOBBS_VERSION` / `LOBBS_VERSION_SHORT` (see repo root `bin/readprops.py`, `bin/platformio-custom.py`). Until LoBBS 2.0.0 ships, dev builds may show a pre-release `[LOBBS]` value on branch `lobbs`.
 
 Release tags use:
 
@@ -26,11 +26,13 @@ Planned major release **2.0.0** (not tagged yet).
 - Machine replies echo the request id and mark pages separately: `<id>ok [n:max]` (single-page replies are `<id>ok`).
 - SysOp `/cd` and `/pwd`: per-session working directory for `/ls`, `/cat` and `/hex`. `/rm`, `/rmdir` and `/rmtree` take absolute paths only.
 - LoFS mount table (`/flash`, optional `/sd` and `/extra`), virtual `/`, `/install` blank-node setup, and SysOp `/cp`, `/mv`, `/mkdir`, `/stat`, `/df`.
+- SysOp chunked upload: `/upload` (offset base62 chunks) and CRC-checked `/commit`; host script [bin/lobbs_chunkify.py](bin/lobbs_chunkify.py).
 - `/passwd` (self and sysop reset) and `/time` (show Unix time; sysop set clock).
 - Ignore non-slash DMs and self-originated loopback (`from` = local node).
 
 ### Changed
 
+- LoFS: cross-mount `move`, streaming `crc32File`, and `moveIfCrc32Matches`; glob helpers in `lofs/Glob`. FsCommands maps results to CLI replies; upload gap check unchanged in `/upload`.
 - Operator role renamed from admin to SysOp in CLI text, help, and user records (`is_sysop` in auth proto, field 4 unchanged).
 - LoBBS protos and DALs split into per-app modules; LoDB hardening for nRF52.
 - `/login` for sign-in; build-time LoBBS versioning from `version.properties`.

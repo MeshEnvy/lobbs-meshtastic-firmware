@@ -37,7 +37,7 @@ The choice is stored in `/flash/lobbs.ls`. If that mount is missing on a later b
 
 ## How to use LoBBS
 
-DM the node a line that starts with `/`. For how verbs, help, and plugin hooks fit together, see [docs/lobbs-commands.md](docs/lobbs-commands.md).
+DM the node a line that starts with `/`. Module layout, developer docs, changelog, and host tools: [src/modules/LoBBS/README.md](src/modules/LoBBS/README.md).
 
 `/login username password` signs in or creates a normal account after install. SysOp accounts are created only by `/install`.
 
@@ -145,10 +145,14 @@ SysOp-only lines reply `SysOp only.` to everyone else.
 | `/mkdir path`                 | Create a directory under a mount (`/flash/...`, etc.)                                          |
 | `/cp src dst`                 | Copy a file (no overwrite; directories refused)                                                |
 | `/mv src dst`                 | Rename on one mount, or copy then delete across mounts (files only)                            |
+| `/upload path [offset:b62]`   | Chunked file write at byte offset, or show current size                                        |
+| `/commit src dst`             | Move when file CRC32 matches the 8-hex segment in the source name                              |
 | `/stat path`                  | `file N` or `dir`                                                                              |
 | `/df`                         | Used/total KB per mount (`?` when unknown)                                                     |
 
 Paths use mount prefixes: `/flash/...`, `/sd/...`, `/extra/...` on builds with `LOBBS_EXTRA_QSPI=1` and a QSPI flash chip. `/` lists mounts. Do not `/rmtree` `/flash/lodb` unless you intend to wipe the BBS.
+
+For larger files over mesh, see [chunked upload](src/modules/LoBBS/README.md#host-tools) in the LoBBS module README.
 
 SysOps painting the wall or adding yarn do not use quota.
 
@@ -175,7 +179,7 @@ The 200-byte limit applies to each DM, including the `<id>ok [n:max]` header.
 ## Versions
 
 - **Meshtastic base** — `[VERSION]` in `version.properties` (same as upstream: `APP_VERSION` in the phone app, e.g. `2.7.26.<git sha>`).
-- **LoBBS** — `[LOBBS]` in `version.properties`; help text shows `LoBBS v` plus the short semver (e.g. `2.0.0`). Product history: [CHANGELOG.md](CHANGELOG.md). Bump LoBBS build with `python bin/bump_lobbs_version.py` (Meshtastic build: `bin/bump_version.py`).
+- **LoBBS** — `[LOBBS]` in `version.properties`; help text shows `LoBBS v` plus the short semver (e.g. `2.0.0`). Product history: [src/modules/LoBBS/CHANGELOG.md](src/modules/LoBBS/CHANGELOG.md). Bump LoBBS build with `python bin/bump_lobbs_version.py` (Meshtastic build: `bin/bump_version.py`).
 
 ### Release tags (source only)
 

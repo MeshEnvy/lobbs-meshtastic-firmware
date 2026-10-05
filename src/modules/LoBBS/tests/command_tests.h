@@ -196,6 +196,74 @@ static void test_command_fs_cp_mv()
     lobbsTestSendLine("/rm /flash/lobbs-moved.ls");
 }
 
+static void test_command_fs_upload_commit()
+{
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestSendLine("/mkdir /flash/tmp");
+    lobbsTestSendLine("/rm /flash/tmp/upload-a.bin");
+    lobbsTestSendLine("/rm /flash/tmp/upload-b.bin");
+    lobbsTestSendLine("/rm /flash/files/upload-done.bin");
+
+    lobbsTestSendLine("/upload /flash/tmp/upload-a.bin");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Size 0."));
+
+    lobbsTestSendLine("/upload /flash/tmp/upload-a.bin 10:AAAA");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Gap:"));
+
+    lobbsTestSendLine("/upload /flash/tmp/upload-a.bin 0:8xhIpNzLldv25utFy");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Size 12."));
+    lobbsTestSendLine("/upload /flash/tmp/upload-a.bin 0:8xhIpNzLldv25utFy");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Size 12."));
+
+    lobbsTestSendLine("/commit /flash/tmp/upload-a.bin /flash/files/upload-done.bin");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "No CRC in name."));
+
+    lobbsTestSendLine("/upload /flash/tmp/upload-b.bin.01020304.tmp 0:8xhIpNzLldv25utFy");
+    lobbsTestSendLine("/commit /flash/tmp/upload-b.bin.01020304.tmp /flash/files/upload-done.bin");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "CRC mismatch."));
+
+    lobbsTestSendLine("/rm /flash/tmp/upload-a.bin");
+    lobbsTestSendLine("/rm /flash/tmp/upload-b.bin.01020304.tmp");
+}
+
+/** Two sequential chunks: offset 0 then offset == size (append). Payload is "hello world\\n". */
+static void test_command_fs_upload_append_two_chunks()
+{
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestSendLine("/mkdir /flash/tmp");
+    lobbsTestSendLine("/rm /flash/tmp/append-two.bin");
+
+    lobbsTestSendLine("/upload /flash/tmp/append-two.bin 0:0Waqlj8GO");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Size 6."));
+    lobbsTestSendLine("/upload /flash/tmp/append-two.bin 6:0bHyFj1oY");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Size 12."));
+
+    lobbsTestSendLine("/upload /flash/tmp/append-two.bin 7:0bHyFj1oY");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Gap:"));
+
+    lobbsTestSendLine("/rm /flash/tmp/append-two.bin");
+}
+
+static void test_command_fs_upload_commit_ok()
+{
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestSendLine("/mkdir /flash/tmp");
+    lobbsTestSendLine("/mkdir /flash/files");
+    lobbsTestSendLine("/rm /flash/tmp/chunk.ok.af083b2d.tmp");
+    lobbsTestSendLine("/rm /flash/files/chunk.ok.bin");
+
+    lobbsTestSendLine("/upload /flash/tmp/chunk.ok.af083b2d.tmp 0:8xhIpNzLldv25utFy");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Size 12."));
+    lobbsTestSendLine("/commit /flash/tmp/chunk.ok.af083b2d.tmp /flash/files/chunk.ok.bin");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Moved."));
+
+    lobbsTestSendLine("/cat /flash/files/chunk.ok.bin");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "hello world"));
+
+    lobbsTestSendLine("/rm /flash/files/chunk.ok.bin");
+    lobbsTestSendLine("/rm /flash/tmp/chunk.ok.af083b2d.tmp");
+}
+
 static void test_command_install_guards()
 {
     lobbsTestSendLine("/install flash hacker pass");
@@ -285,6 +353,9 @@ inline void lobbsRunCommandTests()
     RUN_TEST(test_command_fs_cwd);
     RUN_TEST(test_command_fs_mounts_and_tools);
     RUN_TEST(test_command_fs_cp_mv);
+    RUN_TEST(test_command_fs_upload_commit);
+    RUN_TEST(test_command_fs_upload_append_two_chunks);
+    RUN_TEST(test_command_fs_upload_commit_ok);
     RUN_TEST(test_command_install_guards);
     RUN_TEST(test_command_install_offline);
     RUN_TEST(test_command_install_blank_and_local);
