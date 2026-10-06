@@ -24,7 +24,7 @@ Add `-D LOBBS_DEMO_MODE` to `build_flags` (or `PLATFORMIO_BUILD_FLAGS="-D LOBBS_
 
 SysOp-only lines reply `SysOp only.` to everyone else.
 
-Config keys (uint32, defaults in parentheses): `session.max` (16), `session.idle` (86400 s), `wall.period` (3600), `wall.cells` (1), `yarn.period` (3600), `yarn.words` (1), `yarn.chars` (32), `pager.ttl` (300), `password.min` (5). Run `/config` with no args to list current values and ranges.
+Config keys (uint32, defaults in parentheses): `session.max` (16), `session.idle` (86400 s), `wall.period` (3600), `wall.cells` (1), `yarn.period` (3600), `yarn.words` (1), `yarn.chars` (32), `pager.ttl` (300), `password.min` (5). Run `/config` with no args to list current values and ranges. `/help config key` explains one setting.
 
 | Command                     | Notes                                                                                          |
 | --------------------------- | ---------------------------------------------------------------------------------------------- |

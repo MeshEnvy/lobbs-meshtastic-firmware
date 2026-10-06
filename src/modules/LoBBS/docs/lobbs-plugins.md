@@ -70,7 +70,7 @@ Rules for a hook you own:
 
 ## Runtime settings
 
-1. Register a `config_keys` list filter and call `lobbsConfigPushKey` for each uint32 setting (default, min, max, help text).
+1. Register a `config_keys` list filter and call `lobbsConfigPushKey` for each uint32 setting (default, min, max, help text shown by `/help config key`).
 2. Read values with `lobbsConfigGet(ctx, "your.key")` in command handlers before calling your DAL.
 3. Optional: register `config_validate` at a priority after `LOBBS_HOOK_PRIORITY_HELP` for cross-field checks.
 4. Register `config_changed` to apply side effects (resize buffers, refresh caches).

@@ -69,6 +69,7 @@ static void handleConfig(LoBBSCommandCtx &ctx)
     const char *key = lobbsArgShift(ctx);
     if (!key) {
         LoBBSResponse resp;
+        lobbsRecordPush(resp.records, "Use /help config key for details");
         for (const LoScalar &def : cfg.keyDefs(ctx)) {
             std::string name;
             if (!def.getString(LODB_F_TITLE, name))
@@ -148,7 +149,7 @@ static void slashConfig(LoBBSCommandCtx *ctx, const LoScalar &args)
 }
 
 static const LoBBSVerb configHelpVerbs[] = {
-    {"config", nullptr, LOBBS_V_SYSOP, "config — sysop: list/get/set/reset settings"},
+    {"config", nullptr, LOBBS_V_SYSOP, "config — sysop: list/get/set/reset settings (/help config key explains one)"},
 };
 
 static void filterConfigHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
@@ -161,6 +162,29 @@ static void filterConfigHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &
 static void filterConfigHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)
 {
     lobbsHelpForTable(ctx, value, args, "config", configHelpVerbs, sizeof(configHelpVerbs) / sizeof(configHelpVerbs[0]));
+    if (!ctx || !ctx->mod || value.has(LODB_F_DESCRIPTION) || !lobbsCtxIsSysop(*ctx))
+        return;
+    std::string query;
+    if (!args.getString(LODB_F_TITLE, query) || strncasecmp(query.c_str(), "config ", 7) != 0)
+        return;
+    const char *key = query.c_str() + 7;
+    ConfigDal &cfg = ctx->mod->config().dal();
+    cfg.ensureRegistry(*ctx);
+    const LoScalar *def = cfg.findKeyDef(key);
+    if (!def)
+        return;
+    std::string help;
+    uint32_t defV = 0;
+    uint32_t minV = 0;
+    uint32_t maxV = 0;
+    def->getString(LODB_F_DESCRIPTION, help);
+    def->getUint32(ConfigKeyField::FIELD_DEFAULT, defV);
+    def->getUint32(ConfigKeyField::FIELD_MIN, minV);
+    def->getUint32(ConfigKeyField::FIELD_MAX, maxV);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "%s: %s. Default %u, range %u-%u.", key, help.c_str(), (unsigned)defV, (unsigned)minV,
+             (unsigned)maxV);
+    value.setString(LODB_F_DESCRIPTION, buf);
 }
 
 void lobbsConfigRegisterCommands()

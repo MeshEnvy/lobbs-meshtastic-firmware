@@ -28,7 +28,7 @@ Planned major release **2.0.0** (not tagged yet).
 - LoFS mount table (`/flash`, optional `/sd` and `/extra`), virtual `/`, `/install` blank-node setup, and SysOp `/cp`, `/mv`, `/mkdir`, `/stat`, `/df`.
 - SysOp chunked upload: `/upload` (offset base62 chunks) and CRC-checked `/commit`; host script [bin/lobbs_chunkify.py](bin/lobbs_chunkify.py).
 - `/passwd` (self and sysop reset) and `/time` (show Unix time; sysop set clock).
-- Logins are held in RAM and end on reboot or after an idle timeout. SysOp `/config` sets `session.max`, `session.idle`, wall/yarn quotas, `pager.ttl`, and `password.min`. Overrides live in one LoDB `config` table. Logging in never writes flash.
+- Logins are held in RAM and end on reboot or after an idle timeout. SysOp `/config` sets `session.max`, `session.idle`, wall/yarn quotas, `pager.ttl`, and `password.min`. `/help config key` explains a setting. Overrides live in one LoDB `config` table. Logging in never writes flash.
 - Ignore non-slash DMs and self-originated loopback (`from` = local node).
 
 ### Changed

@@ -112,7 +112,7 @@ Logins live in RAM, not LoDB: `AuthDal` holds a vector of `{nodeId, userUuid, la
 
 ## Config registry
 
-SysOp `/config` lists, reads, sets, and resets uint32 settings. Plugins declare keys on `config_keys` via `lobbsConfigPushKey`. Validation runs on `config_validate` (core registers a min/max range check at help priority). Successful sets upsert one row in table `config` (title = key); reset deletes the row so defaults cost no flash. `config_changed` fires after each set or reset and for every key when the database opens (`lobbsInstallDatabaseOpened`).
+SysOp `/config` lists, reads, sets, and resets uint32 settings. Plugins declare keys on `config_keys` via `lobbsConfigPushKey`. `/help config key` replies with the key's help text, default, and range. Validation runs on `config_validate` (core registers a min/max range check at help priority). Successful sets upsert one row in table `config` (title = key); reset deletes the row so defaults cost no flash. `config_changed` fires after each set or reset and for every key when the database opens (`lobbsInstallDatabaseOpened`).
 
 SysOp file commands, chunked upload, and path rules are documented in the [SysOp guide](lobbs-sysop.md).
 

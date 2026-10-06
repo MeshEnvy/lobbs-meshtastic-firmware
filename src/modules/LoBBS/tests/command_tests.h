@@ -327,7 +327,12 @@ static void test_command_config()
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "SysOp only."));
     lobbsTestSendLine("/login sysop demo1");
     lobbsTestSendLine("/config");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Use /help config key for details"));
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "session.max 16"));
+    lobbsTestSendLine("/help config session.max");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "session.max: Max concurrent login sessions. Default 16, range 1-64."));
+    lobbsTestSendLine("/help config bogus");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "No help found for config bogus"));
     lobbsTestSendLine("/config session.max");
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "session.max = 16"));
     lobbsTestSendLine("/config session.max 0");
