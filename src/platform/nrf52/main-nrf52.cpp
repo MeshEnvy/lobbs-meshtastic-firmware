@@ -378,7 +378,8 @@ void nrf52Setup()
     pinMode(ADC_V, INPUT);
 #endif
 
-    uint32_t why = NRF_POWER->RESETREAS;
+    // The core's init() snapshots and clears RESETREAS before setup().
+    uint32_t why = readResetReason();
     // per
     // https://infocenter.nordicsemi.com/index.jsp?topic=%2Fcom.nordic.infocenter.nrf52832.ps.v1.1%2Fpower.html
     LOG_DEBUG("Reset reason: 0x%x", why);
