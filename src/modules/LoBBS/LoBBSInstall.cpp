@@ -5,6 +5,7 @@
 #include "LoBBSConfig.h"
 #include "LoBBSHooks.h"
 #include "LoBBSModule.h"
+#include "apps/AppUtil.h"
 #include "apps/Auth/AuthDal.h"
 #include "configuration.h"
 #include "mesh/NodeDB.h"
@@ -240,8 +241,8 @@ static void handleInstall(LoBBSCommandCtx &ctx)
             return;
         }
         auth.loginUser(user, getFrom(ctx.mp));
-    } else if (!auth.createUser(user, pass, getFrom(ctx.mp), true)) {
-        lobbsCommandReplyError(ctx, "Failed to create sysop.");
+    } else if (LoDbError err = auth.createUser(user, pass, getFrom(ctx.mp), true)) {
+        lobbsCommandReplyError(ctx, lobbsDbErrorText(err, "Failed to create sysop."));
         return;
     }
 

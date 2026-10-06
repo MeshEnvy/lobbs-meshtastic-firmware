@@ -225,7 +225,7 @@ bool AuthDal::setSessionCwd(uint32_t nodeId, const char *cwd)
     return true;
 }
 
-bool AuthDal::createUser(const char *username, const char *password, uint32_t nodeId, bool asSysop)
+LoDbError AuthDal::createUser(const char *username, const char *password, uint32_t nodeId, bool asSysop)
 {
     lodb_uuid_t userUuid = usernameToUuid(username);
 
@@ -238,11 +238,11 @@ bool AuthDal::createUser(const char *username, const char *password, uint32_t no
     LoDbError err = lodb_.insert("users", userUuid, user);
     if (err != LODB_OK) {
         LOG_ERROR("Failed to create user: %s", username);
-        return false;
+        return err;
     }
 
     LOG_INFO("Created user: %s (sysop: %s)", username, asSysop ? "yes" : "no");
-    return loginUser(username, nodeId);
+    return loginUser(username, nodeId) ? LODB_OK : LODB_ERR_INVALID;
 }
 
 bool AuthDal::verifyPassword(const LoScalar *user, const char *password)
@@ -309,30 +309,30 @@ uint64_t AuthDal::getUserUuidByUsername(const char *username)
     return 0;
 }
 
-bool AuthDal::setUserSysopByUsername(const char *username, bool isSysop)
+LoDbError AuthDal::setUserSysopByUsername(const char *username, bool isSysop)
 {
     LoScalar user;
     if (!loadUserByUsername(username, &user))
-        return false;
+        return LODB_ERR_NOT_FOUND;
     uint64_t uuid = userUuid(user);
     user.setBool(AuthUser::FIELD_SYSOP, isSysop);
     user.removeField(LODB_F_CREATED);
     user.removeField(LODB_F_UPDATED);
-    return lodb_.update("users", uuid, user) == LODB_OK;
+    return lodb_.update("users", uuid, user);
 }
 
-bool AuthDal::setPasswordByUsername(const char *username, const char *password)
+LoDbError AuthDal::setPasswordByUsername(const char *username, const char *password)
 {
     LoScalar user;
     if (!loadUserByUsername(username, &user))
-        return false;
+        return LODB_ERR_NOT_FOUND;
     uint64_t uuid = userUuid(user);
     uint8_t hash[32];
     hashPassword(password, hash);
     user.setBytesHex(AuthUser::FIELD_PASSWORD, hash, 32);
     user.removeField(LODB_F_CREATED);
     user.removeField(LODB_F_UPDATED);
-    return lodb_.update("users", uuid, user) == LODB_OK;
+    return lodb_.update("users", uuid, user);
 }
 
 uint32_t AuthDal::countSysopUsers()

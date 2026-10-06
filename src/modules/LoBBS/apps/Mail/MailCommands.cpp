@@ -192,8 +192,8 @@ static void mailSubSend(LoBBSCommandCtx &ctx)
     if (!lobbsAppResolveUsername(ctx, user, toUuid))
         return;
     LoBBSResponse resp;
-    lobbsRecordPush(resp.records,
-                    ctx.mod->mail().dal().sendMail(lobbsCtxUserUuid(ctx), toUuid, body) ? "Mail sent." : "Failed to send mail.");
+    LoDbError err = ctx.mod->mail().dal().sendMail(lobbsCtxUserUuid(ctx), toUuid, body);
+    lobbsRecordPush(resp.records, err == LODB_OK ? "Mail sent." : lobbsDbErrorText(err, "Failed to send mail."));
     lobbsCommandReplyResponse(ctx, resp);
 }
 

@@ -249,20 +249,25 @@ static LoDbError writeRecordFile(const char *file_path, const LoScalar &record)
     }
     LoFS::remove(tmp_path);
 
+    size_t encoded_size = line.size();
+    if (!LoFS::hasRoom(tmp_path, (uint32_t)encoded_size)) {
+        LODB_LOG_WARN("No room for record: %s", file_path);
+        return LODB_ERR_FULL;
+    }
+
     auto file = LoFS::open(tmp_path, FILE_O_WRITE);
     if (!file) {
         LODB_LOG_ERROR("Failed to open file for writing: %s", tmp_path);
         return LODB_ERR_IO;
     }
 
-    size_t encoded_size = line.size();
     size_t written = file.write((const uint8_t *)line.data(), encoded_size);
     file.flush();
     file.close();
     if (written != encoded_size) {
         LODB_LOG_ERROR("Failed to write file, wrote %u of %u bytes", (unsigned)written, (unsigned)encoded_size);
         LoFS::remove(tmp_path);
-        return LODB_ERR_IO;
+        return LoFS::hasRoom(tmp_path, (uint32_t)encoded_size) ? LODB_ERR_IO : LODB_ERR_FULL;
     }
 
     if (!LoFS::rename(tmp_path, file_path)) {

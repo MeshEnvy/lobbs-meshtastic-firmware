@@ -129,10 +129,15 @@ uint32_t lobbsCrc32(const uint8_t *data, size_t len)
     return ~lobbsCrc32Update(0xffffffff, data, len);
 }
 
-bool lobbsQuotaAdd(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, const uint32_t *add, size_t n)
+const char *lobbsDbErrorText(LoDbError err, const char *otherwise)
+{
+    return err == LODB_ERR_FULL ? "Disk full." : otherwise;
+}
+
+LoDbError lobbsQuotaAdd(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, const uint32_t *add, size_t n)
 {
     if (n > LOBBS_QUOTA_MAX_COUNTERS)
-        return false;
+        return LODB_ERR_INVALID;
     uint32_t used[LOBBS_QUOTA_MAX_COUNTERS];
     uint32_t start = quotaLoad(db, table, userUuid, periodSec, used, n);
     if (start == 0)
@@ -142,7 +147,7 @@ bool lobbsQuotaAdd(LoDb &db, const char *table, uint64_t userUuid, uint32_t peri
     rec.setUint32(LoBBSQuotaField::FIELD_CYCLE_START, start);
     for (size_t i = 0; i < n; i++)
         rec.setUint32(LoBBSQuotaField::FIELD_USED + (uint32_t)i, used[i] + add[i]);
-    return db.upsert(table, userUuid, rec) == LODB_OK;
+    return db.upsert(table, userUuid, rec);
 }
 
 #endif

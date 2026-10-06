@@ -4,6 +4,7 @@
 #include "../../LoBBSCommandCtx.h"
 #include "../../LoBBSHooks.h"
 #include "../../LoBBSModule.h"
+#include "../AppUtil.h"
 #include "ConfigRecords.h"
 #include <cstdio>
 #include <cstring>
@@ -117,8 +118,9 @@ const char *ConfigDal::validateAndSet(LoBBSCommandCtx &ctx, const char *key, uin
     LoScalar row;
     row.setString(LODB_F_TITLE, key);
     row.setUint32(ConfigStoreField::FIELD_VALUE, value);
-    if (lodb_.upsert("config", rowUuid(key), row) != LODB_OK)
-        return "Failed.";
+    LoDbError dbErr = lodb_.upsert("config", rowUuid(key), row);
+    if (dbErr != LODB_OK)
+        return lobbsDbErrorText(dbErr);
     overrides_[key] = value;
     fireConfigChanged(ctx, key, value);
     return nullptr;

@@ -32,14 +32,14 @@ class AuthDal
                           uint64_t *authUserUuidOut = nullptr, std::string *cwdOut = nullptr);
     bool setSessionCwd(uint32_t nodeId, const char *cwd);
     std::vector<LoScalar> listUsers(const char *filterSubstr);
-    bool createUser(const char *username, const char *password, uint32_t nodeId, bool asSysop = false);
+    LoDbError createUser(const char *username, const char *password, uint32_t nodeId, bool asSysop = false);
     bool verifyPassword(const LoScalar *user, const char *password);
     bool loginUser(const char *username, uint32_t nodeId);
     bool logoutUser(uint32_t nodeId);
     uint64_t getUserUuidByUsername(const char *username);
 
-    bool setUserSysopByUsername(const char *username, bool isSysop);
-    bool setPasswordByUsername(const char *username, const char *password);
+    LoDbError setUserSysopByUsername(const char *username, bool isSysop);
+    LoDbError setPasswordByUsername(const char *username, const char *password);
     uint32_t countSysopUsers();
     uint32_t countAllUsers();
     bool kickUserByUsername(const char *username);

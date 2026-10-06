@@ -58,7 +58,7 @@ static void buildNewsReadKey(uint64_t newsUuid, uint64_t userUuid, char *out, si
 
 static constexpr uint32_t LOBBS_MAX_LIST_ROWS = 256;
 
-bool NewsDal::postNews(uint64_t authorUserUuid, const char *message)
+LoDbError NewsDal::postNews(uint64_t authorUserUuid, const char *message)
 {
     lodb_uuid_t newsUuidVal = lodb_new_uuid(nullptr, authorUserUuid ^ (uint64_t)getTime());
 
@@ -69,8 +69,7 @@ bool NewsDal::postNews(uint64_t authorUserUuid, const char *message)
     news.setString(LODB_F_DESCRIPTION, msgBuf);
     news.setUint64(NewsField::FIELD_AUTHOR, authorUserUuid);
 
-    LoDbError err = lodb_.insert("news", newsUuidVal, news);
-    return err == LODB_OK;
+    return lodb_.insert("news", newsUuidVal, news);
 }
 
 bool NewsDal::isNewsReadByUser(uint64_t newsUuidVal, uint64_t userUuid)

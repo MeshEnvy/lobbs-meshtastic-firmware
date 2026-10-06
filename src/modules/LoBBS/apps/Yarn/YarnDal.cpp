@@ -42,13 +42,13 @@ void YarnDal::loadCurrent(CurrentState &out)
     rec.getUint32(YarnCurrentField::FIELD_TOTAL_WORDS, out.total_words_appended);
 }
 
-bool YarnDal::saveCurrent(CurrentState &cur)
+LoDbError YarnDal::saveCurrent(CurrentState &cur)
 {
     lodb_uuid_t id = yarnCurrentRecordUuid();
     LoScalar rec;
     rec.setString(LODB_F_DESCRIPTION, cur.text);
     rec.setUint32(YarnCurrentField::FIELD_TOTAL_WORDS, cur.total_words_appended);
-    return lodb_.upsert("yarn_current", id, rec) == LODB_OK;
+    return lodb_.upsert("yarn_current", id, rec);
 }
 
 void YarnDal::trimTailToMax(char *text)
@@ -179,10 +179,11 @@ const char *YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *co
     strncpy(cur.text, text, LOBBS_YARN_BODY_MAX);
     cur.text[LOBBS_YARN_BODY_MAX] = '\0';
     cur.total_words_appended += (uint32_t)wordCount;
-    if (!saveCurrent(cur))
-        return "Save failed.";
-    if (!isSysop && !lobbsQuotaAdd(lodb_, "yarn_quota", userUuid, periodSeconds, add, 2))
-        return "Quota save.";
+    LoDbError err = saveCurrent(cur);
+    if (err != LODB_OK)
+        return lobbsDbErrorText(err, "Save failed.");
+    if (!isSysop && (err = lobbsQuotaAdd(lodb_, "yarn_quota", userUuid, periodSeconds, add, 2)) != LODB_OK)
+        return lobbsDbErrorText(err, "Quota save.");
     return nullptr;
 }
 

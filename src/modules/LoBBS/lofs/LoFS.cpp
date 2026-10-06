@@ -78,17 +78,17 @@ void LoFS::begin()
         return;
     mountCount = 0;
 
-    mounts[mountCount++] = Mount{"flash", Backend::Flash, true};
+    mounts[mountCount++] = Mount{"flash", Backend::Flash, true, true};
 
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
     if (lobfsSdPresent())
-        mounts[mountCount++] = Mount{"sd", Backend::Sd, true};
+        mounts[mountCount++] = Mount{"sd", Backend::Sd, true, false};
 #endif
 
 #if LOBBS_EXTRA_QSPI
     concurrency::LockGuard g(spiLock);
     if (lobfsQspiFlash.begin())
-        mounts[mountCount++] = Mount{"extra", Backend::Extra, true};
+        mounts[mountCount++] = Mount{"extra", Backend::Extra, true, false};
 #endif
 
     begun = true;
@@ -614,11 +614,7 @@ LoFSMoveResult LoFS::move(const char *src, const char *dst)
     if (isDir)
         return LoFSMoveResult::CrossMountDir;
 
-    char dstRoot[16];
-    snprintf(dstRoot, sizeof(dstRoot), "/%s", dstMount ? dstMount : "flash");
-    uint64_t freeB = freeBytes(dstRoot);
-    uint64_t totalB = totalBytes(dstRoot);
-    if (totalB > 0 && freeB < sz)
+    if (!hasRoom(dst, sz))
         return LoFSMoveResult::NoSpace;
 
     if (!copy(src, dst))
@@ -682,10 +678,22 @@ uint64_t LoFS::totalBytes(const char *mountRoot)
     }
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
     return FSCom.totalBytes();
+#elif defined(ARCH_NRF52)
+    const lfs_config *cfg = FSCom._getFS()->cfg;
+    return cfg ? (uint64_t)cfg->block_size * cfg->block_count : 0;
 #else
     return 0;
 #endif
 }
+
+#if defined(ARCH_NRF52)
+static int lofsCountBlock(void *ctx, lfs_block_t block)
+{
+    (void)block;
+    (*(uint32_t *)ctx)++;
+    return 0;
+}
+#endif
 
 uint64_t LoFS::usedBytes(const char *mountRoot)
 {
@@ -707,6 +715,15 @@ uint64_t LoFS::usedBytes(const char *mountRoot)
     }
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
     return FSCom.usedBytes();
+#elif defined(ARCH_NRF52)
+    lfs_t *lfs = FSCom._getFS();
+    uint32_t blocks = 0;
+    FSCom._lockFS();
+    int err = lfs_traverse(lfs, lofsCountBlock, &blocks);
+    FSCom._unlockFS();
+    if (err || !lfs->cfg)
+        return 0;
+    return (uint64_t)blocks * lfs->cfg->block_size;
 #else
     return 0;
 #endif
@@ -716,9 +733,45 @@ uint64_t LoFS::freeBytes(const char *mountRoot)
 {
     uint64_t total = totalBytes(mountRoot);
     uint64_t used = usedBytes(mountRoot);
-    if (total == 0)
+    if (total == 0 || used > total)
         return 0;
     return total - used;
+}
+
+uint32_t LoFS::mountReserve(const char *name)
+{
+    Mount *m = name ? findByName(name, strlen(name)) : nullptr;
+    return (m && m->shared) ? LOFS_SHARED_RESERVE_BYTES : 0;
+}
+
+bool LoFS::hasRoom(const char *path, uint32_t bytes)
+{
+    Resolved r;
+    const char *name = mountNameForPath(path);
+    if (!name || !resolve(path, r))
+        return true;
+    char root[20];
+    snprintf(root, sizeof(root), "/%s", name);
+    const uint64_t total = totalBytes(root);
+    if (total == 0)
+        return true;
+    const uint64_t used = usedBytes(root);
+    const uint64_t freeB = used < total ? total - used : 0;
+
+    uint32_t block = 4096;
+    uint32_t slack = 2 * 4096;
+    if (r.backend == Backend::Sd) {
+        block = 512;
+        slack = 64 * 1024;
+    }
+#if defined(ARCH_NRF52)
+    if (r.backend == Backend::Flash) {
+        block = 128;
+        slack = 4 * 128;
+    }
+#endif
+    const uint64_t need = (((uint64_t)bytes + block - 1) / block) * block + slack + mountReserve(name);
+    return freeB >= need;
 }
 
 bool LoFS::rmdir(const char *filepath, bool recursive)

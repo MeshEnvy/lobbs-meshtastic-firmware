@@ -1,13 +1,16 @@
 #pragma once
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
+#include <lodb/LoDB.h>
 #include <loscalar/LoScalar.h>
 #include <stddef.h>
 #include <stdint.h>
 
 class LoBBSModule;
-class LoDb;
 struct LoBBSCommandCtx;
+
+/** Reply text for a failed write: "Disk full." for LODB_ERR_FULL, else `otherwise`. */
+const char *lobbsDbErrorText(LoDbError err, const char *otherwise = "Failed.");
 
 void lobbsAppCopyCapped(char *dst, size_t dstCap, const char *src, size_t srcCap);
 void lobbsAppTimeAgo(uint32_t timestamp, char *buffer, size_t bufferSize);
@@ -32,7 +35,7 @@ static constexpr size_t LOBBS_QUOTA_MAX_COUNTERS = 4;
 /** Fills `used` with this cycle's counters; zeros when missing or the cycle has expired. */
 void lobbsQuotaUsed(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, uint32_t *used, size_t n);
 /** Adds `add` to this cycle's counters, starting a new cycle when the last one expired. */
-bool lobbsQuotaAdd(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, const uint32_t *add, size_t n);
+LoDbError lobbsQuotaAdd(LoDb &db, const char *table, uint64_t userUuid, uint32_t periodSec, const uint32_t *add, size_t n);
 
 /** IEEE CRC32; pass 0xffffffff before the first byte, invert the return value for the digest. */
 uint32_t lobbsCrc32Update(uint32_t crc, const uint8_t *data, size_t len);

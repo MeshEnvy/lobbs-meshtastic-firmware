@@ -52,13 +52,15 @@ Config keys (uint32, defaults in parentheses): `session.max` (16), `session.idle
 | `/upload path [offset:b62]` | Chunked file write at byte offset, or show current size                                        |
 | `/commit src dst`           | Move when file CRC32 matches the 8-hex segment in the source name                              |
 | `/stat path`                | `file N` or `dir`                                                                              |
-| `/df`                       | Used/total KB per mount (`?` when unknown)                                                     |
+| `/df`                       | Used/total KB per mount (`?` when unknown), plus the reserve on `/flash`                       |
 
 SysOps painting the wall or adding yarn do not use quota.
 
 ## Files
 
 Paths use mount prefixes: `/flash/...`, `/sd/...`, `/extra/...` on builds with `LOBBS_EXTRA_QSPI=1` and a QSPI flash chip. `/` lists mounts. Do not `/rmtree` `/flash/lodb` unless you intend to wipe the BBS.
+
+`/flash` is shared with Meshtastic's own settings and node database. LoBBS leaves a reserve free there (16 KB on nRF52, 128 KB elsewhere). Posts, mail, uploads, and copies that would cut into it reply `Disk full.`. Deleting files always works. `/sd` and `/extra` have no reserve.
 
 Relative paths work under your session working directory for `ls`, `cat`, `hex`, `stat`, `mkdir`, `cp`, `mv`, `upload`, and `commit`. `rm`, `rmdir`, and `rmtree` require absolute paths.
 

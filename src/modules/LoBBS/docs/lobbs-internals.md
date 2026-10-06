@@ -96,6 +96,8 @@ Machine: records encoded as LoScalar lines, sliced into pages with `<id>ok [n:ma
 
 LoFS exposes `/` as a virtual root listing mounts. Writable paths start with `/<mount>/…` (`flash`, optional `sd`, optional `extra` when built with `LOBBS_EXTRA_QSPI=1`). Mount roots cannot be removed, renamed, or used as copy sources. Cross-mount `mv` copies files then deletes the source. Directories require same-mount rename.
 
+Shared mounts (`/flash`) keep `LOFS_SHARED_RESERVE_BYTES` free (16 KiB nRF52, 128 KiB other hardware, 0 Portduino; override with `-D`). `LoFS::hasRoom(path, bytes)` rounds `bytes` up to the block size, adds slack for metadata, adds the mount reserve, and compares with free space. It returns true when the mount reports no size. LoDB checks it before every record write and returns `LODB_ERR_FULL`. FsCommands checks it for `/mkdir`, `/cp`, `/upload`, and cross-mount `/mv`. Apps map `LODB_ERR_FULL` to `Disk full.` via `lobbsDbErrorText`. Deletes are never blocked.
+
 Install marker: `/flash/lobbs.ls`, field `LOBBS_INSTALL_FIELD_ROOT` holds the database root (e.g. `/flash`).
 
 | State   | Behavior                                                         |

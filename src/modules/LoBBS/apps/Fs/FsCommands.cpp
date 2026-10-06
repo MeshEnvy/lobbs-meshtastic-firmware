@@ -455,6 +455,10 @@ static void handleMkdir(LoBBSCommandCtx &ctx)
         lobbsCommandReplyError(ctx, "No such directory.");
         return;
     }
+    if (!LoFS::hasRoom(path, 1)) {
+        lobbsCommandReplyError(ctx, "Disk full.");
+        return;
+    }
     if (LoFS::mkdir(path))
         lobbsCommandReply(ctx, "Created.");
     else
@@ -500,9 +504,13 @@ static void handleDf(LoBBSCommandCtx &ctx)
             snprintf(root, sizeof(root), "/%s", name);
             uint64_t total = LoFS::totalBytes(root);
             uint64_t used = LoFS::usedBytes(root);
-            char line[48];
+            const uint32_t reserve = LoFS::mountReserve(name);
+            char line[64];
             if (total == 0)
                 snprintf(line, sizeof(line), "%s ?/? KB", name);
+            else if (reserve)
+                snprintf(line, sizeof(line), "%s %llu/%llu KB, %u KB reserved", name, (unsigned long long)(used / 1024),
+                         (unsigned long long)(total / 1024), (unsigned)(reserve / 1024));
             else
                 snprintf(line, sizeof(line), "%s %llu/%llu KB", name, (unsigned long long)(used / 1024),
                          (unsigned long long)(total / 1024));
@@ -662,7 +670,7 @@ static void fsReplyMove(LoBBSCommandCtx &ctx, LoFSMoveResult r)
         lobbsCommandReplyError(ctx, "Cross-mount directory move not supported.");
         break;
     case LoFSMoveResult::NoSpace:
-        lobbsCommandReplyError(ctx, "Not enough space.");
+        lobbsCommandReplyError(ctx, "Disk full.");
         break;
     case LoFSMoveResult::CopyFailed:
     case LoFSMoveResult::Failed:
@@ -708,6 +716,10 @@ static void handleCp(LoBBSCommandCtx &ctx)
     }
     if (LoFS::exists(dst)) {
         lobbsCommandReplyError(ctx, "Destination exists.");
+        return;
+    }
+    if (!LoFS::hasRoom(dst, srcSz)) {
+        lobbsCommandReplyError(ctx, "Disk full.");
         return;
     }
     if (!LoFS::copy(src, dst)) {
@@ -840,6 +852,10 @@ static void handleUpload(LoBBSCommandCtx &ctx)
         return;
     }
 
+    if (!LoFS::hasRoom(path, (uint32_t)decodedLen)) {
+        lobbsCommandReplyError(ctx, "Disk full.");
+        return;
+    }
     if (!LoFS::writeAt(path, offset, fsUploadDecodeScratch, (size_t)decodedLen)) {
         lobbsCommandReplyError(ctx, "Failed.");
         return;

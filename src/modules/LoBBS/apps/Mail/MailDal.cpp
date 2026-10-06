@@ -72,7 +72,7 @@ static int compareMailByTimestamp(const LoScalar &a, const LoScalar &b)
 
 static constexpr uint32_t LOBBS_MAX_LIST_ROWS = 256;
 
-bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *message)
+LoDbError MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *message)
 {
     lodb_uuid_t mailUuidVal = lodb_new_uuid(nullptr, toUserUuid ^ fromUserUuid);
 
@@ -86,11 +86,9 @@ bool MailDal::sendMail(uint64_t fromUserUuid, uint64_t toUserUuid, const char *m
     mail.setUint64(MailField::FIELD_TO, toUserUuid);
 
     LoDbError err = lodb_.insert("mail", mailUuidVal, mail);
-    if (err != LODB_OK) {
+    if (err != LODB_OK)
         LOG_ERROR("Failed to send mail");
-        return false;
-    }
-    return true;
+    return err;
 }
 
 std::vector<LoScalar> MailDal::getAllMailForUser(uint64_t userUuid)

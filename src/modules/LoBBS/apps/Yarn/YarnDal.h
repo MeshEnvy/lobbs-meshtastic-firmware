@@ -30,7 +30,7 @@ class YarnDal
         uint32_t total_words_appended;
     };
     void loadCurrent(CurrentState &out);
-    bool saveCurrent(CurrentState &cur);
+    LoDbError saveCurrent(CurrentState &cur);
     static void trimTailToMax(char *text);
     static bool isValidWordToken(const char *word);
     LoDb &lodb_;

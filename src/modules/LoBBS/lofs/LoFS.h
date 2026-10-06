@@ -17,6 +17,17 @@
 #endif
 #endif
 
+/** Free space LoFS keeps on shared mounts (`/flash`) so Meshtastic can still rewrite its own files. */
+#ifndef LOFS_SHARED_RESERVE_BYTES
+#if defined(ARCH_NRF52)
+#define LOFS_SHARED_RESERVE_BYTES (16 * 1024)
+#elif defined(ARCH_PORTDUINO)
+#define LOFS_SHARED_RESERVE_BYTES 0
+#else
+#define LOFS_SHARED_RESERVE_BYTES (128 * 1024)
+#endif
+#endif
+
 /**
  * Unified filesystem with a mount table: /flash, /sd (when present), /extra (when LOBBS_EXTRA_QSPI).
  * "/" is a virtual root that lists mounts. Every other path must start with "/<mount>/..." or "/<mount>".
@@ -62,6 +73,11 @@ class LoFS
     static uint64_t totalBytes(const char *mountRoot);
     static uint64_t usedBytes(const char *mountRoot);
     static uint64_t freeBytes(const char *mountRoot);
+    /** Bytes LoFS writes leave free on this mount (`LOFS_SHARED_RESERVE_BYTES` on shared mounts, else 0). */
+    static uint32_t mountReserve(const char *name);
+    /** True when writing `bytes` under `path` leaves the mount's reserve free. True when the mount reports no size or
+     * the path does not resolve (the write itself then fails). */
+    static bool hasRoom(const char *path, uint32_t bytes);
 
     static bool isMountPoint(const char *path);
     static bool isDirectory(const char *path);
@@ -81,6 +97,7 @@ class LoFS
         const char *name;
         Backend backend;
         bool present;
+        bool shared;
     };
 
     static Mount mounts[];

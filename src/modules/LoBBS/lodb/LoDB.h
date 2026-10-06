@@ -50,7 +50,16 @@ typedef uint64_t lodb_uuid_t;
 #define LODB_UUID_FMT "%08x%08x"
 #define LODB_UUID_ARGS(uuid) (uint32_t)((uuid) >> 32), (uint32_t)((uuid)&0xFFFFFFFF)
 
-typedef enum { LODB_OK = 0, LODB_ERR_NOT_FOUND, LODB_ERR_IO, LODB_ERR_DECODE, LODB_ERR_ENCODE, LODB_ERR_INVALID } LoDbError;
+typedef enum {
+    LODB_OK = 0,
+    LODB_ERR_NOT_FOUND,
+    LODB_ERR_IO,
+    LODB_ERR_DECODE,
+    LODB_ERR_ENCODE,
+    LODB_ERR_INVALID,
+    /** Write refused or cut short: the mount lacks room above its reserve (`LoFS::hasRoom`). */
+    LODB_ERR_FULL
+} LoDbError;
 
 typedef std::function<bool(const LoScalar &)> LoDbFilter;
 typedef std::function<int(const LoScalar &, const LoScalar &)> LoDbComparator;

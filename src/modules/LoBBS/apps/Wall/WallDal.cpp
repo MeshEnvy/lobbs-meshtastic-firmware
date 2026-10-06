@@ -57,7 +57,7 @@ void WallDal::loadCanvas(CanvasState &out)
     out.crc32 = computeCrc32((const uint8_t *)out.cells, LOBBS_WALL_CELLS);
 }
 
-bool WallDal::saveCanvas(CanvasState &canvas)
+LoDbError WallDal::saveCanvas(CanvasState &canvas)
 {
     wallSealCells(canvas.cells);
     canvas.crc32 = computeCrc32((const uint8_t *)canvas.cells, LOBBS_WALL_CELLS);
@@ -65,7 +65,7 @@ bool WallDal::saveCanvas(CanvasState &canvas)
     LoScalar rec;
     rec.setString(WallCanvasField::FIELD_CELLS, canvas.cells);
     rec.setUint32(WallCanvasField::FIELD_CRC32, canvas.crc32);
-    return lodb_.upsert("wall_canvas", id, rec) == LODB_OK;
+    return lodb_.upsert("wall_canvas", id, rec);
 }
 
 bool WallDal::formatGridLines(char *out, size_t outCap)
@@ -197,10 +197,11 @@ const char *WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const cha
         if (used + cells > maxCellsPerCycle)
             return "Quota full.";
     }
-    if (!saveCanvas(canvas))
-        return "Save failed.";
-    if (!isSysop && !lobbsQuotaAdd(lodb_, "wall_quota", userUuid, periodSeconds, &cells, 1))
-        return "Quota save.";
+    LoDbError err = saveCanvas(canvas);
+    if (err != LODB_OK)
+        return lobbsDbErrorText(err, "Save failed.");
+    if (!isSysop && (err = lobbsQuotaAdd(lodb_, "wall_quota", userUuid, periodSeconds, &cells, 1)) != LODB_OK)
+        return lobbsDbErrorText(err, "Quota save.");
     return nullptr;
 }
 

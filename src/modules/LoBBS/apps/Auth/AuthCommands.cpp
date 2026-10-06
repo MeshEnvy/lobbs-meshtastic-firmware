@@ -98,8 +98,8 @@ static void handleLogin(LoBBSCommandCtx &ctx)
             lobbsCommandReplyResponse(ctx, resp);
             return;
         }
-    } else if (!auth.createUser(username, password, getFrom(ctx.mp))) {
-        lobbsResponseSetError(resp, "Error creating account");
+    } else if (LoDbError err = auth.createUser(username, password, getFrom(ctx.mp))) {
+        lobbsResponseSetError(resp, lobbsDbErrorText(err, "Error creating account"));
         lobbsCommandReplyResponse(ctx, resp);
         return;
     } else {
@@ -129,8 +129,8 @@ static bool passwdApply(AuthDal &auth, const char *username, const char *newPass
         lobbsCommandReplyResponse(ctx, resp);
         return false;
     }
-    if (!auth.setPasswordByUsername(username, newPass)) {
-        lobbsResponseSetError(resp, "Error updating password.");
+    if (LoDbError err = auth.setPasswordByUsername(username, newPass)) {
+        lobbsResponseSetError(resp, lobbsDbErrorText(err, "Error updating password."));
         lobbsCommandReplyResponse(ctx, resp);
         return false;
     }
@@ -247,7 +247,8 @@ static void usersSubPromote(LoBBSCommandCtx &ctx)
         return;
     }
     LoBBSResponse resp;
-    lobbsRecordPush(resp.records, ctx.mod->auth().dal().setUserSysopByUsername(user, true) ? "Promoted." : "User not found.");
+    LoDbError err = ctx.mod->auth().dal().setUserSysopByUsername(user, true);
+    lobbsRecordPush(resp.records, err == LODB_OK ? "Promoted." : lobbsDbErrorText(err, "User not found."));
     lobbsCommandReplyResponse(ctx, resp);
 }
 
@@ -274,7 +275,8 @@ static void usersSubDemote(LoBBSCommandCtx &ctx)
         lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    lobbsRecordPush(resp.records, auth.setUserSysopByUsername(user, false) ? "Demoted." : "Failed.");
+    LoDbError err = auth.setUserSysopByUsername(user, false);
+    lobbsRecordPush(resp.records, err == LODB_OK ? "Demoted." : lobbsDbErrorText(err));
     lobbsCommandReplyResponse(ctx, resp);
 }
 

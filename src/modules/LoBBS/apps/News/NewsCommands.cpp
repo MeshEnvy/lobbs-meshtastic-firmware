@@ -165,8 +165,8 @@ static void newsSubPost(LoBBSCommandCtx &ctx)
         return;
     }
     LoBBSResponse resp;
-    lobbsRecordPush(resp.records,
-                    ctx.mod->news().dal().postNews(lobbsCtxUserUuid(ctx), msgBody) ? "News posted." : "Failed to post news.");
+    LoDbError err = ctx.mod->news().dal().postNews(lobbsCtxUserUuid(ctx), msgBody);
+    lobbsRecordPush(resp.records, err == LODB_OK ? "News posted." : lobbsDbErrorText(err, "Failed to post news."));
     lobbsCommandReplyResponse(ctx, resp);
 }
 

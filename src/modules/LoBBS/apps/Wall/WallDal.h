@@ -32,7 +32,7 @@ class WallDal
     };
 
     void loadCanvas(CanvasState &out);
-    bool saveCanvas(CanvasState &canvas);
+    LoDbError saveCanvas(CanvasState &canvas);
     uint32_t computeCrc32(const uint8_t *data, size_t len);
     uint32_t getLastSeenCrc(uint64_t userUuid);
     LoDb &lodb_;
