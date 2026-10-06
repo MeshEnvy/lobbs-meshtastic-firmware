@@ -6,7 +6,7 @@ GROUP(-lgcc -lc -lnosys)
 MEMORY
 {
   /* 0xD4000-0xED000 is the LoBBS `lodb` partition (LoFS /db). InternalFS follows at 0xED000. */
-  FLASH (rx)     : ORIGIN = 0x27000, LENGTH = 0xD4000 - 0x27000
+  FLASH (rx)     : ORIGIN = 0x26000, LENGTH = 0xD4000 - 0x26000
 
   /* SRAM required by Softdevice depend on
    * - Attribute Table Size (Number of Services and Characteristics)

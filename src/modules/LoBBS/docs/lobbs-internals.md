@@ -77,6 +77,7 @@ Three kinds:
 | `config_keys`     | list   | empty                  | empty                                            | Append key definition rows (`default`, `min`, `max` in fields 0–2)                 |
 | `config_validate` | record | title = key, 0 = value | key definition record                            | Set `LODB_F_ERROR` to reject; empty means ok                                       |
 | `config_changed`  | action | n/a                    | title = key, field 0 = effective value           | Apply new settings after set, reset, or database open                              |
+| `install_mounts`  | list   | empty                  | empty                                            | Append `{title = mount name}` rows a database may be installed on                  |
 
 These are the hooks core and the bundled apps fire. Apps add their own names the same way.
 
@@ -94,11 +95,15 @@ Machine: records encoded as LoScalar lines, sliced into pages with `<id>ok [n:ma
 
 ## LoFS and install
 
-LoFS exposes `/` as a virtual root listing mounts. Writable paths start with `/<mount>/…` (`flash`, optional `sd`, optional `extra` when built with `LOBBS_EXTRA_QSPI=1`). Mount roots cannot be removed, renamed, or used as copy sources. Cross-mount `mv` copies files then deletes the source. Directories require same-mount rename.
+LoFS exposes `/` as a virtual root listing mounts. Writable paths start with `/<mount>/…` (`flash`, `db` on nRF52840, optional `sd`, optional `extra` when built with `LOBBS_EXTRA_QSPI=1`). Mount roots cannot be removed, renamed, or used as copy sources. Cross-mount `mv` copies files then deletes the source. Directories require same-mount rename.
+
+`/db` is the nRF52840 `lodb` partition, 100 KiB at `0xD4000`–`0xED000` between the app and InternalFS. The linker scripts `src/platform/nrf52/nrf52840_s140_v6.ld` (set on `nrf52840_base`) and `nrf52840_s140_v7.ld` end `FLASH` at `0xD4000` and provide `__lodb_start` / `__lodb_end`. LoFS reads them as weak symbols, so nRF builds on other linker scripts have no `/db`. The partition is a second `Adafruit_LittleFS` with 128 B blocks over `flash_nrf5x`. It is formatted only when mount fails. Its block IO takes InternalFS's lock because the `flash_nrf5x` page cache is shared and the BLE task writes bonds to InternalFS.
+
+Each mount has a `dbSafe` flag (`LoFS::mountDbSafe`). `db`, `sd`, and `extra` are db-safe. `flash` is db-safe only when there is no `db` mount, because a failed Meshtastic save on nRF52 formats InternalFS. Install points come from the `install_mounts` list filter. Core registers a provider that lists present db-safe mounts in mount-table order (`flash`, `db`, `sd`, `extra`). `/install` accepts only listed mounts, the install hint and usage show them, and demo seeding uses the first one.
 
 Shared mounts (`/flash`) keep `LOFS_SHARED_RESERVE_BYTES` free (16 KiB nRF52, 128 KiB other hardware, 0 Portduino; override with `-D`). `LoFS::hasRoom(path, bytes)` rounds `bytes` up to the block size, adds slack for metadata, adds the mount reserve, and compares with free space. It returns true when the mount reports no size. LoDB checks it before every record write and returns `LODB_ERR_FULL`. FsCommands checks it for `/mkdir`, `/cp`, `/upload`, and cross-mount `/mv`. Apps map `LODB_ERR_FULL` to `Disk full.` via `lobbsDbErrorText`. Deletes are never blocked.
 
-Install marker: `/flash/lobbs.ls`, field `LOBBS_INSTALL_FIELD_ROOT` holds the database root (e.g. `/flash`).
+Install marker: `/flash/lobbs.ls`, field `LOBBS_INSTALL_FIELD_ROOT` holds the database root (e.g. `/db`). If InternalFS is formatted, the marker is gone and the node shows Blank. `/install <mount>` with SysOp credentials adopts the intact database.
 
 | State   | Behavior                                                         |
 | ------- | ---------------------------------------------------------------- |

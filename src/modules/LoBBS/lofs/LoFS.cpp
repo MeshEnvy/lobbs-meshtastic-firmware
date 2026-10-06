@@ -26,6 +26,94 @@ extern SPIClass SPI_HSPI;
 #endif
 #endif
 
+#if defined(ARCH_NRF52)
+#include "flash/flash_nrf5x.h"
+
+/** `lodb` partition bounds from the nRF52840 linker scripts. Weak: other nRF linker scripts get no `/db`. */
+extern "C" uint8_t __lodb_start[] __attribute__((weak));
+extern "C" uint8_t __lodb_end[] __attribute__((weak));
+
+static constexpr uint32_t LOFS_LODB_BLOCK = 128;
+
+// The flash_nrf5x page cache is shared with InternalFS (which the BLE task also writes), so /db block IO holds its lock.
+static int lofsLodbRead(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, void *buffer, lfs_size_t size)
+{
+    InternalFS._lockFS();
+    int n = flash_nrf5x_read(buffer, (uint32_t)c->context + block * LOFS_LODB_BLOCK + off, size);
+    InternalFS._unlockFS();
+    return n > 0 ? 0 : -1;
+}
+
+static int lofsLodbProg(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, const void *buffer, lfs_size_t size)
+{
+    InternalFS._lockFS();
+    int n = flash_nrf5x_write((uint32_t)c->context + block * LOFS_LODB_BLOCK + off, buffer, size);
+    InternalFS._unlockFS();
+    return n > 0 ? 0 : -1;
+}
+
+static int lofsLodbErase(const struct lfs_config *c, lfs_block_t block)
+{
+    uint8_t ff[LOFS_LODB_BLOCK];
+    memset(ff, 0xFF, sizeof(ff));
+    InternalFS._lockFS();
+    int n = flash_nrf5x_write((uint32_t)c->context + block * LOFS_LODB_BLOCK, ff, sizeof(ff));
+    InternalFS._unlockFS();
+    return n > 0 ? 0 : -1;
+}
+
+static int lofsLodbSync(const struct lfs_config *c)
+{
+    (void)c;
+    InternalFS._lockFS();
+    flash_nrf5x_flush();
+    InternalFS._unlockFS();
+    return 0;
+}
+
+static struct lfs_config lofsLodbCfg;
+static Adafruit_LittleFS lofsLodb(&lofsLodbCfg);
+
+static bool lofsLodbBegin()
+{
+    const uint32_t start = (uint32_t)__lodb_start;
+    const uint32_t end = (uint32_t)__lodb_end;
+    if (!start || end <= start)
+        return false;
+    lofsLodbCfg.context = (void *)start;
+    lofsLodbCfg.read = lofsLodbRead;
+    lofsLodbCfg.prog = lofsLodbProg;
+    lofsLodbCfg.erase = lofsLodbErase;
+    lofsLodbCfg.sync = lofsLodbSync;
+    lofsLodbCfg.read_size = LOFS_LODB_BLOCK;
+    lofsLodbCfg.prog_size = LOFS_LODB_BLOCK;
+    lofsLodbCfg.block_size = LOFS_LODB_BLOCK;
+    lofsLodbCfg.block_count = (end - start) / LOFS_LODB_BLOCK;
+    lofsLodbCfg.lookahead = 128;
+    if (lofsLodb.begin())
+        return true;
+
+    LOG_WARN("LoFS: formatting /db (0x%x-0x%x)", (unsigned)start, (unsigned)end);
+    InternalFS._lockFS();
+    flash_nrf5x_flush();
+    for (uint32_t addr = start; addr < end; addr += FLASH_NRF52_PAGE_SIZE)
+        flash_nrf5x_erase(addr);
+    InternalFS._unlockFS();
+    return lofsLodb.format() && lofsLodb.begin();
+}
+
+static Adafruit_LittleFS &lofsFs(bool lodb)
+{
+    return lodb ? lofsLodb : FSCom;
+}
+#else
+static auto &lofsFs(bool lodb)
+{
+    (void)lodb;
+    return FSCom;
+}
+#endif
+
 #include "../apps/AppUtil.h"
 #include "LoBBSStackGuard.h"
 #include <stdio.h>
@@ -78,19 +166,28 @@ void LoFS::begin()
         return;
     mountCount = 0;
 
-    mounts[mountCount++] = Mount{"flash", Backend::Flash, true, true};
+    bool hasDb = false;
+    mounts[mountCount++] = Mount{"flash", Backend::Flash, true, true, true};
+
+#if defined(ARCH_NRF52)
+    if (lofsLodbBegin()) {
+        mounts[mountCount++] = Mount{"db", Backend::Lodb, true, false, true};
+        hasDb = true;
+    }
+#endif
 
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
     if (lobfsSdPresent())
-        mounts[mountCount++] = Mount{"sd", Backend::Sd, true, false};
+        mounts[mountCount++] = Mount{"sd", Backend::Sd, true, false, true};
 #endif
 
 #if LOBBS_EXTRA_QSPI
     concurrency::LockGuard g(spiLock);
     if (lobfsQspiFlash.begin())
-        mounts[mountCount++] = Mount{"extra", Backend::Extra, true, false};
+        mounts[mountCount++] = Mount{"extra", Backend::Extra, true, false, true};
 #endif
 
+    mounts[0].dbSafe = !hasDb;
     begun = true;
 }
 
@@ -106,6 +203,12 @@ LoFS::Mount *LoFS::findByName(const char *name, size_t len)
 bool LoFS::mountPresent(const char *name)
 {
     return findByName(name, strlen(name)) != nullptr;
+}
+
+bool LoFS::mountDbSafe(const char *name)
+{
+    Mount *m = name ? findByName(name, strlen(name)) : nullptr;
+    return m && m->dbSafe;
 }
 
 void LoFS::eachPresentMount(void (*fn)(void *ctx, const char *name), void *ctx)
@@ -207,7 +310,7 @@ bool LoFS::isDirectory(const char *path)
         f = lobfsQspiFlash.open(bp, FILE_O_READ);
 #endif
     } else {
-        f = FSCom.open(bp, FILE_O_READ);
+        f = lofsFs(r.backend == Backend::Lodb).open(bp, FILE_O_READ);
     }
 #else
     if (r.backend == Backend::Sd) {
@@ -219,7 +322,7 @@ bool LoFS::isDirectory(const char *path)
         f = lobfsQspiFlash.open(bp, FILE_O_READ);
 #endif
     } else {
-        f = FSCom.open(bp, FILE_O_READ);
+        f = lofsFs(r.backend == Backend::Lodb).open(bp, FILE_O_READ);
     }
 #endif
     if (!f)
@@ -258,7 +361,7 @@ File LoFS::open(const char *filepath, uint8_t mode)
         return lobfsQspiFlash.open(bp, mode);
 #endif
     }
-    return FSCom.open(bp, mode);
+    return lofsFs(r.backend == Backend::Lodb).open(bp, mode);
 #endif
 }
 
@@ -296,10 +399,10 @@ File LoFS::open(const char *filepath, const char *mode)
 #endif
     }
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-    return FSCom.open(bp, mode);
+    return lofsFs(r.backend == Backend::Lodb).open(bp, mode);
 #else
     uint8_t flashMode = (mode && strcmp(mode, "r") == 0) ? 0 : 1;
-    return FSCom.open(bp, flashMode);
+    return lofsFs(r.backend == Backend::Lodb).open(bp, flashMode);
 #endif
 }
 
@@ -325,7 +428,7 @@ bool LoFS::exists(const char *filepath)
         return lobfsQspiFlash.exists(bp);
 #endif
     }
-    return FSCom.exists(bp);
+    return lofsFs(r.backend == Backend::Lodb).exists(bp);
 }
 
 bool LoFS::mkdir(const char *filepath)
@@ -350,7 +453,7 @@ bool LoFS::mkdir(const char *filepath)
         return lobfsQspiFlash.mkdir(bp);
 #endif
     }
-    return FSCom.mkdir(bp);
+    return lofsFs(r.backend == Backend::Lodb).mkdir(bp);
 }
 
 bool LoFS::remove(const char *filepath)
@@ -375,7 +478,7 @@ bool LoFS::remove(const char *filepath)
         return lobfsQspiFlash.remove(bp);
 #endif
     }
-    return FSCom.remove(bp);
+    return lofsFs(r.backend == Backend::Lodb).remove(bp);
 }
 
 bool LoFS::rename(const char *oldfilepath, const char *newfilepath)
@@ -406,7 +509,7 @@ bool LoFS::rename(const char *oldfilepath, const char *newfilepath)
         return lobfsQspiFlash.rename(oldBp, newBp);
 #endif
     }
-    return FSCom.rename(oldBp, newBp);
+    return lofsFs(oldR.backend == Backend::Lodb).rename(oldBp, newBp);
 }
 
 static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn)
@@ -679,7 +782,7 @@ uint64_t LoFS::totalBytes(const char *mountRoot)
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
     return FSCom.totalBytes();
 #elif defined(ARCH_NRF52)
-    const lfs_config *cfg = FSCom._getFS()->cfg;
+    const lfs_config *cfg = lofsFs(r.backend == Backend::Lodb)._getFS()->cfg;
     return cfg ? (uint64_t)cfg->block_size * cfg->block_count : 0;
 #else
     return 0;
@@ -716,11 +819,12 @@ uint64_t LoFS::usedBytes(const char *mountRoot)
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
     return FSCom.usedBytes();
 #elif defined(ARCH_NRF52)
-    lfs_t *lfs = FSCom._getFS();
+    Adafruit_LittleFS &fs = lofsFs(r.backend == Backend::Lodb);
+    lfs_t *lfs = fs._getFS();
     uint32_t blocks = 0;
-    FSCom._lockFS();
+    fs._lockFS();
     int err = lfs_traverse(lfs, lofsCountBlock, &blocks);
-    FSCom._unlockFS();
+    fs._unlockFS();
     if (err || !lfs->cfg)
         return 0;
     return (uint64_t)blocks * lfs->cfg->block_size;
@@ -765,7 +869,7 @@ bool LoFS::hasRoom(const char *path, uint32_t bytes)
         slack = 64 * 1024;
     }
 #if defined(ARCH_NRF52)
-    if (r.backend == Backend::Flash) {
+    if (r.backend == Backend::Flash || r.backend == Backend::Lodb) {
         block = 128;
         slack = 4 * 128;
     }
@@ -841,5 +945,5 @@ bool LoFS::rmdir(const char *filepath, bool recursive)
         return lobfsQspiFlash.rmdir(bp);
 #endif
     }
-    return FSCom.rmdir(bp);
+    return lofsFs(r.backend == Backend::Lodb).rmdir(bp);
 }

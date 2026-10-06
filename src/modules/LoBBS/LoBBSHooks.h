@@ -29,6 +29,7 @@
  * | `config_keys`    | list   | empty                           | none                  |
  * | `config_validate`| record | title = key, field 0 = value    | key definition record |
  * | `config_changed` | action | n/a                             | title = key, field 0 = value |
+ * | `install_mounts` | list   | empty (title = mount name)      | none                  |
  *
  * Records use `title` and `description` (LODB_F_TITLE / LODB_F_DESCRIPTION) unless noted.
  * Validation filters may set LODB_F_ERROR on the value record; set succeeds only if it stays empty.

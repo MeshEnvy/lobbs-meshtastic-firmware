@@ -40,27 +40,43 @@ const char *lobbsInstallOfflineMount(const LoBBSModule &mod)
     return gOfflineMount;
 }
 
-void lobbsInstallMountList(char *out, size_t cap)
+static void filterInstallMountsDefault(LoBBSCommandCtx *ctx, std::vector<LoScalar> &value, const LoScalar &args)
+{
+    (void)ctx;
+    (void)args;
+    LoFS::eachPresentMount(
+        [](void *v, const char *name) {
+            if (!LoFS::mountDbSafe(name))
+                return;
+            LoScalar rec;
+            rec.setString(LODB_F_TITLE, name);
+            ((std::vector<LoScalar> *)v)->push_back(rec);
+        },
+        &value);
+}
+
+static std::vector<LoScalar> lobbsInstallMounts(LoBBSCommandCtx &ctx)
+{
+    std::vector<LoScalar> mounts;
+    lobbsApplyFilter("install_mounts", ctx, mounts, LoScalar());
+    return mounts;
+}
+
+void lobbsInstallMountList(LoBBSCommandCtx &ctx, char *out, size_t cap)
 {
     if (!out || cap == 0)
         return;
-    struct Ctx {
-        char *out;
-        size_t cap;
-        bool first;
-    } c{out, cap, true};
     out[0] = '\0';
-    LoFS::eachPresentMount(
-        [](void *v, const char *name) {
-            auto *c = (Ctx *)v;
-            size_t len = strlen(c->out);
-            if (!c->first && len + 1 < c->cap)
-                strncat(c->out, "|", c->cap - len - 1);
-            c->first = false;
-            len = strlen(c->out);
-            strncat(c->out, name, c->cap - len - 1);
-        },
-        &c);
+    std::string name;
+    for (const LoScalar &rec : lobbsInstallMounts(ctx)) {
+        if (!rec.getString(LODB_F_TITLE, name))
+            continue;
+        size_t len = strlen(out);
+        if (len && len + 1 < cap)
+            strncat(out, "|", cap - len - 1);
+        len = strlen(out);
+        strncat(out, name.c_str(), cap - len - 1);
+    }
 }
 
 bool lobbsInstallReadMarker(char *rootOut, size_t cap)
@@ -189,13 +205,16 @@ bool lobbsInstallAuthorized(const meshtastic_MeshPacket &mp)
     return false;
 }
 
-static bool lobbsInstallLocToRoot(const char *loc, char *rootOut, size_t cap)
+static bool lobbsInstallLocToRoot(LoBBSCommandCtx &ctx, const char *loc, char *rootOut, size_t cap)
 {
     if (!loc || !rootOut)
         return false;
-    if (strcmp(loc, "flash") == 0 || strcmp(loc, "sd") == 0 || strcmp(loc, "extra") == 0) {
-        snprintf(rootOut, cap, "/%s", loc);
-        return LoFS::mountPresent(loc);
+    std::string name;
+    for (const LoScalar &rec : lobbsInstallMounts(ctx)) {
+        if (rec.getString(LODB_F_TITLE, name) && name == loc && LoFS::mountPresent(loc)) {
+            snprintf(rootOut, cap, "/%s", loc);
+            return true;
+        }
     }
     return false;
 }
@@ -215,12 +234,16 @@ static void handleInstall(LoBBSCommandCtx &ctx)
     const char *user = lobbsArgShift(ctx);
     const char *pass = lobbsArgShift(ctx);
     if (!loc || !user || !pass || lobbsArgHasMore(ctx)) {
-        lobbsCommandReplyError(ctx, "Usage: /install <flash|extra|sd> <user> <pass>");
+        char mounts[48];
+        lobbsInstallMountList(ctx, mounts, sizeof(mounts));
+        char msg[96];
+        snprintf(msg, sizeof(msg), "Usage: /install <%s> <user> <pass>", mounts);
+        lobbsCommandReplyError(ctx, msg);
         return;
     }
 
     char root[16];
-    if (!lobbsInstallLocToRoot(loc, root, sizeof(root))) {
+    if (!lobbsInstallLocToRoot(ctx, loc, root, sizeof(root))) {
         lobbsCommandReplyError(ctx, "Mount not available.");
         return;
     }
@@ -269,17 +292,30 @@ static void slashInstall(LoBBSCommandCtx *ctx, const LoScalar &args)
 void lobbsInstallRegisterCommands()
 {
     lobbsAddAction("slash_cmd", slashInstall, LOBBS_HOOK_PRIORITY_AUTH - 1);
+    lobbsAddFilter("install_mounts", filterInstallMountsDefault);
 }
 
 #if LOBBS_SEED
 void lobbsInstallAutoSeed(LoBBSModule &mod)
 {
-    const char *root = "/flash";
     gInstallState = LoBBSInstallState::Blank;
     gInstallRoot[0] = '\0';
     gOfflineMount[0] = '\0';
     LoFS::remove(LOBBS_INSTALL_MARKER_PATH);
-    LoFS::rmdir("/flash/lodb/lobbs", true);
+
+    LoBBSCommandCtx ctx;
+    ctx.mod = &mod;
+    std::vector<LoScalar> mounts = lobbsInstallMounts(ctx);
+    std::string name;
+    if (mounts.empty() || !mounts[0].getString(LODB_F_TITLE, name)) {
+        LOG_ERROR("LoBBS seed: no install mount");
+        return;
+    }
+    char root[16];
+    snprintf(root, sizeof(root), "/%s", name.c_str());
+    char dbDir[32];
+    snprintf(dbDir, sizeof(dbDir), "%s/lodb/lobbs", root);
+    LoFS::rmdir(dbDir, true);
     if (mod.lodb()->open(root) != LODB_OK || !lobbsInstallWriteMarker(root)) {
         LOG_ERROR("LoBBS seed install failed at %s", root);
         return;

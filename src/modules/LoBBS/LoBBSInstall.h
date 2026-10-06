@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 class LoBBSModule;
+struct LoBBSCommandCtx;
 typedef struct _meshtastic_MeshPacket meshtastic_MeshPacket;
 
 enum class LoBBSInstallState : uint8_t { Blank, Ready, Offline };
@@ -19,7 +20,8 @@ const char *lobbsInstallOfflineMount(const LoBBSModule &mod);
 
 void lobbsInstallInit(LoBBSModule &mod);
 void lobbsInstallDatabaseOpened(LoBBSModule &mod);
-void lobbsInstallMountList(char *out, size_t cap);
+/** `install_mounts` names joined with `|`, e.g. `db|sd`. */
+void lobbsInstallMountList(LoBBSCommandCtx &ctx, char *out, size_t cap);
 
 bool lobbsInstallAuthorized(const meshtastic_MeshPacket &mp);
 bool lobbsInstallWriteMarker(const char *root);

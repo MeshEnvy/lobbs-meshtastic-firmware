@@ -356,7 +356,7 @@ void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, cons
     if (install != LoBBSInstallState::Ready && !isHelp && !isInstall) {
         if (install == LoBBSInstallState::Blank) {
             char mounts[48];
-            lobbsInstallMountList(mounts, sizeof(mounts));
+            lobbsInstallMountList(ctx, mounts, sizeof(mounts));
             char msg[160];
             snprintf(msg, sizeof(msg), "New LoBBS. Sysop: /install <%s> <user> <pass>", mounts[0] ? mounts : "flash");
             lobbsCommandReplyError(ctx, msg);

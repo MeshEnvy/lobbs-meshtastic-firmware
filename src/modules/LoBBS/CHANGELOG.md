@@ -30,6 +30,7 @@ Planned major release **2.0.0** (not tagged yet).
 - `/passwd` (self and sysop reset) and `/time` (show Unix time; sysop set clock).
 - Logins are held in RAM and end on reboot or after an idle timeout. SysOp `/config` sets `session.max`, `session.idle`, wall/yarn quotas, `pager.ttl`, and `password.min`. `/help config key` explains a setting. Overrides live in one LoDB `config` table. Logging in never writes flash.
 - Ignore non-slash DMs and self-originated loopback (`from` = local node).
+- nRF52840: LoBBS gets its own 100 KB `/db` partition between the app and Meshtastic's filesystem. `/install` offers `db` there instead of `/flash`. Install points come from the `install_mounts` filter.
 - LoBBS writes keep a free-space reserve on `/flash` (16 KB on nRF52, 128 KB elsewhere) so Meshtastic can still save its own files. Writes that would cut into it reply `Disk full.`. `/df` shows the reserve.
 
 ### Changed

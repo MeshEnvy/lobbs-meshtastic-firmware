@@ -29,7 +29,8 @@
 #endif
 
 /**
- * Unified filesystem with a mount table: /flash, /sd (when present), /extra (when LOBBS_EXTRA_QSPI).
+ * Unified filesystem with a mount table: /flash, /db (nRF52840 `lodb` partition), /sd (when present), /extra (when
+ * LOBBS_EXTRA_QSPI).
  * "/" is a virtual root that lists mounts. Every other path must start with "/<mount>/..." or "/<mount>".
  * Absolute paths only; no glob metacharacters. Upload gap policy lives in FsCommands, not writeAt.
  */
@@ -78,10 +79,12 @@ class LoFS
     /** True when writing `bytes` under `path` leaves the mount's reserve free. True when the mount reports no size or
      * the path does not resolve (the write itself then fails). */
     static bool hasRoom(const char *path, uint32_t bytes);
+    /** True when a database may live on this mount. `flash` only qualifies when there is no `db` mount. */
+    static bool mountDbSafe(const char *name);
 
     static bool isMountPoint(const char *path);
     static bool isDirectory(const char *path);
-    /** Returns mount name ("flash", "sd", "extra") or nullptr. */
+    /** Returns mount name ("flash", "db", "sd", "extra") or nullptr. */
     static const char *mountNameForPath(const char *path);
 
     static bool mountPresent(const char *name);
@@ -91,13 +94,14 @@ class LoFS
     static bool list(const char *dirpath, void *ctx, ListCallback fn);
 
   private:
-    enum class Backend : uint8_t { Flash = 0, Sd = 1, Extra = 2 };
+    enum class Backend : uint8_t { Flash = 0, Sd = 1, Extra = 2, Lodb = 3 };
 
     struct Mount {
         const char *name;
         Backend backend;
         bool present;
         bool shared;
+        bool dbSafe;
     };
 
     static Mount mounts[];
