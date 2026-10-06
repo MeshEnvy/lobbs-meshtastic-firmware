@@ -509,11 +509,10 @@ static void handleDf(LoBBSCommandCtx &ctx)
             if (total == 0)
                 snprintf(line, sizeof(line), "%s ?/? KB", name);
             else if (reserve)
-                snprintf(line, sizeof(line), "%s %llu/%llu KB, %u KB reserved", name, (unsigned long long)(used / 1024),
-                         (unsigned long long)(total / 1024), (unsigned)(reserve / 1024));
+                snprintf(line, sizeof(line), "%s %u/%u KB, %u KB reserved", name, (unsigned)(used / 1024),
+                         (unsigned)(total / 1024), (unsigned)(reserve / 1024));
             else
-                snprintf(line, sizeof(line), "%s %llu/%llu KB", name, (unsigned long long)(used / 1024),
-                         (unsigned long long)(total / 1024));
+                snprintf(line, sizeof(line), "%s %u/%u KB", name, (unsigned)(used / 1024), (unsigned)(total / 1024));
             lobbsRecordPush(dc->resp->records, line);
         },
         &dc);
