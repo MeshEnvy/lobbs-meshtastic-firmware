@@ -141,7 +141,7 @@ Why this shape:
 - Flat on purpose. There is no nesting and no quoting. A news body full of quotes needs no JSON parser. A structured value, like the wall grid, is one string field the owning app parses.
 - Small. The codec is one class with no dependencies, which fits nRF52 flash and the 512-byte stack cap.
 
-On nRF52, do not format `uint64_t` with `%llu`.
+On nRF52, do not format `uint64_t` with `%llu`. Use `loU64ToDec` from `loutil/LoUtil.h`.
 
 ## LoDB
 

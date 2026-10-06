@@ -16,6 +16,7 @@
 #include <lodb/LoDB.h>
 #include <lofs/Glob.h>
 #include <lofs/LoFS.h>
+#include <loutil/LoUtil.h>
 #include <string>
 
 #include "LoBBSStackGuard.h"
@@ -506,13 +507,15 @@ static void handleDf(LoBBSCommandCtx &ctx)
             uint64_t used = LoFS::usedBytes(root);
             const uint32_t reserve = LoFS::mountReserve(name);
             char line[64];
+            char usedKb[LO_U64_DEC_LEN], totalKb[LO_U64_DEC_LEN];
             if (total == 0)
                 snprintf(line, sizeof(line), "%s ?/? KB", name);
             else if (reserve)
-                snprintf(line, sizeof(line), "%s %u/%u KB, %u KB reserved", name, (unsigned)(used / 1024),
-                         (unsigned)(total / 1024), (unsigned)(reserve / 1024));
+                snprintf(line, sizeof(line), "%s %s/%s KB, %u KB reserved", name, loU64ToDec(used / 1024, usedKb),
+                         loU64ToDec(total / 1024, totalKb), (unsigned)(reserve / 1024));
             else
-                snprintf(line, sizeof(line), "%s %u/%u KB", name, (unsigned)(used / 1024), (unsigned)(total / 1024));
+                snprintf(line, sizeof(line), "%s %s/%s KB", name, loU64ToDec(used / 1024, usedKb),
+                         loU64ToDec(total / 1024, totalKb));
             lobbsRecordPush(dc->resp->records, line);
         },
         &dc);

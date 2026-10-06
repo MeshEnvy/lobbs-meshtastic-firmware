@@ -82,4 +82,4 @@ Mail is the reference implementation for subcommands and help tables.
 1. Pick a table name. App fields use `0..93`. Body in field `97`, short name in `98`.
 2. Do not set field `99`. Leave `95` and `96` unset on insert. `removeField` them before `update` when you want LoDB to stamp times.
 3. `registerTable` at app construction. Prefer `LoDb::upsert` for keyed or singleton rows.
-4. Build uuids with `lodb_new_uuid`. Do not print `uint64_t` with `%llu` on nRF52.
+4. Build uuids with `lodb_new_uuid`. Do not print `uint64_t` with `%llu` on nRF52. Use `loU64ToDec` from `loutil/LoUtil.h`.

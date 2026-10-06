@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstring>
 #include <loscalar/LoScalar.h>
+#include <loutil/LoUtil.h>
 
 #include "LoBBSStackGuard.h"
 
@@ -94,17 +95,11 @@ void LoScalar::setString(uint32_t field, const std::string &value)
 
 void LoScalar::setUint64(uint32_t field, uint64_t value)
 {
-    // newlib-nano (nRF52) snprintf has no %llu and would emit only the low 32 bits.
-    char buf[21];
-    char *p = buf + sizeof(buf) - 1;
-    *p = '\0';
-    do {
-        *--p = (char)('0' + (value % 10));
-        value /= 10;
-    } while (value);
+    char buf[LO_U64_DEC_LEN];
+    const char *digits = loU64ToDec(value, buf);
     Field *f = findOrInsert(field);
     if (f)
-        f->value = p;
+        f->value = digits;
 }
 
 void LoScalar::setUint32(uint32_t field, uint32_t value)
