@@ -161,7 +161,14 @@ void lobbsInstallInit(LoBBSModule &mod)
 
     strncpy(gInstallRoot, root, sizeof(gInstallRoot) - 1);
     gInstallState = LoBBSInstallState::Ready;
+    lobbsInstallDatabaseOpened(mod);
     LOG_INFO("LoBBS ready at %s", root);
+}
+
+void lobbsInstallDatabaseOpened(LoBBSModule &mod)
+{
+    mod.auth().dal().clearSessions();
+    mod.config().dal().notifyDatabaseOpened(mod);
 }
 
 bool lobbsInstallAuthorized(const meshtastic_MeshPacket &mp)
@@ -224,6 +231,7 @@ static void handleInstall(LoBBSCommandCtx &ctx)
     }
 
     AuthDal &auth = ctx.mod->auth().dal();
+    lobbsInstallDatabaseOpened(*ctx.mod);
     const bool hasUsers = auth.countAllUsers() > 0;
     if (hasUsers) {
         LoScalar row;
@@ -275,6 +283,7 @@ void lobbsInstallAutoSeed(LoBBSModule &mod)
         LOG_ERROR("LoBBS seed install failed at %s", root);
         return;
     }
+    lobbsInstallDatabaseOpened(mod);
     strncpy(gInstallRoot, root, sizeof(gInstallRoot) - 1);
     gInstallState = LoBBSInstallState::Ready;
     LOG_INFO("LoBBS seed install at %s", root);

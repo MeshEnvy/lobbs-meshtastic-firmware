@@ -20,8 +20,8 @@ class YarnDal
     uint32_t newWordsForUser(uint64_t userUuid);
     bool markYarnSeen(uint64_t userUuid);
     /** Returns nullptr on success, else a user-facing error. */
-    const char *appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount);
-    const char *setConfig(uint32_t periodSeconds, uint32_t maxWords, uint32_t maxChars);
+    const char *appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount, uint32_t periodSeconds,
+                            uint32_t maxWords, uint32_t maxChars);
     uint32_t totalWordsAppended();
 
   private:
@@ -29,15 +29,8 @@ class YarnDal
         char text[LOBBS_YARN_BODY_MAX + 1];
         uint32_t total_words_appended;
     };
-    struct ConfigState {
-        uint32_t period_seconds;
-        uint32_t max_words_per_interval;
-        uint32_t max_chars_per_interval;
-    };
-
     void loadCurrent(CurrentState &out);
     bool saveCurrent(CurrentState &cur);
-    void loadConfig(ConfigState &out);
     static void trimTailToMax(char *text);
     static bool isValidWordToken(const char *word);
     LoDb &lodb_;

@@ -1,6 +1,7 @@
 #if !MESHTASTIC_EXCLUDE_LOBBS
 
 #include "LoBBSReplyCache.h"
+#include "apps/Config/ConfigCommands.h"
 #include "gps/RTC.h"
 #include <cstddef>
 #include <map>
@@ -56,7 +57,7 @@ bool lobbsReplyCacheStore(uint32_t sessionNodeId, const LoBBSResponse &resp)
 
     LobbsReplyCacheEntry entry;
     entry.resp = resp;
-    entry.expiresSec = getTime() + LOBBS_REPLY_CACHE_TTL_SEC;
+    entry.expiresSec = getTime() + lobbsReplyCacheTtlSec();
     lobbsReplyCacheBySession[sessionNodeId] = std::move(entry);
     while (lobbsReplyCacheBySession.size() > LOBBS_REPLY_CACHE_MAX_ENTRIES) {
         lobbsReplyCacheBySession.erase(lobbsReplyCacheBySession.begin());
@@ -74,7 +75,7 @@ bool lobbsReplyCacheLoad(uint32_t sessionNodeId, LoBBSResponse &out)
         lobbsReplyCacheBySession.erase(it);
         return false;
     }
-    it->second.expiresSec = now + LOBBS_REPLY_CACHE_TTL_SEC;
+    it->second.expiresSec = now + lobbsReplyCacheTtlSec();
     out = it->second.resp;
     return true;
 }

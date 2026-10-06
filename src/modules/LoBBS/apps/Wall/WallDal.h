@@ -22,22 +22,17 @@ class WallDal
     bool markSeen(uint64_t userUuid, uint32_t crc32);
     bool isDirtyForUser(uint64_t userUuid);
     /** Returns nullptr on success, else a user-facing error. */
-    const char *applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count);
-    const char *setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle);
+    const char *applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count, uint32_t periodSeconds,
+                                 uint32_t maxCellsPerCycle);
 
   private:
     struct CanvasState {
         char cells[LOBBS_WALL_CELLS + 1];
         uint32_t crc32;
     };
-    struct ConfigState {
-        uint32_t period_seconds;
-        uint32_t max_cells_per_cycle;
-    };
 
     void loadCanvas(CanvasState &out);
     bool saveCanvas(CanvasState &canvas);
-    void loadConfig(ConfigState &out);
     uint32_t computeCrc32(const uint8_t *data, size_t len);
     uint32_t getLastSeenCrc(uint64_t userUuid);
     LoDb &lodb_;

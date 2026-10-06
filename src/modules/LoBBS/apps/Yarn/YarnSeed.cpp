@@ -18,8 +18,10 @@ void lobbsSeedYarn(LoBBSModule &mod)
         return;
     const char *words1[] = {"Demo", "yarn", "seed", "line", "one."};
     const char *words2[] = {"Another", "short", "contribution."};
-    yarn.appendWords(sysop, true, words1, 5);
-    yarn.appendWords(sysop, true, words2, 3);
+    yarn.appendWords(sysop, true, words1, 5, LOBBS_YARN_DEFAULT_PERIOD_SEC, LOBBS_YARN_DEFAULT_MAX_WORDS,
+                     LOBBS_YARN_DEFAULT_MAX_CHARS);
+    yarn.appendWords(sysop, true, words2, 3, LOBBS_YARN_DEFAULT_PERIOD_SEC, LOBBS_YARN_DEFAULT_MAX_WORDS,
+                     LOBBS_YARN_DEFAULT_MAX_CHARS);
 }
 
 #endif

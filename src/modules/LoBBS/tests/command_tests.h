@@ -320,6 +320,31 @@ static void test_command_users_kick()
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Sessions cleared."));
 }
 
+static void test_command_config()
+{
+    lobbsTestSendLine("/login demo01 demo1");
+    lobbsTestSendLine("/config");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "SysOp only."));
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestSendLine("/config");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "session.max 16"));
+    lobbsTestSendLine("/config session.max");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "session.max = 16"));
+    lobbsTestSendLine("/config session.max 0");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Must be 1-64."));
+    lobbsTestSendLine("/config session.max 8");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "session.max = 8."));
+    lobbsTestSendLine("/config session.max reset");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "session.max reset."));
+    lobbsTestSendLine("/config bogus");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Unknown setting."));
+    lobbsTestSendLine("/config password.min 8");
+    lobbsTestSendLine("/passwd short short");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Password too short."));
+    lobbsTestSendLine("/passwd longenuf longenuf");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Password updated."));
+}
+
 static void test_command_subcommand_with_args()
 {
     lobbsTestSendLine("/login sysop demo1");
@@ -361,6 +386,7 @@ inline void lobbsRunCommandTests()
     RUN_TEST(test_command_install_blank_and_local);
     RUN_TEST(test_command_install_adopts_existing);
     RUN_TEST(test_command_users_kick);
+    RUN_TEST(test_command_config);
     RUN_TEST(test_command_subcommand_with_args);
     RUN_TEST(test_command_help_catalog_and_topics);
 }

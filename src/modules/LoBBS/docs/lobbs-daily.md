@@ -31,6 +31,8 @@ Long answers end with `{p 1/3}`. Send `/p2`, then `/p3`. Paging works on your la
 | `/whoami`              | Who you are                  |
 | `/passwd new confirm`  | Change your password         |
 
+A login ends when the node reboots or after a day without commands (the SysOp can change both limits). When every login slot is taken, a new login signs out whoever has been idle longest. Run `/login` again if `/whoami` says you are not logged in.
+
 ## Users
 
 Login required.

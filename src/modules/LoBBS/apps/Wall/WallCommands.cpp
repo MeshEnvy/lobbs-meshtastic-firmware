@@ -6,6 +6,7 @@
 #include "../../LoBBSModule.h"
 #include "../../LoBBSReply.h"
 #include "../../LoBBSResponse.h"
+#include "../Config/ConfigCommon.h"
 #include "WallDal.h"
 #include <cstdio>
 #include <cstring>
@@ -27,28 +28,9 @@ static void replyGrid(LoBBSCommandCtx &ctx, bool markSeen)
     lobbsCommandReply(ctx, buf);
 }
 
-static void wallSubLimit(LoBBSCommandCtx &ctx)
-{
-    lobbsArgShift(ctx);
-    uint32_t period = 0;
-    uint32_t cells = 0;
-    if (!lobbsArgShiftUint(ctx, period) || !lobbsArgShiftUint(ctx, cells) || lobbsArgHasMore(ctx)) {
-        lobbsCommandReplyError(ctx, "Usage: /wall limit SEC CELLS");
-        return;
-    }
-    if (const char *err = ctx.mod->wall().dal().setConfig(period, cells)) {
-        lobbsCommandReplyError(ctx, err);
-        return;
-    }
-    char reply[64];
-    snprintf(reply, sizeof(reply), "Limit %us %u cells.", (unsigned)period, (unsigned)cells);
-    lobbsCommandReply(ctx, reply);
-}
-
 static const LoBBSVerb wallVerbs[] = {
     {"view", nullptr, 0, "view — /wall shows 12x12 grid (no login)"},
     {"paint", nullptr, LOBBS_V_LOGIN, "paint — a4x set; -a4 blank; 1/cycle default"},
-    {"limit", wallSubLimit, LOBBS_V_SYSOP, "limit — sysop: /wall limit SEC CELLS"},
 };
 
 static void handleWall(LoBBSCommandCtx &ctx)
@@ -72,7 +54,10 @@ static void handleWall(LoBBSCommandCtx &ctx)
         return;
     }
 
-    if (const char *err = ctx.mod->wall().dal().applyPaintTokens(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n)) {
+    const uint32_t period = lobbsConfigGet(ctx, "wall.period");
+    const uint32_t cells = lobbsConfigGet(ctx, "wall.cells");
+    if (const char *err =
+            ctx.mod->wall().dal().applyPaintTokens(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n, period, cells)) {
         lobbsCommandReplyError(ctx, err);
         return;
     }
@@ -117,8 +102,17 @@ static void actionWallSeed(LoBBSCommandCtx *ctx, const LoScalar &args)
 }
 #endif
 
+static void filterWallConfigKeys(LoBBSCommandCtx *ctx, std::vector<LoScalar> &keys, const LoScalar &args)
+{
+    (void)ctx;
+    (void)args;
+    lobbsConfigPushKey(keys, "wall.period", LOBBS_WALL_DEFAULT_PERIOD_SEC, 60, 86400, "Wall paint quota period (seconds)");
+    lobbsConfigPushKey(keys, "wall.cells", LOBBS_WALL_DEFAULT_MAX_CELLS, 1, LOBBS_WALL_CELLS, "Max cells painted per period");
+}
+
 void lobbsWallRegisterCommands()
 {
+    lobbsAddFilter("config_keys", filterWallConfigKeys, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddAction("slash_cmd", slashWall, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_topics", filterWallHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_for_topic", filterWallHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);

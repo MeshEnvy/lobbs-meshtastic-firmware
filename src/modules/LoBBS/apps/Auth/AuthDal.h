@@ -7,9 +7,17 @@
 #include <string>
 #include <vector>
 
+static constexpr uint32_t LOBBS_SESSION_DEFAULT_MAX = 16;
+static constexpr uint32_t LOBBS_SESSION_DEFAULT_IDLE_SEC = 86400;
+
 class AuthDal
 {
   public:
+    struct SessionConfig {
+        uint32_t maxSessions;
+        uint32_t idleSeconds;
+    };
+
     AuthDal(LoDb &lodb);
 
     static uint64_t userUuid(const LoScalar &user);
@@ -35,10 +43,24 @@ class AuthDal
     uint32_t countSysopUsers();
     uint32_t countAllUsers();
     bool kickUserByUsername(const char *username);
+    void clearSessions();
+    void applySessionConfig(const SessionConfig &cfg);
 
   private:
+    struct Session {
+        bool used;
+        uint32_t nodeId;
+        uint32_t lastActiveMs;
+        uint64_t userUuid;
+        char cwd[LOBBS_CWD_BUFFER_SIZE];
+    };
+
     static void hashPassword(const char *password, uint8_t *hash);
+    bool sessionExpired(const Session &s) const;
+    Session *findSession(uint32_t nodeId);
     LoDb &lodb_;
+    std::vector<Session> sessions_;
+    SessionConfig sessionCfg_ = {LOBBS_SESSION_DEFAULT_MAX, LOBBS_SESSION_DEFAULT_IDLE_SEC};
 };
 
 #endif

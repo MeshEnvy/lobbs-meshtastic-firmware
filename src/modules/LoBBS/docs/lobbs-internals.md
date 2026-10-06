@@ -66,14 +66,17 @@ Three kinds:
 - Record filter: `(ctx, LoScalar &value, args)`. Caller seeds `value`, each handler edits it or leaves it.
 - List filter: `(ctx, std::vector<LoScalar> &value, args)`. Same, over a list.
 
-| Hook             | Kind   | Initial value      | args                                             | Role                                                                               |
-| ---------------- | ------ | ------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `slash_cmd`      | action | n/a                | verb (`LOBBS_ARG_VERB`), rest (`LOBBS_ARG_REST`) | Compare with `lobbsSlashVerbIs`, parse `ctx->rest`                                 |
-| `seed`           | action | n/a                | empty                                            | Demo and test builds (`LOBBS_SEED`). Each app seeds its tables                     |
-| `help_topics`    | list   | built-in topics    | empty                                            | Append `{title, description}` rows                                                 |
-| `help_for_topic` | record | title = topic      | title = query                                    | Set description when the topic matches                                             |
-| `status_lines`   | list   | empty              | empty                                            | Append `{title, description}` (`Users` / `12 total` renders as `Users (12 total)`) |
-| `display_human`  | record | generic title line | source record                                    | Rewrite title for records you recognize                                            |
+| Hook              | Kind   | Initial value          | args                                             | Role                                                                               |
+| ----------------- | ------ | ---------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `slash_cmd`       | action | n/a                    | verb (`LOBBS_ARG_VERB`), rest (`LOBBS_ARG_REST`) | Compare with `lobbsSlashVerbIs`, parse `ctx->rest`                                 |
+| `seed`            | action | n/a                    | empty                                            | Demo and test builds (`LOBBS_SEED`). Each app seeds its tables                     |
+| `help_topics`     | list   | built-in topics        | empty                                            | Append `{title, description}` rows                                                 |
+| `help_for_topic`  | record | title = topic          | title = query                                    | Set description when the topic matches                                             |
+| `status_lines`    | list   | empty                  | empty                                            | Append `{title, description}` (`Users` / `12 total` renders as `Users (12 total)`) |
+| `display_human`   | record | generic title line     | source record                                    | Rewrite title for records you recognize                                            |
+| `config_keys`     | list   | empty                  | empty                                            | Append key definition rows (`default`, `min`, `max` in fields 0–2)                 |
+| `config_validate` | record | title = key, 0 = value | key definition record                            | Set `LODB_F_ERROR` to reject; empty means ok                                       |
+| `config_changed`  | action | n/a                    | title = key, field 0 = effective value           | Apply new settings after set, reset, or database open                              |
 
 These are the hooks core and the bundled apps fire. Apps add their own names the same way.
 
@@ -103,6 +106,14 @@ Install marker: `/flash/lobbs.ls`, field `LOBBS_INSTALL_FIELD_ROOT` holds the da
 
 `/install` authorization matches admin PKI in `AdminModule` (local client or encrypted DM with a configured admin key). Only `/install` creates SysOp accounts.
 
+## Sessions
+
+Logins live in RAM, not LoDB: `AuthDal` holds a vector of `{nodeId, userUuid, lastActiveMs, cwd}` slots, keyed by sender node id. Slot count and idle expiry come from `session.max` and `session.idle` in the config registry (defaults 16 and 86400 s). Each lookup refreshes `lastActiveMs`. A slot idle past the expiry, or whose user row is gone, is freed on lookup. Logging in reuses the node's slot, takes a free or expired one, or evicts the longest idle. Shrinking the limit keeps the most recently active. Sessions end on reboot, and `clearSessions()` runs whenever the database opens. Logins never write flash; overrides live in the `config` table.
+
+## Config registry
+
+SysOp `/config` lists, reads, sets, and resets uint32 settings. Plugins declare keys on `config_keys` via `lobbsConfigPushKey`. Validation runs on `config_validate` (core registers a min/max range check at help priority). Successful sets upsert one row in table `config` (title = key); reset deletes the row so defaults cost no flash. `config_changed` fires after each set or reset and for every key when the database opens (`lobbsInstallDatabaseOpened`).
+
 SysOp file commands, chunked upload, and path rules are documented in the [SysOp guide](lobbs-sysop.md).
 
 ## LoScalar
@@ -127,11 +138,11 @@ On nRF52, do not format `uint64_t` with `%llu`.
 
 ## LoDB
 
-`LoDb::open(root)` stores tables at `<root>/lodb/<db>/<table>/`, one `<16 hex uuid>.ls` file per row. Writes go to `<path>.w` then rename. API: `registerTable`, `insert`, `get`, `update`, `upsert`, `deleteRecord`, `select`, `count`. Row cap `LODB_MAX_RECORD_BYTES` (1024). Uuid from `lodb_new_uuid`. Prefer `upsert` for keyed or singleton rows. Wall and yarn DALs keep defaults in memory until the user saves.
+`LoDb::open(root)` stores tables at `<root>/lodb/<db>/<table>/`, one `<16 hex uuid>.ls` file per row. Writes go to `<path>.w` then rename. API: `registerTable`, `insert`, `get`, `update`, `upsert`, `deleteRecord`, `select`, `count`. Row cap `LODB_MAX_RECORD_BYTES` (1024). Uuid from `lodb_new_uuid`. Prefer `upsert` for keyed or singleton rows. Runtime quotas and session limits use the config registry, not per-app singleton tables.
 
 ### Field numbers
 
-App fields use `0..94` (`LODB_F_USER_LIMIT`). Each app's `*Records.h` is the schema. System fields count down from 99.
+App fields use `0..93` (`LODB_F_USER_LIMIT` is 94). Each app's `*Records.h` is the schema. System fields count down from 99.
 
 | Number | Name                 | Who writes it                    |
 | ------ | -------------------- | -------------------------------- |
@@ -139,6 +150,7 @@ App fields use `0..94` (`LODB_F_USER_LIMIT`). Each app's `*Records.h` is the sch
 | 98     | `LODB_F_TITLE`       | The app. Human renderer line     |
 | 97     | `LODB_F_DESCRIPTION` | The app. Mail, news, yarn bodies |
 | 96     | `LODB_F_CREATED`     | LoDB unless set. Unix seconds    |
+| 94     | `LODB_F_ERROR`       | Any filter. User-facing error    |
 | 95     | `LODB_F_UPDATED`     | LoDB unless set. Unix seconds    |
 
 Strip 95 and 96 before `update` to get default stamps. Times are Unix seconds, not milliseconds.

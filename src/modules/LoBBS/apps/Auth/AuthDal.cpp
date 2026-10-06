@@ -5,7 +5,9 @@
 #include "configuration.h"
 #include "gps/RTC.h"
 #include "mesh/NodeDB.h"
+#include "mesh/Throttle.h"
 #include <SHA256.h>
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <vector>
@@ -26,7 +28,6 @@ static void normalizeUsername(const char *username, char *normalized)
 AuthDal::AuthDal(LoDb &lodb) : lodb_(lodb)
 {
     lodb_.registerTable("users");
-    lodb_.registerTable("sessions");
 }
 
 uint64_t AuthDal::userUuid(const LoScalar &user)
@@ -149,55 +150,79 @@ bool AuthDal::loadUserByUsername(const char *username, LoScalar *user)
     return false;
 }
 
-static void dropSession(LoDb &lodb, uint32_t sessionKey)
+void AuthDal::applySessionConfig(const SessionConfig &cfg)
 {
-    lodb.deleteRecord("sessions", (lodb_uuid_t)sessionKey);
+    if (cfg.maxSessions < sessions_.size()) {
+        const uint32_t now = millis();
+        std::sort(sessions_.begin(), sessions_.end(), [now](const Session &a, const Session &b) {
+            if (a.used != b.used)
+                return a.used;
+            return (now - a.lastActiveMs) < (now - b.lastActiveMs);
+        });
+    }
+    sessions_.resize(cfg.maxSessions, Session{});
+    sessionCfg_ = cfg;
+}
+
+bool AuthDal::sessionExpired(const Session &s) const
+{
+    return !Throttle::isWithinTimespanMs(s.lastActiveMs, sessionCfg_.idleSeconds * 1000u);
+}
+
+AuthDal::Session *AuthDal::findSession(uint32_t nodeId)
+{
+    for (auto &s : sessions_) {
+        if (!s.used || s.nodeId != nodeId)
+            continue;
+        if (sessionExpired(s)) {
+            LOG_INFO("Session for node 0x%08x expired", nodeId);
+            s = Session{};
+            return nullptr;
+        }
+        return &s;
+    }
+    return nullptr;
+}
+
+void AuthDal::clearSessions()
+{
+    sessions_.clear();
 }
 
 bool AuthDal::loadUserByNodeId(uint32_t nodeId, LoScalar *user, uint32_t *sessionNodeIdOut, uint64_t *authUserUuidOut,
                                std::string *cwdOut)
 {
-    LoScalar session;
-    if (lodb_.get("sessions", (lodb_uuid_t)nodeId, session) != LODB_OK) {
+    Session *s = findSession(nodeId);
+    if (!s) {
         LOG_DEBUG("No session found for node 0x%08x", nodeId);
         return false;
     }
 
-    uint64_t userUuid = 0;
-    if (!session.getUint64(AuthSession::FIELD_USER_UUID, userUuid) || userUuid == 0) {
-        LOG_WARN("Invalid session at 0x%08x, removing", nodeId);
-        dropSession(lodb_, nodeId);
+    if (lodb_.get("users", s->userUuid, *user) != LODB_OK) {
+        LOG_WARN("Session 0x%08x references missing user, removing session", nodeId);
+        *s = Session{};
         return false;
     }
 
-    uint32_t sessionNodeId = nodeId;
-    uint32_t storedNode = 0;
-    if (session.getUint32(AuthSession::FIELD_NODE_ID, storedNode) && storedNode != 0)
-        sessionNodeId = storedNode;
-
-    if (lodb_.get("users", userUuid, *user) != LODB_OK) {
-        LOG_WARN("Session 0x%08x references missing user, removing session", sessionNodeId);
-        dropSession(lodb_, sessionNodeId);
-        return false;
-    }
-
-    LOG_DEBUG("Loaded user by node ID: 0x%08x -> UUID: " LODB_UUID_FMT, sessionNodeId, LODB_UUID_ARGS(userUuid));
+    s->lastActiveMs = millis();
+    LOG_DEBUG("Loaded user by node ID: 0x%08x -> UUID: " LODB_UUID_FMT, nodeId, LODB_UUID_ARGS(s->userUuid));
     if (sessionNodeIdOut)
-        *sessionNodeIdOut = sessionNodeId;
+        *sessionNodeIdOut = nodeId;
     if (authUserUuidOut)
-        *authUserUuidOut = userUuid;
-    if (cwdOut && !session.getString(AuthSession::FIELD_CWD, *cwdOut))
-        cwdOut->clear();
+        *authUserUuidOut = s->userUuid;
+    if (cwdOut)
+        cwdOut->assign(s->cwd);
     return true;
 }
 
 bool AuthDal::setSessionCwd(uint32_t nodeId, const char *cwd)
 {
-    LoScalar session;
-    if (lodb_.get("sessions", (lodb_uuid_t)nodeId, session) != LODB_OK)
+    Session *s = findSession(nodeId);
+    if (!s)
         return false;
-    session.setString(AuthSession::FIELD_CWD, cwd);
-    return lodb_.update("sessions", (lodb_uuid_t)nodeId, session) == LODB_OK;
+    strncpy(s->cwd, cwd ? cwd : "", sizeof(s->cwd) - 1);
+    s->cwd[sizeof(s->cwd) - 1] = '\0';
+    return true;
 }
 
 bool AuthDal::createUser(const char *username, const char *password, uint32_t nodeId, bool asSysop)
@@ -233,28 +258,40 @@ bool AuthDal::verifyPassword(const LoScalar *user, const char *password)
 
 bool AuthDal::loginUser(const char *username, uint32_t nodeId)
 {
-    LoScalar session;
-    session.setUint64(AuthSession::FIELD_USER_UUID, usernameToUuid(username));
-    session.setUint32(AuthSession::FIELD_NODE_ID, nodeId);
-
-    lodb_uuid_t sessionUuid = (lodb_uuid_t)nodeId;
-    lodb_.deleteRecord("sessions", sessionUuid);
-
-    LoDbError err = lodb_.insert("sessions", sessionUuid, session);
-    if (err != LODB_OK) {
-        LOG_ERROR("Failed to create session for node 0x%08x", nodeId);
-        return false;
+    Session *s = findSession(nodeId);
+    if (!s) {
+        const uint32_t now = millis();
+        uint32_t oldestAge = 0;
+        for (auto &c : sessions_) {
+            if (!c.used || sessionExpired(c)) {
+                s = &c;
+                break;
+            }
+            if (!s || now - c.lastActiveMs > oldestAge) {
+                s = &c;
+                oldestAge = now - c.lastActiveMs;
+            }
+        }
+        if (!s)
+            return false;
+        if (s->used && !sessionExpired(*s))
+            LOG_INFO("Session table full, evicting node 0x%08x", s->nodeId);
     }
 
+    *s = Session{};
+    s->used = true;
+    s->nodeId = nodeId;
+    s->userUuid = usernameToUuid(username);
+    s->lastActiveMs = millis();
     LOG_INFO("Created session for user %s on node 0x%08x", username, nodeId);
     return true;
 }
 
 bool AuthDal::logoutUser(uint32_t nodeId)
 {
-    lodb_uuid_t sessionUuid = (lodb_uuid_t)nodeId;
-    LoDbError err = lodb_.deleteRecord("sessions", sessionUuid);
-    if (err == LODB_OK) {
+    Session *s = findSession(nodeId);
+    if (s) {
+        *s = Session{};
         LOG_INFO("Logged out node 0x%08x", nodeId);
         return true;
     }
@@ -315,19 +352,9 @@ bool AuthDal::kickUserByUsername(const char *username)
     if (!loadUserByUsername(username, &user))
         return false;
     uint64_t userUuidVal = userUuid(user);
-
-    auto sessions = lodb_.select(
-        "sessions",
-        [userUuidVal](const LoScalar &rec) -> bool {
-            uint64_t u = 0;
-            return rec.getUint64(AuthSession::FIELD_USER_UUID, u) && u == userUuidVal;
-        },
-        LoDbComparator());
-
-    for (const auto &rec : sessions) {
-        uint32_t nodeId = 0;
-        if (rec.getUint32(AuthSession::FIELD_NODE_ID, nodeId))
-            lodb_.deleteRecord("sessions", (lodb_uuid_t)nodeId);
+    for (auto &s : sessions_) {
+        if (s.used && s.userUuid == userUuidVal)
+            s = Session{};
     }
     return true;
 }

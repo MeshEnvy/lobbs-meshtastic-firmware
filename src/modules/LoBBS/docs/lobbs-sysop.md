@@ -24,34 +24,35 @@ Add `-D LOBBS_DEMO_MODE` to `build_flags` (or `PLATFORMIO_BUILD_FLAGS="-D LOBBS_
 
 SysOp-only lines reply `SysOp only.` to everyone else.
 
-| Command                       | Notes                                                                                          |
-| ----------------------------- | ---------------------------------------------------------------------------------------------- |
-| `/install flash user pass`    | First-time setup. Blank node only unless adopting an existing database.                        |
-| `/passwd user new confirm`    | Reset a user's password                                                                        |
-| `/users kick user`            | Log that user out                                                                              |
-| `/users promote user`         | Make them a SysOp                                                                              |
-| `/users demote user`          | Remove SysOp (not the last SysOp)                                                              |
-| `/mail list user`             | Their inbox                                                                                    |
-| `/mail read user N`           | Read their message (does not mark it read)                                                     |
-| `/news delete N`              | Delete a news item                                                                             |
-| `/wall limit SEC CELLS`       | Paint quota (default 3600 seconds, 1 cell)                                                     |
-| `/yarn limit SEC WORDS CHARS` | Yarn quota (default 3600 seconds, 1 word, 32 characters)                                       |
-| `/time unix`                  | Set the clock. The time must be after this firmware was built, or the reply is `Invalid time.` |
-| `/cd [path]`                  | Set your working directory (default `/`). Each session keeps its own                           |
-| `/pwd`                        | Show your working directory                                                                    |
-| `/ls [path]`                  | List a directory, default the working directory (`*` glob on the last name only)               |
-| `/cat path`                   | Read a file as text                                                                            |
-| `/hex path`                   | Hex dump a file                                                                                |
-| `/rm /path`                   | Delete a file (absolute path only)                                                             |
-| `/rmdir /path`                | Remove an empty directory (absolute path only)                                                 |
-| `/rmtree /path /path`         | Recursive delete (absolute path, typed twice)                                                  |
-| `/mkdir path`                 | Create a directory under a mount (`/flash/...`, etc.)                                          |
-| `/cp src dst`                 | Copy a file (no overwrite; directories refused)                                                |
-| `/mv src dst`                 | Rename on one mount, or copy then delete across mounts (files only)                            |
-| `/upload path [offset:b62]`   | Chunked file write at byte offset, or show current size                                        |
-| `/commit src dst`             | Move when file CRC32 matches the 8-hex segment in the source name                              |
-| `/stat path`                  | `file N` or `dir`                                                                              |
-| `/df`                         | Used/total KB per mount (`?` when unknown)                                                     |
+Config keys (uint32, defaults in parentheses): `session.max` (16), `session.idle` (86400 s), `wall.period` (3600), `wall.cells` (1), `yarn.period` (3600), `yarn.words` (1), `yarn.chars` (32), `pager.ttl` (300), `password.min` (5). Run `/config` with no args to list current values and ranges.
+
+| Command                     | Notes                                                                                          |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| `/install flash user pass`  | First-time setup. Blank node only unless adopting an existing database.                        |
+| `/passwd user new confirm`  | Reset a user's password                                                                        |
+| `/users kick user`          | Log that user out                                                                              |
+| `/config`                   | List settings. `/config key`, `/config key value`, `/config key reset` (SysOp only)            |
+| `/users promote user`       | Make them a SysOp                                                                              |
+| `/users demote user`        | Remove SysOp (not the last SysOp)                                                              |
+| `/mail list user`           | Their inbox                                                                                    |
+| `/mail read user N`         | Read their message (does not mark it read)                                                     |
+| `/news delete N`            | Delete a news item                                                                             |
+| `/time unix`                | Set the clock. The time must be after this firmware was built, or the reply is `Invalid time.` |
+| `/cd [path]`                | Set your working directory (default `/`). Each login keeps its own, reset on re-login/reboot   |
+| `/pwd`                      | Show your working directory                                                                    |
+| `/ls [path]`                | List a directory, default the working directory (`*` glob on the last name only)               |
+| `/cat path`                 | Read a file as text                                                                            |
+| `/hex path`                 | Hex dump a file                                                                                |
+| `/rm /path`                 | Delete a file (absolute path only)                                                             |
+| `/rmdir /path`              | Remove an empty directory (absolute path only)                                                 |
+| `/rmtree /path /path`       | Recursive delete (absolute path, typed twice)                                                  |
+| `/mkdir path`               | Create a directory under a mount (`/flash/...`, etc.)                                          |
+| `/cp src dst`               | Copy a file (no overwrite; directories refused)                                                |
+| `/mv src dst`               | Rename on one mount, or copy then delete across mounts (files only)                            |
+| `/upload path [offset:b62]` | Chunked file write at byte offset, or show current size                                        |
+| `/commit src dst`           | Move when file CRC32 matches the 8-hex segment in the source name                              |
+| `/stat path`                | `file N` or `dir`                                                                              |
+| `/df`                       | Used/total KB per mount (`?` when unknown)                                                     |
 
 SysOps painting the wall or adding yarn do not use quota.
 

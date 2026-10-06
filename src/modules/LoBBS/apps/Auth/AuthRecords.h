@@ -11,12 +11,4 @@ inline constexpr uint32_t FIELD_SYSOP = 1;
 inline constexpr uint32_t FIELD_PASSWORD = 2;
 } // namespace AuthUser
 
-/** App field slots for `sessions` rows. */
-namespace AuthSession
-{
-inline constexpr uint32_t FIELD_USER_UUID = 0;
-inline constexpr uint32_t FIELD_NODE_ID = 1;
-inline constexpr uint32_t FIELD_CWD = 2;
-} // namespace AuthSession
-
 #endif

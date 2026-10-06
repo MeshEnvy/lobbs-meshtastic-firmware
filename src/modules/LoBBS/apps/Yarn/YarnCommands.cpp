@@ -6,6 +6,7 @@
 #include "../../LoBBSModule.h"
 #include "../../LoBBSReply.h"
 #include "../../LoBBSResponse.h"
+#include "../Config/ConfigCommon.h"
 #include "YarnDal.h"
 #include <cstdio>
 #include <cstring>
@@ -26,30 +27,9 @@ static void replyYarnView(LoBBSCommandCtx &ctx, bool markSeen)
     lobbsCommandReply(ctx, buf);
 }
 
-static void yarnSubLimit(LoBBSCommandCtx &ctx)
-{
-    lobbsArgShift(ctx);
-    uint32_t period = 0;
-    uint32_t words = 0;
-    uint32_t chars = 0;
-    if (!lobbsArgShiftUint(ctx, period) || !lobbsArgShiftUint(ctx, words) || !lobbsArgShiftUint(ctx, chars) ||
-        lobbsArgHasMore(ctx)) {
-        lobbsCommandReplyError(ctx, "Usage: /yarn limit SEC WORDS CHARS");
-        return;
-    }
-    if (const char *err = ctx.mod->yarn().dal().setConfig(period, words, chars)) {
-        lobbsCommandReplyError(ctx, err);
-        return;
-    }
-    char reply[72];
-    snprintf(reply, sizeof(reply), "Limit %us %u words %u chars.", (unsigned)period, (unsigned)words, (unsigned)chars);
-    lobbsCommandReply(ctx, reply);
-}
-
 static const LoBBSVerb yarnVerbs[] = {
     {"view", nullptr, 0, "view — /yarn shows the tail (no login)"},
     {"add", nullptr, LOBBS_V_LOGIN, "add — /yarn word … (login, quota)"},
-    {"limit", yarnSubLimit, LOBBS_V_SYSOP, "limit — sysop: /yarn limit SEC WORDS CHARS"},
 };
 
 static void handleYarn(LoBBSCommandCtx &ctx)
@@ -73,7 +53,11 @@ static void handleYarn(LoBBSCommandCtx &ctx)
         return;
     }
 
-    if (const char *err = ctx.mod->yarn().dal().appendWords(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n)) {
+    const uint32_t period = lobbsConfigGet(ctx, "yarn.period");
+    const uint32_t words = lobbsConfigGet(ctx, "yarn.words");
+    const uint32_t chars = lobbsConfigGet(ctx, "yarn.chars");
+    if (const char *err =
+            ctx.mod->yarn().dal().appendWords(lobbsCtxUserUuid(ctx), ctx.session.isSysop, toks, n, period, words, chars)) {
         lobbsCommandReplyError(ctx, err);
         return;
     }
@@ -125,8 +109,18 @@ static void actionYarnSeed(LoBBSCommandCtx *ctx, const LoScalar &args)
 }
 #endif
 
+static void filterYarnConfigKeys(LoBBSCommandCtx *ctx, std::vector<LoScalar> &keys, const LoScalar &args)
+{
+    (void)ctx;
+    (void)args;
+    lobbsConfigPushKey(keys, "yarn.period", LOBBS_YARN_DEFAULT_PERIOD_SEC, 60, 86400, "Yarn quota period (seconds)");
+    lobbsConfigPushKey(keys, "yarn.words", LOBBS_YARN_DEFAULT_MAX_WORDS, 1, 1000, "Max words per period");
+    lobbsConfigPushKey(keys, "yarn.chars", LOBBS_YARN_DEFAULT_MAX_CHARS, 1, LOBBS_YARN_BODY_MAX, "Max chars per period");
+}
+
 void lobbsYarnRegisterCommands()
 {
+    lobbsAddFilter("config_keys", filterYarnConfigKeys, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddAction("slash_cmd", slashYarn, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_topics", filterYarnHelpTopics, LOBBS_HOOK_PRIORITY_FEATURE);
     lobbsAddFilter("help_for_topic", filterYarnHelpForTopic, LOBBS_HOOK_PRIORITY_FEATURE);

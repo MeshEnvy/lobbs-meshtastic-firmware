@@ -6,6 +6,7 @@
 #include "MeshModule.h"
 #include "SinglePortModule.h"
 #include "apps/Auth/Auth.h"
+#include "apps/Config/Config.h"
 #include "apps/Mail/Mail.h"
 #include "apps/News/News.h"
 #include "apps/Wall/Wall.h"
@@ -28,6 +29,7 @@ class LoBBSModule : public SinglePortModule
     void sendReply(const meshtastic_MeshPacket &req, const char *msg);
     void sendReply(const meshtastic_MeshPacket &req, const std::string &msg) { sendReply(req, msg.c_str()); }
 
+    ConfigApp &config() { return config_; }
     AuthApp &auth() { return auth_; }
     MailApp &mail() { return mail_; }
     NewsApp &news() { return news_; }
@@ -42,6 +44,7 @@ class LoBBSModule : public SinglePortModule
 
   private:
     LoDb *lodb_;
+    ConfigApp config_;
     AuthApp auth_;
     MailApp mail_;
     NewsApp news_;

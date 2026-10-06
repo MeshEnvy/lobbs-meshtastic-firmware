@@ -18,6 +18,7 @@ const char *lobbsInstallRoot(const LoBBSModule &mod);
 const char *lobbsInstallOfflineMount(const LoBBSModule &mod);
 
 void lobbsInstallInit(LoBBSModule &mod);
+void lobbsInstallDatabaseOpened(LoBBSModule &mod);
 void lobbsInstallMountList(char *out, size_t cap);
 
 bool lobbsInstallAuthorized(const meshtastic_MeshPacket &mp);

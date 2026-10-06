@@ -26,8 +26,12 @@
  * | `help_for_topic` | record | title = topic, no description   | title = query         |
  * | `status_lines`   | list   | empty                           | none                  |
  * | `display_human`  | record | title = generic rendering       | the record to render  |
+ * | `config_keys`    | list   | empty                           | none                  |
+ * | `config_validate`| record | title = key, field 0 = value    | key definition record |
+ * | `config_changed` | action | n/a                             | title = key, field 0 = value |
  *
  * Records use `title` and `description` (LODB_F_TITLE / LODB_F_DESCRIPTION) unless noted.
+ * Validation filters may set LODB_F_ERROR on the value record; set succeeds only if it stays empty.
  * `slash_cmd` args use LOBBS_ARG_VERB / LOBBS_ARG_REST; C++ handlers parse ctx->rest.
  */
 

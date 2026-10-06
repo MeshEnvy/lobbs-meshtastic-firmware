@@ -58,8 +58,9 @@ typedef std::function<int(const LoScalar &, const LoScalar &)> LoDbComparator;
 /** LoScalar field numbers are 0..99 inclusive. */
 static constexpr uint32_t LODB_F_MAX = 99;
 /** App fields use 0 .. LODB_F_USER_LIMIT - 1. */
-static constexpr uint32_t LODB_F_USER_LIMIT = 95;
+static constexpr uint32_t LODB_F_USER_LIMIT = 94;
 
+static constexpr uint32_t LODB_F_ERROR = 94;
 static constexpr uint32_t LODB_F_UPDATED = 95;
 static constexpr uint32_t LODB_F_CREATED = 96;
 static constexpr uint32_t LODB_F_DESCRIPTION = 97;

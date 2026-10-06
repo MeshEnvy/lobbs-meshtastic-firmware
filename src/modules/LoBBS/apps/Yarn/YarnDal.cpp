@@ -13,18 +13,12 @@ YarnDal::YarnDal(LoDb &lodb) : lodb_(lodb)
 {
     lodb_.registerTable("yarn_current");
     lodb_.registerTable("yarn_seen");
-    lodb_.registerTable("yarn_config");
     lodb_.registerTable("yarn_quota");
 }
 
 static lodb_uuid_t yarnCurrentRecordUuid()
 {
     return lodb_new_uuid("lobbs_yarn_current_v1", 0);
-}
-
-static lodb_uuid_t yarnConfigRecordUuid()
-{
-    return lodb_new_uuid("lobbs_yarn_config_v1", 0);
 }
 
 static lodb_uuid_t yarnSeenRecordUuid(uint64_t userUuid)
@@ -55,34 +49,6 @@ bool YarnDal::saveCurrent(CurrentState &cur)
     rec.setString(LODB_F_DESCRIPTION, cur.text);
     rec.setUint32(YarnCurrentField::FIELD_TOTAL_WORDS, cur.total_words_appended);
     return lodb_.upsert("yarn_current", id, rec) == LODB_OK;
-}
-
-void YarnDal::loadConfig(ConfigState &out)
-{
-    out.period_seconds = LOBBS_YARN_DEFAULT_PERIOD_SEC;
-    out.max_words_per_interval = LOBBS_YARN_DEFAULT_MAX_WORDS;
-    out.max_chars_per_interval = LOBBS_YARN_DEFAULT_MAX_CHARS;
-    LoScalar rec;
-    if (lodb_.get("yarn_config", yarnConfigRecordUuid(), rec) != LODB_OK)
-        return;
-    rec.getUint32(YarnConfigField::FIELD_PERIOD_SEC, out.period_seconds);
-    rec.getUint32(YarnConfigField::FIELD_MAX_WORDS, out.max_words_per_interval);
-    rec.getUint32(YarnConfigField::FIELD_MAX_CHARS, out.max_chars_per_interval);
-}
-
-const char *YarnDal::setConfig(uint32_t periodSeconds, uint32_t maxWords, uint32_t maxChars)
-{
-    if (periodSeconds < 60 || periodSeconds > 86400)
-        return "Bad period.";
-    if (maxWords < 1 || maxWords > 1000)
-        return "Bad word max.";
-    if (maxChars < 1 || maxChars > LOBBS_YARN_BODY_MAX)
-        return "Bad char max.";
-    LoScalar cfg;
-    cfg.setUint32(YarnConfigField::FIELD_PERIOD_SEC, periodSeconds);
-    cfg.setUint32(YarnConfigField::FIELD_MAX_WORDS, maxWords);
-    cfg.setUint32(YarnConfigField::FIELD_MAX_CHARS, maxChars);
-    return lodb_.upsert("yarn_config", yarnConfigRecordUuid(), cfg) == LODB_OK ? nullptr : "Failed.";
 }
 
 void YarnDal::trimTailToMax(char *text)
@@ -157,7 +123,8 @@ bool YarnDal::markYarnSeen(uint64_t userUuid)
     return lodb_.upsert("yarn_seen", id, seen) == LODB_OK;
 }
 
-const char *YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount)
+const char *YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *const *words, int wordCount, uint32_t periodSeconds,
+                                 uint32_t maxWords, uint32_t maxChars)
 {
     if (!words || wordCount <= 0)
         return "No words.";
@@ -179,18 +146,15 @@ const char *YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *co
         needSpace = true;
     }
 
-    ConfigState cfg = {};
-    loadConfig(cfg);
-    // Quota counters: {words, chars}
     uint32_t add[2] = {(uint32_t)wordCount, charCost};
     if (!isSysop) {
-        if (add[0] > cfg.max_words_per_interval || add[1] > cfg.max_chars_per_interval)
+        if (add[0] > maxWords || add[1] > maxChars)
             return "Too many words.";
         uint32_t used[2];
-        lobbsQuotaUsed(lodb_, "yarn_quota", userUuid, cfg.period_seconds, used, 2);
-        if (used[0] + add[0] > cfg.max_words_per_interval)
+        lobbsQuotaUsed(lodb_, "yarn_quota", userUuid, periodSeconds, used, 2);
+        if (used[0] + add[0] > maxWords)
             return "Quota full.";
-        if (used[1] + add[1] > cfg.max_chars_per_interval)
+        if (used[1] + add[1] > maxChars)
             return "Too many chars.";
     }
 
@@ -217,7 +181,7 @@ const char *YarnDal::appendWords(uint64_t userUuid, bool isSysop, const char *co
     cur.total_words_appended += (uint32_t)wordCount;
     if (!saveCurrent(cur))
         return "Save failed.";
-    if (!isSysop && !lobbsQuotaAdd(lodb_, "yarn_quota", userUuid, cfg.period_seconds, add, 2))
+    if (!isSysop && !lobbsQuotaAdd(lodb_, "yarn_quota", userUuid, periodSeconds, add, 2))
         return "Quota save.";
     return nullptr;
 }

@@ -14,7 +14,7 @@
 /** Inbox/news list line: truncated preview of the message. */
 #define LOBBS_LIST_LINE_TRUNC_BUFFER_SIZE 50
 #define LOBBS_LIST_LINE_TRUNC_MAX_CHARS 25
-/** SysOp working directory for /cd (stored on the session row). */
+/** SysOp working directory for /cd (held in the RAM session slot). */
 #define LOBBS_CWD_BUFFER_SIZE 128
 /** Shared in /hi and /help root (omit topic for list, or name a command). */
 #define LOBBS_HELP_HINT "Use /help [topic] for help"

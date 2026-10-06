@@ -6,6 +6,7 @@
 #include "../../LoBBSModule.h"
 #include "../../LoBBSResponse.h"
 #include "../AppUtil.h"
+#include "../Config/ConfigCommon.h"
 #include "AuthDal.h"
 #include "AuthRecords.h"
 #include "mesh/NodeDB.h"
@@ -15,6 +16,12 @@
 #include <string>
 
 #include "LoBBSStackGuard.h"
+
+static bool passwordLongEnough(LoBBSCommandCtx &ctx, const char *password)
+{
+    const uint32_t minLen = lobbsConfigGet(ctx, "password.min");
+    return password && strlen(password) >= minLen;
+}
 
 static void authAppendUserRecord(LoBBSResponse &resp, const LoScalar &user)
 {
@@ -73,7 +80,7 @@ static void handleLogin(LoBBSCommandCtx &ctx)
         lobbsCommandReplyResponse(ctx, resp);
         return;
     }
-    if (strlen(password) < 5 || !auth.isValidPassword(password)) {
+    if (!passwordLongEnough(ctx, password) || !auth.isValidPassword(password)) {
         lobbsResponseSetError(resp, "Password too short.");
         lobbsCommandReplyResponse(ctx, resp);
         return;
@@ -117,7 +124,7 @@ static bool passwdApply(AuthDal &auth, const char *username, const char *newPass
         lobbsCommandReplyResponse(ctx, resp);
         return false;
     }
-    if (strlen(newPass) < 5 || !auth.isValidPassword(newPass)) {
+    if (!passwordLongEnough(ctx, newPass) || !auth.isValidPassword(newPass)) {
         lobbsResponseSetError(resp, "Password too short.");
         lobbsCommandReplyResponse(ctx, resp);
         return false;
@@ -336,6 +343,29 @@ static void slashAuth(LoBBSCommandCtx *ctx, const LoScalar &args)
     }
 }
 
+static void filterAuthConfigKeys(LoBBSCommandCtx *ctx, std::vector<LoScalar> &keys, const LoScalar &args)
+{
+    (void)ctx;
+    (void)args;
+    lobbsConfigPushKey(keys, "session.max", LOBBS_SESSION_DEFAULT_MAX, 1, 64, "Max concurrent login sessions");
+    lobbsConfigPushKey(keys, "session.idle", LOBBS_SESSION_DEFAULT_IDLE_SEC, 60, 30 * 86400,
+                       "Idle seconds before session expires");
+    lobbsConfigPushKey(keys, "password.min", 5, 1, 32, "Minimum password length");
+}
+
+static void actionAuthConfigChanged(LoBBSCommandCtx *ctx, const LoScalar &args)
+{
+    if (!ctx || !ctx->mod)
+        return;
+    std::string key;
+    if (!args.getString(LODB_F_TITLE, key))
+        return;
+    if (key == "session.max" || key == "session.idle") {
+        AuthDal::SessionConfig cfg = {lobbsConfigGet(*ctx, "session.max"), lobbsConfigGet(*ctx, "session.idle")};
+        ctx->mod->auth().dal().applySessionConfig(cfg);
+    }
+}
+
 static void filterAuthHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topics, const LoScalar &args)
 {
     (void)args;
@@ -412,6 +442,8 @@ static void actionAuthSeed(LoBBSCommandCtx *ctx, const LoScalar &args)
 
 void lobbsAuthRegisterCommands()
 {
+    lobbsAddFilter("config_keys", filterAuthConfigKeys, LOBBS_HOOK_PRIORITY_AUTH);
+    lobbsAddAction("config_changed", actionAuthConfigChanged, LOBBS_HOOK_PRIORITY_AUTH);
     lobbsAddAction("slash_cmd", slashAuth, LOBBS_HOOK_PRIORITY_AUTH);
     lobbsAddFilter("help_topics", filterAuthHelpTopics, LOBBS_HOOK_PRIORITY_AUTH);
     lobbsAddFilter("help_for_topic", filterAuthHelpForTopic, LOBBS_HOOK_PRIORITY_AUTH);

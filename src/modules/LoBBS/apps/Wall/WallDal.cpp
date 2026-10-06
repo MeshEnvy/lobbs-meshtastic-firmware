@@ -13,18 +13,12 @@ WallDal::WallDal(LoDb &lodb) : lodb_(lodb)
 {
     lodb_.registerTable("wall_canvas");
     lodb_.registerTable("wall_seen");
-    lodb_.registerTable("wall_config");
     lodb_.registerTable("wall_quota");
 }
 
 static lodb_uuid_t wallCanvasRecordUuid()
 {
     return lodb_new_uuid("lobbs_wall_canvas_v1", 0);
-}
-
-static lodb_uuid_t wallConfigRecordUuid()
-{
-    return lodb_new_uuid("lobbs_wall_config_v1", 0);
 }
 
 static lodb_uuid_t wallSeenRecordUuid(uint64_t userUuid)
@@ -72,29 +66,6 @@ bool WallDal::saveCanvas(CanvasState &canvas)
     rec.setString(WallCanvasField::FIELD_CELLS, canvas.cells);
     rec.setUint32(WallCanvasField::FIELD_CRC32, canvas.crc32);
     return lodb_.upsert("wall_canvas", id, rec) == LODB_OK;
-}
-
-void WallDal::loadConfig(ConfigState &out)
-{
-    out.period_seconds = LOBBS_WALL_DEFAULT_PERIOD_SEC;
-    out.max_cells_per_cycle = LOBBS_WALL_DEFAULT_MAX_CELLS;
-    LoScalar rec;
-    if (lodb_.get("wall_config", wallConfigRecordUuid(), rec) != LODB_OK)
-        return;
-    rec.getUint32(WallConfigField::FIELD_PERIOD_SEC, out.period_seconds);
-    rec.getUint32(WallConfigField::FIELD_MAX_CELLS, out.max_cells_per_cycle);
-}
-
-const char *WallDal::setConfig(uint32_t periodSeconds, uint32_t maxCellsPerCycle)
-{
-    if (periodSeconds < 60 || periodSeconds > 86400)
-        return "Bad period.";
-    if (maxCellsPerCycle < 1 || maxCellsPerCycle > LOBBS_WALL_CELLS)
-        return "Bad cell max.";
-    LoScalar cfg;
-    cfg.setUint32(WallConfigField::FIELD_PERIOD_SEC, periodSeconds);
-    cfg.setUint32(WallConfigField::FIELD_MAX_CELLS, maxCellsPerCycle);
-    return lodb_.upsert("wall_config", wallConfigRecordUuid(), cfg) == LODB_OK ? nullptr : "Failed.";
 }
 
 bool WallDal::formatGridLines(char *out, size_t outCap)
@@ -200,7 +171,8 @@ static bool parseWallToken(const char *tok, int &rowOut, int &colOut, char &chOu
     return true;
 }
 
-const char *WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count)
+const char *WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const char *const *tokens, int count,
+                                      uint32_t periodSeconds, uint32_t maxCellsPerCycle)
 {
     if (count <= 0)
         return "No paint tokens.";
@@ -216,20 +188,18 @@ const char *WallDal::applyPaintTokens(uint64_t userUuid, bool isSysop, const cha
     }
     wallSealCells(canvas.cells);
 
-    ConfigState cfg = {};
-    loadConfig(cfg);
     uint32_t cells = (uint32_t)count;
     if (!isSysop) {
-        if (cells > cfg.max_cells_per_cycle)
+        if (cells > maxCellsPerCycle)
             return "Too many cells.";
         uint32_t used = 0;
-        lobbsQuotaUsed(lodb_, "wall_quota", userUuid, cfg.period_seconds, &used, 1);
-        if (used + cells > cfg.max_cells_per_cycle)
+        lobbsQuotaUsed(lodb_, "wall_quota", userUuid, periodSeconds, &used, 1);
+        if (used + cells > maxCellsPerCycle)
             return "Quota full.";
     }
     if (!saveCanvas(canvas))
         return "Save failed.";
-    if (!isSysop && !lobbsQuotaAdd(lodb_, "wall_quota", userUuid, cfg.period_seconds, &cells, 1))
+    if (!isSysop && !lobbsQuotaAdd(lodb_, "wall_quota", userUuid, periodSeconds, &cells, 1))
         return "Quota save.";
     return nullptr;
 }
