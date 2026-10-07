@@ -14,13 +14,7 @@ def readProps(prefsLoc):
         short="{}.{}.{}".format(version["major"], version["minor"], version["build"]),
         long="unset",
         deb="unset",
-        lobbs_short="unset",
-        lobbs_long="unset",
     )
-
-    if config.has_section("LOBBS"):
-        lobbs = dict(config.items("LOBBS"))
-        verObj["lobbs_short"] = "{}.{}.{}".format(lobbs["major"], lobbs["minor"], lobbs["build"])
 
     # Try to find current build SHA if if the workspace is clean.  This could fail if git is not installed
     try:
@@ -39,15 +33,11 @@ def readProps(prefsLoc):
         #     suffix = sha + "-d"
         verObj["long"] = "{}.{}".format(verObj["short"], suffix)
         verObj["deb"] = "{}.{}~{}{}".format(verObj["short"], run_number, build_location, sha)
-        if verObj["lobbs_short"] != "unset":
-            verObj["lobbs_long"] = "{}.{}".format(verObj["lobbs_short"], suffix)
     except:
         # print("Unexpected error:", sys.exc_info()[0])
         # traceback.print_exc()
         verObj["long"] = verObj["short"]
         verObj["deb"] = "{}.{}~{}".format(verObj["short"], run_number, build_location)
-        if verObj["lobbs_short"] != "unset":
-            verObj["lobbs_long"] = verObj["lobbs_short"]
 
     # print("firmware version " + verStr)
     return verObj

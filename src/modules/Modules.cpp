@@ -39,7 +39,7 @@
 #endif
 #include "modules/RoutingModule.h"
 #include "modules/TextMessageModule.h"
-#include <LoBBSModule.h>
+#include "platforms/meshtastic/LoBBSModule.h"
 #if !MESHTASTIC_EXCLUDE_TRACEROUTE
 #include "modules/TraceRouteModule.h"
 #endif

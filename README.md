@@ -41,7 +41,7 @@ pio test -e native-macos -f test_lobbs_commands
 ## Versions
 
 - **Meshtastic base** — `[VERSION]` in `version.properties` (same as upstream: `APP_VERSION` in the phone app, e.g. `2.7.26.<git sha>`).
-- **LoBBS** — `[LOBBS]` in `version.properties`; help text shows `LoBBS v` plus the short semver (e.g. `2.0.0`). Product history: [src/modules/LoBBS/CHANGELOG.md](src/modules/LoBBS/CHANGELOG.md). Bump LoBBS build with `python bin/bump_lobbs_version.py` (Meshtastic build: `bin/bump_version.py`).
+- **LoBBS** — semver comes from the pinned plugin's `version.properties` (injected at compile time). Help text shows `LoBBS v` plus the short semver (e.g. `2.0.0`). Product history: plugin [CHANGELOG.md](https://github.com/MeshEnvy/lobbs/blob/main/CHANGELOG.md). Bump the plugin pin and tag the plugin repo; Meshtastic base version still uses `bin/bump_version.py`.
 
 ### Release tags (source only)
 
@@ -49,7 +49,7 @@ LoBBS cuts annotated git tags on branch `lobbs` (no `v` prefix, no firmware bina
 
 `lobbs-{lobbsSemVer}.{lobbsSha7}-meshtastic-{mtSemVer}.{mtSha7}`
 
-Example: `lobbs-1.3.0.f18d6d6-meshtastic-2.7.26.54e0d8d`. The trailing Meshtastic sha is the upstream pin for that release line (default `54e0d8d` for 2.7.26). Preview or create a tag with `bin/lobbs-release-tag.sh` (dry-run) or `bin/lobbs-release-tag.sh --create`. Use `--lobbs-version` when tagging a commit that predates the `[LOBBS]` section in `version.properties`.
+Example: `lobbs-1.3.0.f18d6d6-meshtastic-2.7.26.54e0d8d`. The trailing Meshtastic sha is the upstream pin for that release line (default `54e0d8d` for 2.7.26). Preview or create a tag with `bin/lobbs-release-tag.sh` (dry-run) or `bin/lobbs-release-tag.sh --create`. Use `--lobbs-version` when the plugin semver is not in the fork pin metadata.
 
 ## License
 
