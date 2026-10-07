@@ -1,6 +1,9 @@
 .pio
 pio
 pio.tar
+
+# Local LoBBS plugin pin (symlink://). Copy from lobbs.local.ini.example.
+lobbs.local.ini
 web
 web.tar
 

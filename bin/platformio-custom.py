@@ -269,7 +269,12 @@ projenv.Append(
 for lb in env.GetLibBuilders():
     if lb.name == "meshtastic-device-ui":
         lb.env.Append(CPPDEFINES=[("APP_VERSION", verObj["long"])])
-        break
+    elif not lb.lib_archive:
+        lb.env.Append(CCFLAGS=flags)
+        # Plugins include firmware headers that pull in libraries the LDF only finds for src/ (e.g. pb.h)
+        lb.env.AppendUnique(CPPPATH=projenv.get("CPPPATH", []))
+        for var in ("CPPFLAGS", "CCFLAGS", "CXXFLAGS", "BUILD_FLAGS"):
+            lb.env.AppendUnique(**{var: projenv.get(var, [])})
 
 # Get the display resolution from macros
 def get_display_resolution(build_flags):

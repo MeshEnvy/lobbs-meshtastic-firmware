@@ -1,0 +1,6 @@
+; Copy to lobbs.local.ini (gitignored) for local plugin development.
+; Overrides the committed git pin in lobbs-overrides.ini.
+
+[lobbs_plugin]
+lib_deps =
+  lobbs=symlink://../lobbs

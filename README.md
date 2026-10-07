@@ -27,13 +27,16 @@
 
 ## Docs
 
-- [Daily user guide](src/modules/LoBBS/docs/lobbs-daily.md)
-- [SysOp guide](src/modules/LoBBS/docs/lobbs-sysop.md)
-- [Machine API](src/modules/LoBBS/docs/lobbs-machine.md)
-- [LoBBS internals](src/modules/LoBBS/docs/lobbs-internals.md)
-- [Plugin author's guide](src/modules/LoBBS/docs/lobbs-plugins.md)
+LoBBS source and docs live in the [MeshEnvy/lobbs](https://github.com/MeshEnvy/lobbs) plugin repo (`docs/` there).
 
-Module layout, changelog, and host tools: [src/modules/LoBBS/README.md](src/modules/LoBBS/README.md).
+## Build from source
+
+Every PlatformIO env includes LoBBS via `lib_deps` (`lobbs-overrides.ini`). For local plugin work, copy `lobbs.local.ini.example` to `lobbs.local.ini` (gitignored) and set `lobbs=symlink://../lobbs`.
+
+```bash
+pio run -e seeed_solar_node
+pio test -e native-macos -f test_lobbs_commands
+```
 
 ## Versions
 

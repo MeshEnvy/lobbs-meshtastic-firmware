@@ -40,7 +40,7 @@
 #include "modules/RoutingModule.h"
 #include "modules/TextMessageModule.h"
 #if !MESHTASTIC_EXCLUDE_LOBBS
-#include "modules/LoBBS/LoBBSModule.h"
+#include <LoBBSModule.h>
 #endif
 #if !MESHTASTIC_EXCLUDE_TRACEROUTE
 #include "modules/TraceRouteModule.h"
