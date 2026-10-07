@@ -1,3 +1,4 @@
+#include "../LoBBSBootTrace.h"
 #include "SPILock.h"
 #include "configuration.h"
 #include <lofs/LoFS.h>
@@ -6,8 +7,10 @@
 #include <string>
 
 #if LOBBS_EXTRA_QSPI
-#include <CustomLFS_QSPIFlash.h>
-static CustomLFS_QSPIFlash lobfsQspiFlash;
+#if !defined(NRF52840_XXAA) || !defined(PIN_QSPI_SCK)
+#error LOBBS_EXTRA_QSPI requires NRF52840_XXAA and PIN_QSPI_SCK
+#endif
+#include "LoFSQspi.h"
 #endif
 
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
@@ -29,40 +32,40 @@ extern SPIClass SPI_HSPI;
 #if defined(ARCH_NRF52)
 #include "flash/flash_nrf5x.h"
 
-/** `lodb` partition bounds from the nRF52840 linker scripts. Weak: other nRF linker scripts get no `/db`. */
-extern "C" uint8_t __lodb_start[] __attribute__((weak));
-extern "C" uint8_t __lodb_end[] __attribute__((weak));
+/** Second internal-flash partition bounds from the nRF52840 linker scripts. Weak: other nRF linker scripts get no `/flash2`. */
+extern "C" uint8_t __flash2_start[] __attribute__((weak));
+extern "C" uint8_t __flash2_end[] __attribute__((weak));
 
-static constexpr uint32_t LOFS_LODB_BLOCK = 128;
+static constexpr uint32_t LOFS_FLASH2_BLOCK = 128;
 
-// The flash_nrf5x page cache is shared with InternalFS (which the BLE task also writes), so /db block IO holds its lock.
-static int lofsLodbRead(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, void *buffer, lfs_size_t size)
+// The flash_nrf5x page cache is shared with InternalFS (which the BLE task also writes), so /flash2 block IO holds its lock.
+static int lofsFlash2Read(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, void *buffer, lfs_size_t size)
 {
     InternalFS._lockFS();
-    int n = flash_nrf5x_read(buffer, (uint32_t)c->context + block * LOFS_LODB_BLOCK + off, size);
+    int n = flash_nrf5x_read(buffer, (uint32_t)c->context + block * LOFS_FLASH2_BLOCK + off, size);
     InternalFS._unlockFS();
     return n > 0 ? 0 : -1;
 }
 
-static int lofsLodbProg(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, const void *buffer, lfs_size_t size)
+static int lofsFlash2Prog(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, const void *buffer, lfs_size_t size)
 {
     InternalFS._lockFS();
-    int n = flash_nrf5x_write((uint32_t)c->context + block * LOFS_LODB_BLOCK + off, buffer, size);
+    int n = flash_nrf5x_write((uint32_t)c->context + block * LOFS_FLASH2_BLOCK + off, buffer, size);
     InternalFS._unlockFS();
     return n > 0 ? 0 : -1;
 }
 
-static int lofsLodbErase(const struct lfs_config *c, lfs_block_t block)
+static int lofsFlash2Erase(const struct lfs_config *c, lfs_block_t block)
 {
-    uint8_t ff[LOFS_LODB_BLOCK];
+    uint8_t ff[LOFS_FLASH2_BLOCK];
     memset(ff, 0xFF, sizeof(ff));
     InternalFS._lockFS();
-    int n = flash_nrf5x_write((uint32_t)c->context + block * LOFS_LODB_BLOCK, ff, sizeof(ff));
+    int n = flash_nrf5x_write((uint32_t)c->context + block * LOFS_FLASH2_BLOCK, ff, sizeof(ff));
     InternalFS._unlockFS();
     return n > 0 ? 0 : -1;
 }
 
-static int lofsLodbSync(const struct lfs_config *c)
+static int lofsFlash2Sync(const struct lfs_config *c)
 {
     (void)c;
     InternalFS._lockFS();
@@ -71,45 +74,75 @@ static int lofsLodbSync(const struct lfs_config *c)
     return 0;
 }
 
-static struct lfs_config lofsLodbCfg;
-static Adafruit_LittleFS lofsLodb(&lofsLodbCfg);
+static struct lfs_config lofsFlash2Cfg;
+static Adafruit_LittleFS lofsFlash2(&lofsFlash2Cfg);
 
-static bool lofsLodbBegin()
+static bool lofsFlash2Begin()
 {
-    const uint32_t start = (uint32_t)__lodb_start;
-    const uint32_t end = (uint32_t)__lodb_end;
+    LOBBS_BOOT_STEP("flash2: begin enter");
+    const uint32_t start = (uint32_t)__flash2_start;
+    const uint32_t end = (uint32_t)__flash2_end;
     if (!start || end <= start)
         return false;
-    lofsLodbCfg.context = (void *)start;
-    lofsLodbCfg.read = lofsLodbRead;
-    lofsLodbCfg.prog = lofsLodbProg;
-    lofsLodbCfg.erase = lofsLodbErase;
-    lofsLodbCfg.sync = lofsLodbSync;
-    lofsLodbCfg.read_size = LOFS_LODB_BLOCK;
-    lofsLodbCfg.prog_size = LOFS_LODB_BLOCK;
-    lofsLodbCfg.block_size = LOFS_LODB_BLOCK;
-    lofsLodbCfg.block_count = (end - start) / LOFS_LODB_BLOCK;
-    lofsLodbCfg.lookahead = 128;
-    if (lofsLodb.begin())
+    lofsFlash2Cfg.context = (void *)start;
+    lofsFlash2Cfg.read = lofsFlash2Read;
+    lofsFlash2Cfg.prog = lofsFlash2Prog;
+    lofsFlash2Cfg.erase = lofsFlash2Erase;
+    lofsFlash2Cfg.sync = lofsFlash2Sync;
+    lofsFlash2Cfg.read_size = LOFS_FLASH2_BLOCK;
+    lofsFlash2Cfg.prog_size = LOFS_FLASH2_BLOCK;
+    lofsFlash2Cfg.block_size = LOFS_FLASH2_BLOCK;
+    lofsFlash2Cfg.block_count = (end - start) / LOFS_FLASH2_BLOCK;
+    lofsFlash2Cfg.lookahead = 128;
+    LOBBS_BOOT_STEP("flash2: lfs mount");
+    if (lofsFlash2.begin())
         return true;
 
-    LOG_WARN("LoFS: formatting /db (0x%x-0x%x)", (unsigned)start, (unsigned)end);
+    LOG_WARN("LoFS: formatting /flash2 (0x%x-0x%x)", (unsigned)start, (unsigned)end);
+    LOBBS_BOOT_STEP("flash2: erase partition pages");
     InternalFS._lockFS();
     flash_nrf5x_flush();
     for (uint32_t addr = start; addr < end; addr += FLASH_NRF52_PAGE_SIZE)
         flash_nrf5x_erase(addr);
     InternalFS._unlockFS();
-    return lofsLodb.format() && lofsLodb.begin();
+    LOBBS_BOOT_STEP("flash2: lfs format");
+    return lofsFlash2.format() && lofsFlash2.begin();
 }
 
-static Adafruit_LittleFS &lofsFs(bool lodb)
+#if LOBBS_EXTRA_QSPI
+static struct lfs_config lofsQspiCfg;
+static Adafruit_LittleFS lofsQspi(&lofsQspiCfg);
+
+static bool lofsQspiBegin()
 {
-    return lodb ? lofsLodb : FSCom;
+    LOBBS_BOOT_STEP("extra: begin enter");
+    LOBBS_BOOT_STEP("extra: qspi config");
+    if (!lofsQspiConfig(lofsQspiCfg))
+        return false;
+    LOBBS_BOOT_STEP("extra: lfs mount");
+    if (lofsQspi.begin())
+        return true;
+
+    LOG_WARN("LoFS: formatting /extra (QSPI)");
+    LOBBS_BOOT_STEP("extra: lfs format");
+    return lofsQspi.format() && lofsQspi.begin();
+}
+#endif
+
+static Adafruit_LittleFS &lofsFs(LoFS::Backend b)
+{
+    if (b == LoFS::Backend::Flash2)
+        return lofsFlash2;
+#if LOBBS_EXTRA_QSPI
+    if (b == LoFS::Backend::Extra)
+        return lofsQspi;
+#endif
+    return FSCom;
 }
 #else
-static auto &lofsFs(bool lodb)
+static auto &lofsFs(bool flash2)
 {
-    (void)lodb;
+    (void)flash2;
     return FSCom;
 }
 #endif
@@ -165,30 +198,33 @@ void LoFS::begin()
     if (begun)
         return;
     mountCount = 0;
+    bool hasFlash2 = false;
 
-    bool hasDb = false;
-    mounts[mountCount++] = Mount{"flash", Backend::Flash, true, true, true};
-
-#if defined(ARCH_NRF52)
-    if (lofsLodbBegin()) {
-        mounts[mountCount++] = Mount{"db", Backend::Lodb, true, false, true};
-        hasDb = true;
-    }
-#endif
-
+    // Registration order is install preference order.
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
+    LOBBS_BOOT_STEP("LoFS: sd present check");
     if (lobfsSdPresent())
         mounts[mountCount++] = Mount{"sd", Backend::Sd, true, false, true};
 #endif
 
 #if LOBBS_EXTRA_QSPI
-    concurrency::LockGuard g(spiLock);
-    if (lobfsQspiFlash.begin())
+    LOBBS_BOOT_STEP("LoFS: lofsQspiBegin");
+    if (lofsQspiBegin())
         mounts[mountCount++] = Mount{"extra", Backend::Extra, true, false, true};
 #endif
 
-    mounts[0].dbSafe = !hasDb;
+#if defined(ARCH_NRF52)
+    LOBBS_BOOT_STEP("LoFS: lofsFlash2Begin");
+    if (lofsFlash2Begin()) {
+        mounts[mountCount++] = Mount{"flash2", Backend::Flash2, true, false, true};
+        hasFlash2 = true;
+    }
+#endif
+
+    LOBBS_BOOT_STEP("LoFS: register flash mount");
+    mounts[mountCount++] = Mount{"flash", Backend::Flash, true, true, !hasFlash2};
     begun = true;
+    LOBBS_BOOT_STEP("LoFS: begin done");
 }
 
 LoFS::Mount *LoFS::findByName(const char *name, size_t len)
@@ -305,24 +341,16 @@ bool LoFS::isDirectory(const char *path)
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
         f = SD.open(bp, FILE_O_READ);
 #endif
-    } else if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-        f = lobfsQspiFlash.open(bp, FILE_O_READ);
-#endif
     } else {
-        f = lofsFs(r.backend == Backend::Lodb).open(bp, FILE_O_READ);
+        f = lofsFs(r.backend == Backend::Flash2).open(bp, FILE_O_READ);
     }
 #else
     if (r.backend == Backend::Sd) {
 #if defined(HAS_SDCARD) && !defined(SDCARD_USE_SOFT_SPI)
         f = SD.open(bp, FILE_O_READ);
 #endif
-    } else if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-        f = lobfsQspiFlash.open(bp, FILE_O_READ);
-#endif
     } else {
-        f = lofsFs(r.backend == Backend::Lodb).open(bp, FILE_O_READ);
+        f = lofsFs(r.backend).open(bp, FILE_O_READ);
     }
 #endif
     if (!f)
@@ -356,12 +384,7 @@ File LoFS::open(const char *filepath, uint8_t mode)
         return SD.open(bp, convertToSDMode(mode));
 #endif
     }
-    if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-        return lobfsQspiFlash.open(bp, mode);
-#endif
-    }
-    return lofsFs(r.backend == Backend::Lodb).open(bp, mode);
+    return lofsFs(r.backend).open(bp, mode);
 #endif
 }
 
@@ -388,21 +411,11 @@ File LoFS::open(const char *filepath, const char *mode)
 #endif
 #endif
     }
-    if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-        return lobfsQspiFlash.open(bp, mode);
-#else
-        uint8_t m = (strcmp(mode, "r") == 0) ? 0 : 1;
-        return lobfsQspiFlash.open(bp, m);
-#endif
-#endif
-    }
-#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-    return lofsFs(r.backend == Backend::Lodb).open(bp, mode);
+    return lofsFs(r.backend == Backend::Flash2).open(bp, mode);
 #else
     uint8_t flashMode = (mode && strcmp(mode, "r") == 0) ? 0 : 1;
-    return lofsFs(r.backend == Backend::Lodb).open(bp, flashMode);
+    return lofsFs(r.backend).open(bp, flashMode);
 #endif
 }
 
@@ -423,12 +436,11 @@ bool LoFS::exists(const char *filepath)
         return SD.exists(bp);
 #endif
     }
-    if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-        return lobfsQspiFlash.exists(bp);
+#if defined(ARCH_NRF52)
+    return lofsFs(r.backend).exists(bp);
+#else
+    return lofsFs(r.backend == Backend::Flash2).exists(bp);
 #endif
-    }
-    return lofsFs(r.backend == Backend::Lodb).exists(bp);
 }
 
 bool LoFS::mkdir(const char *filepath)
@@ -448,12 +460,11 @@ bool LoFS::mkdir(const char *filepath)
         return SD.mkdir(bp);
 #endif
     }
-    if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-        return lobfsQspiFlash.mkdir(bp);
+#if defined(ARCH_NRF52)
+    return lofsFs(r.backend).mkdir(bp);
+#else
+    return lofsFs(r.backend == Backend::Flash2).mkdir(bp);
 #endif
-    }
-    return lofsFs(r.backend == Backend::Lodb).mkdir(bp);
 }
 
 bool LoFS::remove(const char *filepath)
@@ -473,12 +484,11 @@ bool LoFS::remove(const char *filepath)
         return SD.remove(bp);
 #endif
     }
-    if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-        return lobfsQspiFlash.remove(bp);
+#if defined(ARCH_NRF52)
+    return lofsFs(r.backend).remove(bp);
+#else
+    return lofsFs(r.backend == Backend::Flash2).remove(bp);
 #endif
-    }
-    return lofsFs(r.backend == Backend::Lodb).remove(bp);
 }
 
 bool LoFS::rename(const char *oldfilepath, const char *newfilepath)
@@ -504,12 +514,11 @@ bool LoFS::rename(const char *oldfilepath, const char *newfilepath)
         return SD.rename(oldBp, newBp);
 #endif
     }
-    if (oldR.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-        return lobfsQspiFlash.rename(oldBp, newBp);
+#if defined(ARCH_NRF52)
+    return lofsFs(oldR.backend).rename(oldBp, newBp);
+#else
+    return lofsFs(oldR.backend == Backend::Flash2).rename(oldBp, newBp);
 #endif
-    }
-    return lofsFs(oldR.backend == Backend::Lodb).rename(oldBp, newBp);
 }
 
 static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn)
@@ -772,17 +781,10 @@ uint64_t LoFS::totalBytes(const char *mountRoot)
         return SD.totalBytes();
 #endif
     }
-    if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-        return lobfsQspiFlash.totalBytes();
-#endif
-#endif
-    }
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
     return FSCom.totalBytes();
 #elif defined(ARCH_NRF52)
-    const lfs_config *cfg = lofsFs(r.backend == Backend::Lodb)._getFS()->cfg;
+    const lfs_config *cfg = lofsFs(r.backend)._getFS()->cfg;
     return cfg ? (uint64_t)cfg->block_size * cfg->block_count : 0;
 #else
     return 0;
@@ -809,17 +811,10 @@ uint64_t LoFS::usedBytes(const char *mountRoot)
         return SD.usedBytes();
 #endif
     }
-    if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-#if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
-        return lobfsQspiFlash.usedBytes();
-#endif
-#endif
-    }
 #if defined(ARCH_ESP32) || defined(ARCH_RP2040) || defined(ARCH_PORTDUINO)
     return FSCom.usedBytes();
 #elif defined(ARCH_NRF52)
-    Adafruit_LittleFS &fs = lofsFs(r.backend == Backend::Lodb);
+    Adafruit_LittleFS &fs = lofsFs(r.backend);
     lfs_t *lfs = fs._getFS();
     uint32_t blocks = 0;
     fs._lockFS();
@@ -869,7 +864,7 @@ bool LoFS::hasRoom(const char *path, uint32_t bytes)
         slack = 64 * 1024;
     }
 #if defined(ARCH_NRF52)
-    if (r.backend == Backend::Flash || r.backend == Backend::Lodb) {
+    if (r.backend == Backend::Flash || r.backend == Backend::Flash2) {
         block = 128;
         slack = 4 * 128;
     }
@@ -940,10 +935,9 @@ bool LoFS::rmdir(const char *filepath, bool recursive)
         return SD.rmdir(bp);
 #endif
     }
-    if (r.backend == Backend::Extra) {
-#if LOBBS_EXTRA_QSPI
-        return lobfsQspiFlash.rmdir(bp);
+#if defined(ARCH_NRF52)
+    return lofsFs(r.backend).rmdir(bp);
+#else
+    return lofsFs(r.backend == Backend::Flash2).rmdir(bp);
 #endif
-    }
-    return lofsFs(r.backend == Backend::Lodb).rmdir(bp);
 }

@@ -16,6 +16,7 @@
 #include <lofs/LoFS.h>
 #include <loscalar/LoScalar.h>
 
+#include "LoBBSBootTrace.h"
 #include "LoBBSStackGuard.h"
 
 static LoBBSInstallState gInstallState = LoBBSInstallState::Blank;
@@ -298,13 +299,16 @@ void lobbsInstallRegisterCommands()
 #if LOBBS_SEED
 void lobbsInstallAutoSeed(LoBBSModule &mod)
 {
+    LOBBS_BOOT_STEP("autoseed: enter");
     gInstallState = LoBBSInstallState::Blank;
     gInstallRoot[0] = '\0';
     gOfflineMount[0] = '\0';
+    LOBBS_BOOT_STEP("autoseed: remove install marker");
     LoFS::remove(LOBBS_INSTALL_MARKER_PATH);
 
     LoBBSCommandCtx ctx;
     ctx.mod = &mod;
+    LOBBS_BOOT_STEP("autoseed: install_mounts");
     std::vector<LoScalar> mounts = lobbsInstallMounts(ctx);
     std::string name;
     if (mounts.empty() || !mounts[0].getString(LODB_F_TITLE, name)) {
@@ -315,11 +319,14 @@ void lobbsInstallAutoSeed(LoBBSModule &mod)
     snprintf(root, sizeof(root), "/%s", name.c_str());
     char dbDir[32];
     snprintf(dbDir, sizeof(dbDir), "%s/lodb/lobbs", root);
+    LOG_INFO("LoBBS> autoseed: rmdir %s", dbDir);
     LoFS::rmdir(dbDir, true);
+    LOG_INFO("LoBBS> autoseed: lodb open %s", root);
     if (mod.lodb()->open(root) != LODB_OK || !lobbsInstallWriteMarker(root)) {
         LOG_ERROR("LoBBS seed install failed at %s", root);
         return;
     }
+    LOBBS_BOOT_STEP("autoseed: lobbsInstallDatabaseOpened");
     lobbsInstallDatabaseOpened(mod);
     strncpy(gInstallRoot, root, sizeof(gInstallRoot) - 1);
     gInstallState = LoBBSInstallState::Ready;

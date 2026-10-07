@@ -239,19 +239,19 @@ static const uint8_t SCK = PIN_SPI_SCK;
 static const uint8_t SDA = PIN_WIRE_SDA; // Not sure if this is needed
 static const uint8_t SCL = PIN_WIRE_SCL; // Not sure if this is needed
 
-// // QSPI Pins
-// // ---------
-// #define PIN_QSPI_SCK (24)
-// #define PIN_QSPI_CS (25)
-// #define PIN_QSPI_IO0 (26)
-// #define PIN_QSPI_IO1 (27)
-// #define PIN_QSPI_IO2 (28)
-// #define PIN_QSPI_IO3 (29)
+// QSPI Pins
+// ---------
+#define PIN_QSPI_SCK (24)
+#define PIN_QSPI_CS (25)
+#define PIN_QSPI_IO0 (26)
+#define PIN_QSPI_IO1 (27)
+#define PIN_QSPI_IO2 (28)
+#define PIN_QSPI_IO3 (29)
 
-// // On-board QSPI Flash
-// // -------------------
-// #define EXTERNAL_FLASH_DEVICES P25Q16H
-// #define EXTERNAL_FLASH_USE_QSPI
+// On-board QSPI Flash
+// -------------------
+#define EXTERNAL_FLASH_DEVICES P25Q16H
+#define EXTERNAL_FLASH_USE_QSPI
 
 /*
  * Buttons

@@ -14,20 +14,28 @@
 #include <cstdio>
 #include <cstring>
 
+#include "LoBBSBootTrace.h"
 #include "LoBBSStackGuard.h"
 
 LoBBSModule::LoBBSModule()
     : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(new LoDb("lobbs")), config_(*lodb_), auth_(*lodb_),
       mail_(*lodb_), news_(*lodb_), yarn_(*lodb_), wall_(*lodb_)
 {
+    LOBBS_BOOT_STEP("module ctor body");
+    LOBBS_BOOT_STEP("LoFS::begin");
     LoFS::begin();
+    LOBBS_BOOT_STEP("lobbsWireup");
     lobbsWireup();
 #ifdef LOBBS_DEMO_MODE
+    LOBBS_BOOT_STEP("lobbsInstallAutoSeed");
     lobbsInstallAutoSeed(*this);
+    LOBBS_BOOT_STEP("lobbsSeedAll");
     lobbsSeedAll(*this);
 #else
+    LOBBS_BOOT_STEP("lobbsInstallInit");
     lobbsInstallInit(*this);
 #endif
+    LOBBS_BOOT_STEP("module ctor done");
 }
 
 LoBBSInstallState LoBBSModule::installState() const

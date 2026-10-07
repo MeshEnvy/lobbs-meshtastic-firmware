@@ -5,7 +5,7 @@ GROUP(-lgcc -lc -lnosys)
 
 MEMORY
 {
-  /* 0xD4000-0xED000 is the LoBBS `lodb` partition (LoFS /db). InternalFS follows at 0xED000. */
+  /* 0xD4000-0xED000 is the LoBBS second internal-flash partition (LoFS /flash2). InternalFS follows at 0xED000. */
   FLASH (rx)     : ORIGIN = 0x26000, LENGTH = 0xD4000 - 0x26000
 
   /* SRAM required by Softdevice depend on
@@ -36,7 +36,7 @@ SECTIONS
   } > RAM
 } INSERT AFTER .data;
 
-PROVIDE(__lodb_start = 0xD4000);
-PROVIDE(__lodb_end = 0xED000);
+PROVIDE(__flash2_start = 0xD4000);
+PROVIDE(__flash2_end = 0xED000);
 
 INCLUDE "nrf52_common.ld"

@@ -20,7 +20,7 @@ const char *lobbsInstallOfflineMount(const LoBBSModule &mod);
 
 void lobbsInstallInit(LoBBSModule &mod);
 void lobbsInstallDatabaseOpened(LoBBSModule &mod);
-/** `install_mounts` names joined with `|`, e.g. `db|sd`. */
+/** `install_mounts` names joined with `|`, e.g. `sd|flash2`. */
 void lobbsInstallMountList(LoBBSCommandCtx &ctx, char *out, size_t cap);
 
 bool lobbsInstallAuthorized(const meshtastic_MeshPacket &mp);

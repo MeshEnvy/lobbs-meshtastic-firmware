@@ -12,16 +12,16 @@ Normal player commands are in the [daily user guide](lobbs-daily.md).
 
 A new LoBBS node has no database until you install it. Only `/help` and `/install` work until then. The install hint lists the mounts this hardware can hold a database on:
 
-| Hardware                 | Install mounts                                   |
-| ------------------------ | ------------------------------------------------ |
-| nRF52840                 | `db` (100 KB set aside for LoBBS), `sd`, `extra` |
-| ESP32 and other hardware | `flash`, `sd`, `extra`                           |
+| Hardware                 | Install mounts                                       |
+| ------------------------ | ---------------------------------------------------- |
+| nRF52840                 | `sd`, `extra`, `flash2` (100 KB set aside for LoBBS) |
+| ESP32 and other hardware | `sd`, `extra`, `flash`                               |
 
-`sd` appears when a card is present, `extra` on builds with `LOBBS_EXTRA_QSPI=1`. On nRF52840 `/flash` is Meshtastic's own 28 KB and is not offered.
+Mounts are listed in preference order. `sd` appears when a card is present. `extra` (about 2 MB) appears on Seeed XIAO nRF52840 kit and SenseCAP Solar Node builds (`LOBBS_EXTRA_QSPI=1`). On nRF52840 `/flash` is Meshtastic's own 28 KB and is not offered.
 
 `/install <mount> <user> <pass>` creates the database on that mount and makes `<user>` the SysOp. Use it from the local client (phone app connected over serial/BLE) or from a remote DM encrypted with a configured admin key. If the target already holds a LoBBS database, the same command adopts it and you must supply an existing SysOp username and password.
 
-The choice is stored in `/flash/lobbs.ls`. If that mount is missing on a later boot, every command fails with an offline message until the hardware is fixed or you delete the marker and reinstall. If Meshtastic wipes `/flash`, the node shows as new. `/install db` with your SysOp login picks the database back up.
+The choice is stored in `/flash/lobbs.ls`. If that mount is missing on a later boot, every command fails with an offline message until the hardware is fixed or you delete the marker and reinstall. If Meshtastic wipes `/flash`, the node shows as new. `/install <mount>` with your SysOp login picks the database back up.
 
 ## Demo builds
 
@@ -65,9 +65,9 @@ SysOps painting the wall or adding yarn do not use quota.
 
 ## Files
 
-Paths use mount prefixes: `/flash/...`, `/db/...` on nRF52840, `/sd/...`, `/extra/...` on builds with `LOBBS_EXTRA_QSPI=1` and a QSPI flash chip. `/` lists mounts. Do not `/rmtree` `<mount>/lodb` on your install mount unless you intend to wipe the BBS.
+Paths use mount prefixes: `/flash/...`, `/flash2/...` on nRF52840, `/sd/...`, `/extra/...` on builds with `LOBBS_EXTRA_QSPI=1` and a QSPI flash chip. `/` lists mounts. Do not `/rmtree` `<mount>/lodb` on your install mount unless you intend to wipe the BBS.
 
-`/flash` is shared with Meshtastic's own settings and node database. LoBBS leaves a reserve free there (16 KB on nRF52, 128 KB elsewhere). Posts, mail, uploads, and copies that would cut into it reply `Disk full.`. Deleting files always works. `/db`, `/sd` and `/extra` have no reserve.
+`/flash` is shared with Meshtastic's own settings and node database. LoBBS leaves a reserve free there (16 KB on nRF52, 128 KB elsewhere). Posts, mail, uploads, and copies that would cut into it reply `Disk full.`. Deleting files always works. `/flash2`, `/sd` and `/extra` have no reserve.
 
 Relative paths work under your session working directory for `ls`, `cat`, `hex`, `stat`, `mkdir`, `cp`, `mv`, `upload`, and `commit`. `rm`, `rmdir`, and `rmtree` require absolute paths.
 
