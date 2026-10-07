@@ -180,16 +180,31 @@ static void test_command_fs_mounts_and_tools()
     lobbsTestSendLine("/mkdir /flash/lobbs-test-dir");
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Already exists."));
     lobbsTestSendLine("/df");
-    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "flash"));
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "flash: "));
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "[lobbs]"));
+    lobbsTestSendLine("/ls /flash/lobbs");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "db/"));
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "install.ls "));
     lobbsTestSendLine("/rmdir /flash/lobbs-test-dir");
+}
+
+static void test_command_fs_format_guards()
+{
+    lobbsTestSendLine("/login sysop demo1");
+    lobbsTestSendLine("/format flash");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "This uninstalls LoBBS."));
+    lobbsTestSendLine("/format flash 000000");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Wrong or expired code."));
+    lobbsTestSendLine("/format nope");
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "No such mount."));
 }
 
 static void test_command_fs_cp_mv()
 {
     lobbsTestSendLine("/login sysop demo1");
-    lobbsTestSendLine("/cp /flash/lobbs.ls /flash/lobbs-copy.ls");
+    lobbsTestSendLine("/cp /flash/lobbs/install.ls /flash/lobbs-copy.ls");
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Copied."));
-    lobbsTestSendLine("/cp /flash/lobbs.ls /flash/lobbs-copy.ls");
+    lobbsTestSendLine("/cp /flash/lobbs/install.ls /flash/lobbs-copy.ls");
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Destination exists."));
     lobbsTestSendLine("/mv /flash/lobbs-copy.ls /flash/lobbs-moved.ls");
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Moved."));
@@ -270,23 +285,21 @@ static void test_command_install_guards()
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Not authorized."));
     lobbsTestSendLine("/login sysop demo1");
     lobbsTestSendLine("/install flash other pass");
-    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Already installed."));
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Already installed at /flash."));
     lobbsTestSendLine("/login demo99 demo1");
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Welcome demo99"));
 }
 
-static void test_command_install_offline()
+static void test_command_install_autodetect()
 {
-    lobbsInstallWriteMarker("/sd");
     lobbsTestReboot();
     lobbsTestSendLine("/login sysop demo1");
-    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "offline"));
+    TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "Welcome"));
 }
 
 static void test_command_install_blank_and_local()
 {
-    LoFS::remove(LOBBS_INSTALL_MARKER_PATH);
-    LoFS::rmdir("/flash/lodb/lobbs", true);
+    LoFS::rmdir("/flash/lobbs", true);
     lobbsTestReboot();
     lobbsTestSendLine("/whoami");
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "/install <flash>"));
@@ -303,7 +316,7 @@ static void test_command_install_blank_and_local()
 
 static void test_command_install_adopts_existing()
 {
-    LoFS::remove(LOBBS_INSTALL_MARKER_PATH);
+    LoFS::remove("/flash/lobbs/install.ls");
     lobbsTestReboot();
     lobbsTestSendLocalLine("/install flash demo01 demo1");
     TEST_ASSERT_NOT_NULL(strstr(lobbsTestLastReply(), "sysop credentials required"));
@@ -382,12 +395,13 @@ inline void lobbsRunCommandTests()
     RUN_TEST(test_command_cache_expires);
     RUN_TEST(test_command_fs_cwd);
     RUN_TEST(test_command_fs_mounts_and_tools);
+    RUN_TEST(test_command_fs_format_guards);
     RUN_TEST(test_command_fs_cp_mv);
     RUN_TEST(test_command_fs_upload_commit);
     RUN_TEST(test_command_fs_upload_append_two_chunks);
     RUN_TEST(test_command_fs_upload_commit_ok);
     RUN_TEST(test_command_install_guards);
-    RUN_TEST(test_command_install_offline);
+    RUN_TEST(test_command_install_autodetect);
     RUN_TEST(test_command_install_blank_and_local);
     RUN_TEST(test_command_install_adopts_existing);
     RUN_TEST(test_command_users_kick);

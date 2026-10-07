@@ -21,7 +21,7 @@
 
 static LoBBSInstallState gInstallState = LoBBSInstallState::Blank;
 static char gInstallRoot[32] = {0};
-static char gOfflineMount[16] = {0};
+static char gOfflineHome[32] = {0};
 
 LoBBSInstallState lobbsInstallState(const LoBBSModule &mod)
 {
@@ -35,10 +35,10 @@ const char *lobbsInstallRoot(const LoBBSModule &mod)
     return gInstallRoot;
 }
 
-const char *lobbsInstallOfflineMount(const LoBBSModule &mod)
+const char *lobbsInstallOfflineHome(const LoBBSModule &mod)
 {
     (void)mod;
-    return gOfflineMount;
+    return gOfflineHome;
 }
 
 static void filterInstallMountsDefault(LoBBSCommandCtx *ctx, std::vector<LoScalar> &value, const LoScalar &args)
@@ -80,49 +80,32 @@ void lobbsInstallMountList(LoBBSCommandCtx &ctx, char *out, size_t cap)
     }
 }
 
-bool lobbsInstallReadMarker(char *rootOut, size_t cap)
+bool lobbsInstallHome(const char *root, char *out, size_t cap)
 {
-    if (!rootOut || cap == 0)
+    if (!root || root[0] != '/' || !out)
         return false;
-    rootOut[0] = '\0';
-    if (!LoFS::exists(LOBBS_INSTALL_MARKER_PATH))
-        return false;
+    int n = snprintf(out, cap, "%s/%s", root, LOBBS_HOME_DIR);
+    return n > 0 && (size_t)n < cap;
+}
 
-    File f = LoFS::open(LOBBS_INSTALL_MARKER_PATH, FILE_O_READ);
-    if (!f)
-        return false;
-    size_t n = f.size();
-    if (n == 0 || n > 512) {
-        f.close();
-        return false;
-    }
-    std::string buf(n, '\0');
-    size_t rd = f.read((uint8_t *)&buf[0], n);
-    f.close();
-    if (rd != n)
-        return false;
-    LoScalar rec;
-    if (!rec.decode(buf.c_str(), rd))
-        return false;
-    std::string root;
-    if (!rec.getString(LOBBS_INSTALL_FIELD_ROOT, root) || root.empty() || root[0] != '/')
-        return false;
-    strncpy(rootOut, root.c_str(), cap - 1);
-    rootOut[cap - 1] = '\0';
-    return true;
+static bool lobbsInstallMarkerPath(const char *root, char *out, size_t cap)
+{
+    int n = snprintf(out, cap, "%s/%s/%s", root, LOBBS_HOME_DIR, LOBBS_INSTALL_MARKER_NAME);
+    return n > 0 && (size_t)n < cap;
 }
 
 bool lobbsInstallWriteMarker(const char *root)
 {
-    if (!root || root[0] != '/')
+    char path[48];
+    if (!root || root[0] != '/' || !lobbsInstallMarkerPath(root, path, sizeof(path)))
         return false;
     LoScalar rec;
-    rec.setString(LOBBS_INSTALL_FIELD_ROOT, root);
+    rec.setString(LOBBS_INSTALL_FIELD_VERSION, LOBBS_VERSION);
     std::string line;
     if (!rec.encode(line, 256))
         return false;
 
-    File f = LoFS::open(LOBBS_INSTALL_MARKER_PATH, FILE_O_WRITE);
+    File f = LoFS::open(path, FILE_O_WRITE);
     if (!f)
         return false;
     size_t w = f.write((const uint8_t *)line.data(), line.size());
@@ -131,49 +114,44 @@ bool lobbsInstallWriteMarker(const char *root)
     return w == line.size();
 }
 
-static bool lobbsRootMountPresent(const char *root)
+static bool lobbsOpenHome(LoBBSModule &mod, const char *root)
 {
-    if (!root || root[0] != '/')
-        return false;
-    const char *name = root + 1;
-    return LoFS::mountPresent(name);
-}
-
-static bool lobbsTryOpenDb(LoBBSModule &mod, const char *root)
-{
+    char home[32];
     LoDb *db = mod.lodb();
-    if (!db)
-        return false;
-    return db->open(root) == LODB_OK;
+    return db && lobbsInstallHome(root, home, sizeof(home)) && db->open(home) == LODB_OK;
 }
 
 void lobbsInstallInit(LoBBSModule &mod)
 {
     gInstallState = LoBBSInstallState::Blank;
     gInstallRoot[0] = '\0';
-    gOfflineMount[0] = '\0';
+    gOfflineHome[0] = '\0';
 
-    char root[32];
-    if (!lobbsInstallReadMarker(root, sizeof(root))) {
-        LOG_INFO("LoBBS: blank (no install marker)");
-        return;
-    }
-
-    if (!lobbsRootMountPresent(root)) {
-        gInstallState = LoBBSInstallState::Offline;
-        const char *name = LoFS::mountNameForPath(root);
-        if (name)
-            strncpy(gOfflineMount, name, sizeof(gOfflineMount) - 1);
+    LoBBSCommandCtx ctx;
+    ctx.mod = &mod;
+    char root[16] = {0};
+    std::string name;
+    for (const LoScalar &rec : lobbsInstallMounts(ctx)) {
+        char candidate[16], marker[48];
+        if (!rec.getString(LODB_F_TITLE, name))
+            continue;
+        snprintf(candidate, sizeof(candidate), "/%s", name.c_str());
+        if (!lobbsInstallMarkerPath(candidate, marker, sizeof(marker)) || !LoFS::exists(marker))
+            continue;
+        if (root[0])
+            LOG_WARN("LoBBS: ignoring second install at %s (using %s)", candidate, root);
         else
-            strncpy(gOfflineMount, root, sizeof(gOfflineMount) - 1);
-        LOG_ERROR("LoBBS offline: install root %s not mounted", root);
+            strncpy(root, candidate, sizeof(root) - 1);
+    }
+    if (!root[0]) {
+        LOG_INFO("LoBBS: blank (no install found)");
         return;
     }
 
-    if (!lobbsTryOpenDb(mod, root)) {
+    if (!lobbsOpenHome(mod, root)) {
         gInstallState = LoBBSInstallState::Offline;
-        strncpy(gOfflineMount, root, sizeof(gOfflineMount) - 1);
-        LOG_ERROR("LoBBS offline: failed to open database at %s", root);
+        lobbsInstallHome(root, gOfflineHome, sizeof(gOfflineHome));
+        LOG_ERROR("LoBBS offline: failed to open database at %s", gOfflineHome);
         return;
     }
 
@@ -223,7 +201,9 @@ static bool lobbsInstallLocToRoot(LoBBSCommandCtx &ctx, const char *loc, char *r
 static void handleInstall(LoBBSCommandCtx &ctx)
 {
     if (gInstallState != LoBBSInstallState::Blank) {
-        lobbsCommandReplyError(ctx, "Already installed.");
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Already installed at %s.", gInstallRoot[0] ? gInstallRoot : gOfflineHome);
+        lobbsCommandReplyError(ctx, msg);
         return;
     }
     if (!lobbsInstallAuthorized(*ctx.mp)) {
@@ -249,8 +229,7 @@ static void handleInstall(LoBBSCommandCtx &ctx)
         return;
     }
 
-    LoDb *db = ctx.mod->lodb();
-    if (db->open(root) != LODB_OK) {
+    if (!lobbsOpenHome(*ctx.mod, root)) {
         lobbsCommandReplyError(ctx, "Failed to open database.");
         return;
     }
@@ -302,9 +281,7 @@ void lobbsInstallAutoSeed(LoBBSModule &mod)
     LOBBS_BOOT_STEP("autoseed: enter");
     gInstallState = LoBBSInstallState::Blank;
     gInstallRoot[0] = '\0';
-    gOfflineMount[0] = '\0';
-    LOBBS_BOOT_STEP("autoseed: remove install marker");
-    LoFS::remove(LOBBS_INSTALL_MARKER_PATH);
+    gOfflineHome[0] = '\0';
 
     LoBBSCommandCtx ctx;
     ctx.mod = &mod;
@@ -317,12 +294,12 @@ void lobbsInstallAutoSeed(LoBBSModule &mod)
     }
     char root[16];
     snprintf(root, sizeof(root), "/%s", name.c_str());
-    char dbDir[32];
-    snprintf(dbDir, sizeof(dbDir), "%s/lodb/lobbs", root);
-    LOG_INFO("LoBBS> autoseed: rmdir %s", dbDir);
-    LoFS::rmdir(dbDir, true);
-    LOG_INFO("LoBBS> autoseed: lodb open %s", root);
-    if (mod.lodb()->open(root) != LODB_OK || !lobbsInstallWriteMarker(root)) {
+    char home[32];
+    lobbsInstallHome(root, home, sizeof(home));
+    LOG_INFO("LoBBS> autoseed: rmdir %s", home);
+    LoFS::rmdir(home, true);
+    LOG_INFO("LoBBS> autoseed: lodb open %s", home);
+    if (!lobbsOpenHome(mod, root) || !lobbsInstallWriteMarker(root)) {
         LOG_ERROR("LoBBS seed install failed at %s", root);
         return;
     }

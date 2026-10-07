@@ -65,8 +65,9 @@ struct LobfsGlobOneFile {
     int count;
 };
 
-static bool lobfsGlobOneFileCb(void *ctx, const char *basename, bool isDirectory)
+static bool lobfsGlobOneFileCb(void *ctx, const char *basename, bool isDirectory, uint32_t size)
 {
+    (void)size;
     if (isDirectory)
         return true;
     auto *mc = (LobfsGlobOneFile *)ctx;

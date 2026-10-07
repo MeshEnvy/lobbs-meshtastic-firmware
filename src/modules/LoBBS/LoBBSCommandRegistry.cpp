@@ -362,7 +362,7 @@ void lobbsCommandsHandle(LoBBSModule *mod, const meshtastic_MeshPacket &mp, cons
             lobbsCommandReplyError(ctx, msg);
         } else {
             char msg[96];
-            snprintf(msg, sizeof(msg), "LoBBS offline: %s not mounted.", lobbsInstallOfflineMount(*mod));
+            snprintf(msg, sizeof(msg), "LoBBS offline: cannot open %s.", lobbsInstallOfflineHome(*mod));
             lobbsCommandReplyError(ctx, msg);
         }
         return;

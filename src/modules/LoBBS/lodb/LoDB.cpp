@@ -135,7 +135,7 @@ LoDbError LoDb::open(const char *root)
     if (!root || root[0] != '/')
         return LODB_ERR_INVALID;
 
-    if (snprintf(db_path, sizeof(db_path), "%s/lodb/%s", root, db_name.c_str()) >= (int)sizeof(db_path))
+    if (snprintf(db_path, sizeof(db_path), "%s/%s", root, db_name.c_str()) >= (int)sizeof(db_path))
         return LODB_ERR_INVALID;
 
     if (!mkdirPathSegments(db_path))

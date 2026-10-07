@@ -3,11 +3,15 @@
 #include "FsCommands.h"
 #include "../../LoBBSCommandRegistry.h"
 #include "../../LoBBSHooks.h"
+#include "../../LoBBSInstall.h"
 #include "../../LoBBSModule.h"
 #include "../../LoBBSReply.h"
 #include "../../LoBBSReplyCache.h"
 #include "../../LoBBSResponse.h"
 #include "../AppUtil.h"
+#include "mesh/NodeDB.h"
+#include "mesh/Throttle.h"
+#include <Arduino.h>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -27,16 +31,17 @@ static constexpr size_t FS_NAME_BYTES = 48;
 struct FsLsCollect {
     const char *pattern;
     char names[FS_LS_MAX_NAMES][FS_NAME_BYTES];
+    uint32_t sizes[FS_LS_MAX_NAMES];
+    bool dirs[FS_LS_MAX_NAMES];
     int count;
     bool truncated;
 };
 
-/** One command at a time; ~6 KiB names[] must not live on the mesh handler stack. */
+/** One command at a time; ~7 KiB of entries must not live on the mesh handler stack. */
 static FsLsCollect fsLsCollectScratch;
 
-static bool fsLsCollectCb(void *ctx, const char *basename, bool isDirectory)
+static bool fsLsCollectCb(void *ctx, const char *basename, bool isDirectory, uint32_t size)
 {
-    (void)isDirectory;
     auto *c = (FsLsCollect *)ctx;
     if (!lobfsGlobMatch(c->pattern, basename))
         return true;
@@ -46,6 +51,8 @@ static bool fsLsCollectCb(void *ctx, const char *basename, bool isDirectory)
     }
     strncpy(c->names[c->count], basename, FS_NAME_BYTES - 1);
     c->names[c->count][FS_NAME_BYTES - 1] = '\0';
+    c->sizes[c->count] = size;
+    c->dirs[c->count] = isDirectory;
     c->count++;
     if (c->count >= FS_LS_MAX_NAMES) {
         c->truncated = true;
@@ -201,8 +208,15 @@ static void handleLs(LoBBSCommandCtx &ctx)
     }
 
     LoBBSResponse resp;
-    for (int i = 0; i < fsLsCollectScratch.count; i++)
-        lobbsRecordPush(resp.records, fsLsCollectScratch.names[i]);
+    for (int i = 0; i < fsLsCollectScratch.count; i++) {
+        char line[FS_NAME_BYTES + LO_HUMAN_BYTES_LEN + 2];
+        char size[LO_HUMAN_BYTES_LEN];
+        if (fsLsCollectScratch.dirs[i])
+            snprintf(line, sizeof(line), "%s/", fsLsCollectScratch.names[i]);
+        else
+            snprintf(line, sizeof(line), "%s %s", fsLsCollectScratch.names[i], loHumanBytes(fsLsCollectScratch.sizes[i], size));
+        lobbsRecordPush(resp.records, line);
+    }
     if (fsLsCollectScratch.truncated)
         lobbsRecordPush(resp.records, "(list cut off)");
     if (resp.records.empty()) {
@@ -370,9 +384,10 @@ static void handleRmdir(LoBBSCommandCtx &ctx)
     struct DirEmptyCtx {
         bool empty;
     } dec{true};
-    auto dirHasEntry = [](void *v, const char *basename, bool isDirectory) -> bool {
+    auto dirHasEntry = [](void *v, const char *basename, bool isDirectory, uint32_t size) -> bool {
         (void)isDirectory;
         (void)basename;
+        (void)size;
         ((DirEmptyCtx *)v)->empty = false;
         return false;
     };
@@ -497,31 +512,109 @@ static void handleDf(LoBBSCommandCtx &ctx)
     LoBBSResponse resp;
     struct Ctx {
         LoBBSResponse *resp;
-    } dc{&resp};
+        const char *installRoot;
+    } dc{&resp, lobbsInstallRoot(*ctx.mod)};
     LoFS::eachPresentMount(
         [](void *v, const char *name) {
             auto *dc = (Ctx *)v;
             char root[16];
             snprintf(root, sizeof(root), "/%s", name);
-            uint64_t total = LoFS::totalBytes(root);
-            uint64_t used = LoFS::usedBytes(root);
+            const uint64_t total = LoFS::totalBytes(root);
+            const uint64_t used = LoFS::usedBytes(root);
             const uint32_t reserve = LoFS::mountReserve(name);
-            char line[64];
-            char usedKb[LO_U64_DEC_LEN], totalKb[LO_U64_DEC_LEN];
-            if (total == 0)
-                snprintf(line, sizeof(line), "%s ?/? KB", name);
-            else if (reserve)
-                snprintf(line, sizeof(line), "%s %s/%s KB, %u KB reserved", name, loU64ToDec(used / 1024, usedKb),
-                         loU64ToDec(total / 1024, totalKb), (unsigned)(reserve / 1024));
-            else
-                snprintf(line, sizeof(line), "%s %s/%s KB", name, loU64ToDec(used / 1024, usedKb),
-                         loU64ToDec(total / 1024, totalKb));
+            const char *tag = strcmp(dc->installRoot, root) == 0 ? " [lobbs]" : "";
+            char line[80];
+            if (total == 0) {
+                snprintf(line, sizeof(line), "%s: size unknown%s", name, tag);
+            } else {
+                const uint64_t taken = used + reserve;
+                const uint64_t freeB = taken < total ? total - taken : 0;
+                const unsigned pct = (unsigned)(used * 100 / total);
+                char freeS[LO_HUMAN_BYTES_LEN], totalS[LO_HUMAN_BYTES_LEN], resS[LO_HUMAN_BYTES_LEN];
+                if (reserve)
+                    snprintf(line, sizeof(line), "%s: %s free of %s (%u%% used, %s reserved)%s", name, loHumanBytes(freeB, freeS),
+                             loHumanBytes(total, totalS), pct, loHumanBytes(reserve, resS), tag);
+                else
+                    snprintf(line, sizeof(line), "%s: %s free of %s (%u%% used)%s", name, loHumanBytes(freeB, freeS),
+                             loHumanBytes(total, totalS), pct, tag);
+            }
             lobbsRecordPush(dc->resp->records, line);
         },
         &dc);
     if (resp.records.empty())
         lobbsResponseSetError(resp, "No mounts.");
     lobbsCommandReplyResponse(ctx, resp);
+}
+
+static constexpr uint32_t FS_FORMAT_CONFIRM_MS = 120000;
+
+/** One pending /format confirmation at a time, bound to the node that asked. */
+static struct {
+    uint32_t nodeId;
+    uint32_t armedMs;
+    char mount[16];
+    char code[7];
+} fsFormatPending;
+
+static void handleFormat(LoBBSCommandCtx &ctx)
+{
+    const char *name = lobbsArgShift(ctx);
+    const char *code = lobbsArgShift(ctx);
+    if (!name || lobbsArgHasMore(ctx)) {
+        lobbsCommandReplyError(ctx, "Usage: /format <mount> [code]");
+        return;
+    }
+    if (!LoFS::mountPresent(name)) {
+        lobbsCommandReplyError(ctx, "No such mount.");
+        return;
+    }
+    if (strcmp(name, "sd") == 0) {
+        lobbsCommandReplyError(ctx, "Refused: format SD cards on a PC.");
+        return;
+    }
+    const char *installRoot = lobbsInstallRoot(*ctx.mod);
+    const bool isFlash = strcmp(name, "flash") == 0;
+    const bool isInstall = installRoot[0] && strcmp(installRoot + 1, name) == 0;
+
+    char msg[160];
+    if (!code) {
+        static const char alphabet[] = "abcdefghjkmnpqrstuvwxyz23456789";
+        for (size_t i = 0; i < sizeof(fsFormatPending.code) - 1; i++)
+            fsFormatPending.code[i] = alphabet[random(sizeof(alphabet) - 1)];
+        fsFormatPending.code[sizeof(fsFormatPending.code) - 1] = '\0';
+        fsFormatPending.nodeId = ctx.session.nodeId;
+        fsFormatPending.armedMs = millis();
+        strncpy(fsFormatPending.mount, name, sizeof(fsFormatPending.mount) - 1);
+        fsFormatPending.mount[sizeof(fsFormatPending.mount) - 1] = '\0';
+        char root[16], size[LO_HUMAN_BYTES_LEN];
+        snprintf(root, sizeof(root), "/%s", name);
+        const char *note = isInstall ? " This uninstalls LoBBS." : isFlash ? " Radio settings are saved again." : "";
+        snprintf(msg, sizeof(msg), "Formats /%s (%s): everything on it is erased.%s Run /format %s %s within 2 min.", name,
+                 loHumanBytes(LoFS::totalBytes(root), size), note, name, fsFormatPending.code);
+        lobbsCommandReply(ctx, msg);
+        return;
+    }
+
+    const bool ok = fsFormatPending.code[0] && fsFormatPending.nodeId == ctx.session.nodeId &&
+                    strcmp(fsFormatPending.mount, name) == 0 && strcmp(fsFormatPending.code, code) == 0 &&
+                    Throttle::isWithinTimespanMs(fsFormatPending.armedMs, FS_FORMAT_CONFIRM_MS);
+    fsFormatPending.code[0] = '\0';
+    if (!ok) {
+        snprintf(msg, sizeof(msg), "Wrong or expired code. Run /format %s for a new one.", name);
+        lobbsCommandReplyError(ctx, msg);
+        return;
+    }
+    if (!LoFS::format(name)) {
+        lobbsCommandReplyError(ctx, "Format failed.");
+        return;
+    }
+    if (isFlash && nodeDB)
+        nodeDB->saveToDisk();
+    if (isInstall)
+        lobbsInstallInit(*ctx.mod);
+    snprintf(msg, sizeof(msg), "Formatted /%s.%s", name,
+             lobbsInstallState(*ctx.mod) == LoBBSInstallState::Blank ? " LoBBS is blank. Run /install." : "");
+    lobbsCommandReply(ctx, msg);
 }
 
 /** One command at a time; keeps two path buffers off the mesh handler stack for /cp and /mv. */
@@ -947,7 +1040,8 @@ static const LoBBSVerb fsVerbs[] = {
     {"upload", handleUpload, LOBBS_V_SYSOP, "upload path [offset:b62] — chunked write or show size"},
     {"commit", handleCommit, LOBBS_V_SYSOP, "commit src dst — move when file CRC matches name"},
     {"stat", handleStat, LOBBS_V_SYSOP, "stat path — file size or dir"},
-    {"df", handleDf, LOBBS_V_SYSOP, "df — space per mount"},
+    {"df", handleDf, LOBBS_V_SYSOP, "df — free space per mount"},
+    {"format", handleFormat, LOBBS_V_SYSOP, "format <mount> [code] — erase a mount (asks for a code first)"},
 };
 
 static void slashFs(LoBBSCommandCtx *ctx, const LoScalar &args)
@@ -988,6 +1082,7 @@ static void filterFsHelpTopics(LoBBSCommandCtx *ctx, std::vector<LoScalar> &topi
     lobbsRecordPush(topics, "commit", "CRC-checked move");
     lobbsRecordPush(topics, "stat", "file or directory info");
     lobbsRecordPush(topics, "df", "filesystem space");
+    lobbsRecordPush(topics, "format", "erase a mount");
 }
 
 static void filterFsHelpForTopic(LoBBSCommandCtx *ctx, LoScalar &value, const LoScalar &args)

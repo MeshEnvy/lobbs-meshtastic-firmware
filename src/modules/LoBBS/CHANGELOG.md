@@ -32,6 +32,8 @@ Planned major release **2.0.0** (not tagged yet).
 - Ignore non-slash DMs and self-originated loopback (`from` = local node).
 - nRF52840: LoBBS gets its own 100 KB `/flash2` partition between the app and Meshtastic's filesystem. `/install` offers `flash2` there instead of `/flash`. Install points come from the `install_mounts` filter, in preference order `sd`, `extra`, `flash2`, `flash`.
 - Seeed XIAO nRF52840 kit and SenseCAP Solar: `/extra` on 2 MB onboard QSPI (`LoFSQspi`, JEDEC-gated mount).
+- All LoBBS files live under `/<mount>/lobbs` (`install.ls`, `db/`, reserved `apps/` and `home/`). Boot finds the install by scanning install mounts for `lobbs/install.ls`; nothing is kept on `/flash`. `/install` on an installed node replies `Already installed at /<mount>.`
+- SysOp `/format <mount> [code]` erases any mount but `sd` after a 2-minute confirmation code. `/flash` re-saves radio settings; the install mount leaves LoBBS blank. `/ls` shows `dir/` and file sizes. `/df` reads `extra: 1.8M free of 2.0M (12% used) [lobbs]`.
 - LoBBS writes keep a free-space reserve on `/flash` (16 KB on nRF52, 128 KB elsewhere) so Meshtastic can still save its own files. Writes that would cut into it reply `Disk full.`. `/df` shows the reserve.
 
 ### Changed

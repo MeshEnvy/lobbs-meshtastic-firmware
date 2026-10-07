@@ -12,7 +12,7 @@
 /**
  * LoDB - Synchronous LoScalar Database
  *
- * Filesystem-backed records under `<root>/lodb/<name>` after `open(root)`. I/O goes through LoFS.
+ * Filesystem-backed records under `<root>/<name>` after `open(root)`. I/O goes through LoFS.
  */
 
 #ifndef LODB_VERSION

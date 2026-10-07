@@ -83,6 +83,8 @@ class LoFS
     static bool hasRoom(const char *path, uint32_t bytes);
     /** True when a database may live on this mount. `flash` only qualifies when there is no `flash2` mount. */
     static bool mountDbSafe(const char *name);
+    /** Erase and reformat a dedicated mount (`flash2`, `extra`). False for shared or SD mounts. */
+    static bool format(const char *name);
 
     static bool isMountPoint(const char *path);
     static bool isDirectory(const char *path);
@@ -92,7 +94,8 @@ class LoFS
     static bool mountPresent(const char *name);
     static void eachPresentMount(void (*fn)(void *ctx, const char *name), void *ctx);
 
-    typedef bool (*ListCallback)(void *ctx, const char *basename, bool isDirectory);
+    /** `size` is the file length in bytes; 0 for directories and mounts. */
+    typedef bool (*ListCallback)(void *ctx, const char *basename, bool isDirectory, uint32_t size);
     static bool list(const char *dirpath, void *ctx, ListCallback fn);
 
   private:

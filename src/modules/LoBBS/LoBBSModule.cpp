@@ -18,7 +18,7 @@
 #include "LoBBSStackGuard.h"
 
 LoBBSModule::LoBBSModule()
-    : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(new LoDb("lobbs")), config_(*lodb_), auth_(*lodb_),
+    : SinglePortModule("LoBBS", meshtastic_PortNum_TEXT_MESSAGE_APP), lodb_(new LoDb("db")), config_(*lodb_), auth_(*lodb_),
       mail_(*lodb_), news_(*lodb_), yarn_(*lodb_), wall_(*lodb_)
 {
     LOBBS_BOOT_STEP("module ctor body");

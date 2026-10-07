@@ -97,21 +97,23 @@ Machine: records encoded as LoScalar lines, sliced into pages with `<id>ok [n:ma
 
 LoFS exposes `/` as a virtual root listing mounts. Writable paths start with `/<mount>/…` (optional `sd`, optional `extra` when built with `LOBBS_EXTRA_QSPI=1`, `flash2` on nRF52840, `flash`). Mount roots cannot be removed, renamed, or used as copy sources. Cross-mount `mv` copies files then deletes the source. Directories require same-mount rename.
 
-`/flash2` is a second nRF52840 internal-flash partition, 100 KiB at `0xD4000`–`0xED000` between the app and InternalFS. The linker scripts `src/platform/nrf52/nrf52840_s140_v6.ld` (set on `nrf52840_base`) and `nrf52840_s140_v7.ld` end `FLASH` at `0xD4000` and provide `__flash2_start` / `__flash2_end`. LoFS reads them as weak symbols, so nRF builds on other linker scripts have no `/flash2`. The partition is a second `Adafruit_LittleFS` with 128 B blocks over `flash_nrf5x`. It is formatted only when mount fails. Its block IO takes InternalFS's lock because the `flash_nrf5x` page cache is shared and the BLE task writes bonds to InternalFS.
+`/flash2` is a second nRF52840 internal-flash partition, 100 KiB at `0xD4000`–`0xED000` between the app and InternalFS. The linker scripts `src/platform/nrf52/nrf52840_s140_v6.ld` (set on `nrf52840_base`) and `nrf52840_s140_v7.ld` end `FLASH` at `0xD4000` and provide `__flash2_start` / `__flash2_end`. LoFS reads them as weak symbols, so nRF builds on other linker scripts have no `/flash2`. The partition is a second `Adafruit_LittleFS` with 128 B blocks over `flash_nrf5x`. It is formatted when mount fails or by SysOp `/format flash2` (`LoFS::format`, which erases the pages first). Its block IO takes InternalFS's lock because the `flash_nrf5x` page cache is shared and the BLE task writes bonds to InternalFS.
 
-`/extra` is optional onboard QSPI flash (2 MiB, 4096 B sectors, 256 B read/prog, 512-block lookahead). LoFS uses `LoFSQspi` (`nrfx_qspi`, FASTREAD/PP at SCK/8, no quad-enable). Boot sends release-from-deep-power-down (`0xAB`) and software reset (`0x66`/`0x99`), then reads the JEDEC ID and expects Puya `0x85`. A wrong or missing ID skips the mount and never formats.
+`/extra` is optional onboard QSPI flash (2 MiB, 4096 B sectors, 256 B read/prog, 512-block lookahead). LoFS uses `LoFSQspi` (`nrfx_qspi`, FASTREAD/PP at SCK/8, no quad-enable). Boot sends release-from-deep-power-down (`0xAB`) and software reset (`0x66`/`0x99`), then reads the JEDEC ID and expects Puya `0x85`. A wrong or missing ID skips the mount and never formats. A mount failure on a good ID formats, as does `/format extra`. `/format flash` runs `FSCom.format()` then `nodeDB->saveToDisk()`, the same recovery Meshtastic uses after a failed save. Formatting the install mount reruns `lobbsInstallInit`, so the node goes Blank unless another mount holds an install. Every custom instruction holds IO2/IO3 high: they are WP#/HOLD# while the quad-enable bit is clear, so LoFSQspi polls the status register (`0x05`) itself instead of `nrfx_qspi_mem_busy_check`, which sends it with HOLD# low.
+
+`LoFS::list` callbacks get `(ctx, basename, isDirectory, size)`. `size` is the file length, 0 for directories and mounts.
 
 Each mount has a `dbSafe` flag (`LoFS::mountDbSafe`). `sd`, `extra`, and `flash2` are db-safe. `flash` is db-safe only when there is no `flash2` mount, because a failed Meshtastic save on nRF52 formats InternalFS. Install points come from the `install_mounts` list filter. Core registers a provider that lists present db-safe mounts in mount-table order, which is preference order (`sd`, `extra`, `flash2`, `flash`). `/install` accepts only listed mounts, the install hint and usage show them, and demo seeding uses the first one.
 
 Shared mounts (`/flash`) keep `LOFS_SHARED_RESERVE_BYTES` free (16 KiB nRF52, 128 KiB other hardware, 0 Portduino; override with `-D`). `LoFS::hasRoom(path, bytes)` rounds `bytes` up to the block size, adds slack for metadata, adds the mount reserve, and compares with free space. It returns true when the mount reports no size. LoDB checks it before every record write and returns `LODB_ERR_FULL`. FsCommands checks it for `/mkdir`, `/cp`, `/upload`, and cross-mount `/mv`. Apps map `LODB_ERR_FULL` to `Disk full.` via `lobbsDbErrorText`. Deletes are never blocked.
 
-Install marker: `/flash/lobbs.ls`, field `LOBBS_INSTALL_FIELD_ROOT` holds the database root (e.g. `/flash2`). If InternalFS is formatted, the marker is gone and the node shows Blank. `/install <mount>` with SysOp credentials adopts the intact database.
+LoBBS home: everything lives under `/<mount>/lobbs` (`LOBBS_HOME_DIR`). `install.ls` (field `LOBBS_INSTALL_FIELD_VERSION` = `LOBBS_VERSION` at install) marks the install and is written last. `db/` is the LoDB (`LoDb("db")` opened at the home). `apps/<app>/` and `home/<user>/` are reserved conventions. At boot `lobbsInstallInit` walks `install_mounts` in order and takes the first mount holding `lobbs/install.ls`. Later hits are logged and ignored. No marker lives on `/flash`.
 
-| State   | Behavior                                                         |
-| ------- | ---------------------------------------------------------------- |
-| Blank   | Only `/help` and `/install`. Other commands get the install hint |
-| Ready   | Marker mount present and `LoDb::open(root)` succeeded            |
-| Offline | Marker names a missing mount. Non-help commands error            |
+| State   | Behavior                                                                |
+| ------- | ----------------------------------------------------------------------- |
+| Blank   | No `lobbs/install.ls` on any install mount. Only `/help` and `/install` |
+| Ready   | Marker found and `LoDb::open(home)` succeeded                           |
+| Offline | Marker found but the database failed to open. Non-help commands error   |
 
 `/install` authorization matches admin PKI in `AdminModule` (local client or encrypted DM with a configured admin key). Only `/install` creates SysOp accounts.
 
@@ -143,11 +145,11 @@ Why this shape:
 - Flat on purpose. There is no nesting and no quoting. A news body full of quotes needs no JSON parser. A structured value, like the wall grid, is one string field the owning app parses.
 - Small. The codec is one class with no dependencies, which fits nRF52 flash and the 512-byte stack cap.
 
-On nRF52, do not format `uint64_t` with `%llu`. Use `loU64ToDec` from `loutil/LoUtil.h`.
+On nRF52, do not format `uint64_t` with `%llu`. Use `loU64ToDec` from `loutil/LoUtil.h`. `loHumanBytes` prints short sizes (`9B`, `1.2K`, `1.8M`).
 
 ## LoDB
 
-`LoDb::open(root)` stores tables at `<root>/lodb/<db>/<table>/`, one `<16 hex uuid>.ls` file per row. Writes go to `<path>.w` then rename. API: `registerTable`, `insert`, `get`, `update`, `upsert`, `deleteRecord`, `select`, `count`. Row cap `LODB_MAX_RECORD_BYTES` (1024). Uuid from `lodb_new_uuid`. Prefer `upsert` for keyed or singleton rows. Runtime quotas and session limits use the config registry, not per-app singleton tables.
+`LoDb::open(root)` stores tables at `<root>/<db>/<table>/` (LoBBS: `/<mount>/lobbs/db/<table>/`), one `<16 hex uuid>.ls` file per row. Writes go to `<path>.w` then rename. API: `registerTable`, `insert`, `get`, `update`, `upsert`, `deleteRecord`, `select`, `count`. Row cap `LODB_MAX_RECORD_BYTES` (1024). Uuid from `lodb_new_uuid`. Prefer `upsert` for keyed or singleton rows. Runtime quotas and session limits use the config registry, not per-app singleton tables.
 
 ### Field numbers
 

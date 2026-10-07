@@ -11,12 +11,16 @@ typedef struct _meshtastic_MeshPacket meshtastic_MeshPacket;
 
 enum class LoBBSInstallState : uint8_t { Blank, Ready, Offline };
 
-static constexpr const char *LOBBS_INSTALL_MARKER_PATH = "/flash/lobbs.ls";
-static constexpr uint32_t LOBBS_INSTALL_FIELD_ROOT = 0;
+/** Every LoBBS file lives under `<mount root>/lobbs`: `install.ls`, `db/` (LoDB), `apps/<app>/`, `home/<user>/`. */
+static constexpr const char *LOBBS_HOME_DIR = "lobbs";
+static constexpr const char *LOBBS_INSTALL_MARKER_NAME = "install.ls";
+static constexpr uint32_t LOBBS_INSTALL_FIELD_VERSION = 0;
 
 LoBBSInstallState lobbsInstallState(const LoBBSModule &mod);
+/** Mount root of the install (e.g. `/extra`), empty when not Ready. */
 const char *lobbsInstallRoot(const LoBBSModule &mod);
-const char *lobbsInstallOfflineMount(const LoBBSModule &mod);
+/** LoBBS home that failed to open while Offline (e.g. `/extra/lobbs`). */
+const char *lobbsInstallOfflineHome(const LoBBSModule &mod);
 
 void lobbsInstallInit(LoBBSModule &mod);
 void lobbsInstallDatabaseOpened(LoBBSModule &mod);
@@ -24,8 +28,10 @@ void lobbsInstallDatabaseOpened(LoBBSModule &mod);
 void lobbsInstallMountList(LoBBSCommandCtx &ctx, char *out, size_t cap);
 
 bool lobbsInstallAuthorized(const meshtastic_MeshPacket &mp);
+/** `<root>/lobbs`, e.g. `/extra/lobbs`. */
+bool lobbsInstallHome(const char *root, char *out, size_t cap);
+/** Writes `<root>/lobbs/install.ls`; its presence marks the install. */
 bool lobbsInstallWriteMarker(const char *root);
-bool lobbsInstallReadMarker(char *rootOut, size_t cap);
 
 #if LOBBS_SEED
 void lobbsInstallAutoSeed(LoBBSModule &mod);

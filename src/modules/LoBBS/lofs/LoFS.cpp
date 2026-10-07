@@ -77,6 +77,21 @@ static int lofsFlash2Sync(const struct lfs_config *c)
 static struct lfs_config lofsFlash2Cfg;
 static Adafruit_LittleFS lofsFlash2(&lofsFlash2Cfg);
 
+static bool lofsFlash2Format()
+{
+    const uint32_t start = (uint32_t)lofsFlash2Cfg.context;
+    const uint32_t end = start + lofsFlash2Cfg.block_count * LOFS_FLASH2_BLOCK;
+    LOG_WARN("LoFS: formatting /flash2 (0x%x-0x%x)", (unsigned)start, (unsigned)end);
+    LOBBS_BOOT_STEP("flash2: erase partition pages");
+    InternalFS._lockFS();
+    flash_nrf5x_flush();
+    for (uint32_t addr = start; addr < end; addr += FLASH_NRF52_PAGE_SIZE)
+        flash_nrf5x_erase(addr);
+    InternalFS._unlockFS();
+    LOBBS_BOOT_STEP("flash2: lfs format");
+    return lofsFlash2.format() && lofsFlash2.begin();
+}
+
 static bool lofsFlash2Begin()
 {
     LOBBS_BOOT_STEP("flash2: begin enter");
@@ -97,21 +112,19 @@ static bool lofsFlash2Begin()
     LOBBS_BOOT_STEP("flash2: lfs mount");
     if (lofsFlash2.begin())
         return true;
-
-    LOG_WARN("LoFS: formatting /flash2 (0x%x-0x%x)", (unsigned)start, (unsigned)end);
-    LOBBS_BOOT_STEP("flash2: erase partition pages");
-    InternalFS._lockFS();
-    flash_nrf5x_flush();
-    for (uint32_t addr = start; addr < end; addr += FLASH_NRF52_PAGE_SIZE)
-        flash_nrf5x_erase(addr);
-    InternalFS._unlockFS();
-    LOBBS_BOOT_STEP("flash2: lfs format");
-    return lofsFlash2.format() && lofsFlash2.begin();
+    return lofsFlash2Format();
 }
 
 #if LOBBS_EXTRA_QSPI
 static struct lfs_config lofsQspiCfg;
 static Adafruit_LittleFS lofsQspi(&lofsQspiCfg);
+
+static bool lofsQspiFormat()
+{
+    LOG_WARN("LoFS: formatting /extra (QSPI)");
+    LOBBS_BOOT_STEP("extra: lfs format");
+    return lofsQspi.format() && lofsQspi.begin();
+}
 
 static bool lofsQspiBegin()
 {
@@ -122,10 +135,7 @@ static bool lofsQspiBegin()
     LOBBS_BOOT_STEP("extra: lfs mount");
     if (lofsQspi.begin())
         return true;
-
-    LOG_WARN("LoFS: formatting /extra (QSPI)");
-    LOBBS_BOOT_STEP("extra: lfs format");
-    return lofsQspi.format() && lofsQspi.begin();
+    return lofsQspiFormat();
 }
 #endif
 
@@ -245,6 +255,28 @@ bool LoFS::mountDbSafe(const char *name)
 {
     Mount *m = name ? findByName(name, strlen(name)) : nullptr;
     return m && m->dbSafe;
+}
+
+bool LoFS::format(const char *name)
+{
+    Mount *m = name ? findByName(name, strlen(name)) : nullptr;
+    if (!m)
+        return false;
+#if defined(ARCH_NRF52)
+    if (m->backend == Backend::Flash2)
+        return lofsFlash2Format();
+#endif
+#if LOBBS_EXTRA_QSPI
+    if (m->backend == Backend::Extra)
+        return lofsQspiFormat();
+#endif
+#if defined(ARCH_NRF52) || defined(ARCH_ESP32) || defined(ARCH_RP2040)
+    if (m->backend == Backend::Flash) {
+        concurrency::LockGuard g(spiLock);
+        return FSCom.format();
+    }
+#endif
+    return false;
 }
 
 void LoFS::eachPresentMount(void (*fn)(void *ctx, const char *name), void *ctx)
@@ -530,6 +562,7 @@ static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn)
 
         std::string pathFromFile = file.name();
         bool isDir = file.isDirectory();
+        uint32_t size = isDir ? 0 : (uint32_t)file.size();
         file.close();
 
         size_t lastSlash = pathFromFile.rfind('/');
@@ -538,7 +571,7 @@ static bool lobfsEachDirEntry(File &dir, void *ctx, LoFS::ListCallback fn)
         if (entryName == "." || entryName == "..")
             continue;
 
-        if (!fn(ctx, entryName.c_str(), isDir))
+        if (!fn(ctx, entryName.c_str(), isDir, size))
             return false;
     }
     return true;
@@ -557,7 +590,7 @@ bool LoFS::list(const char *dirpath, void *ctx, ListCallback fn)
         for (int i = 0; i < mountCount; i++) {
             if (!mounts[i].present)
                 continue;
-            if (!fn(ctx, mounts[i].name, true))
+            if (!fn(ctx, mounts[i].name, true, 0))
                 return false;
         }
         return true;
