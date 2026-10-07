@@ -5,7 +5,7 @@ GROUP(-lgcc -lc -lnosys)
 
 MEMORY
 {
-  /* 0xD4000-0xED000 is the LoBBS second internal-flash partition (LoFS /flash2). InternalFS follows at 0xED000. */
+  /* App ends at 0xD4000. Optional LoBBS /lofs on flash2 (0xD4000-0xED000) when no QSPI; InternalFS at 0xED000 (Adafruit). */
   FLASH (rx)     : ORIGIN = 0x27000, LENGTH = 0xD4000 - 0x27000
 
   /* SRAM required by Softdevice depend on
